@@ -1,9 +1,12 @@
-# Norad-Satellite-Tracker
+# Norad-Satellite-Tracker (2020/2021)
  This projects focuses on using Norad provided TLE format data in order to track satellites orbiting around Earth and predict their overhead-passings using an analytical propagation estimator. For this project, we used Michel Capderou's book **"Satellites : de Kepler au GPS"** which describes in great details the space and orbital mechanics that we applied here for this satellite tracker.
  We have two main .py files so far :
  - **__classes.py** : This .py file contains the five classes used throughout the project : **NORAD_TLE_Database** (fetches the NORAD TLE Data from the AMSAT website and extracts the needed info), **Orbit** (renders and commands calculations regarding orbital mechanics and its associated perturbations),**Earth** (takes care of the obverser'sposition and calculatiosn regarding transformations from fixed to inertial reference frame, GMST calculation, etc...), **Time_Manager** (takes care of time values, timestamps, julian dates, etc...) and **Tracker** ( focuses on a given traget and plots the results from all four other classes)
  - **__functions.py** : Contains the different fucntions used in **__classes.py**.
  
+ This project began back in September 2020 and was put on hold in late October before being worked on again in late January. I am currently working on succesfully predicting over-head passings, some issues could be raised on the crtopy usage as well. I will be trying to fiw those in a few weeks.
+ 
+ This code uses Numpy, Matplotlib, Time, Calendar, Os, Datetime and Cartopy. You should try and create an environment containing these libraries before running it.
  
  # TLE Data:
  
