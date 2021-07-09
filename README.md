@@ -1,6 +1,6 @@
 # Norad-Satellite-Tracker (2020/2021)
 
-[![wakatime](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker.svg)](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker)
+Time passed on next instance [![wakatime](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker.svg)](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker)
 
  This projects focuses on using Norad provided TLE format data in order to track satellites orbiting around Earth and predict their overhead-passings using an analytical propagation estimator. For this project, we used Michel Capderou's book **"Satellites : de Kepler au GPS"** which describes in great details the space and orbital mechanics that we applied here for this satellite tracker.
  We have two main .py files so far :
@@ -22,3 +22,6 @@ ICESAT
 
 Our program updates its NORAD TLE database by downloading it directly from the AMSAT website at : https://www.amsat.org/tle/current/nasabare.txt
 I will try later to vary our sources in order to get a greater number of possible tracking targets.
+
+# Future Version ?
+ I am currently working on a GUI for the code, featuring the use of Pygame or PyQt5. t should come before the end of summer 2021 if all goes well.
