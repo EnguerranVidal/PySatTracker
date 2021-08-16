@@ -24,4 +24,6 @@ Our program updates its NORAD TLE database by downloading it directly from the A
 I will try later to vary our sources in order to get a greater number of possible tracking targets.
 
 # Future Version ?
- I am currently working on a GUI for the code, featuring the use of Pygame or PyQt5. t should come before the end of summer 2021 if all goes well.
+ I am currently working on a GUI for the code, which I have initially made in PyQt5 and have tried implementing a mapbox similar to one you could find on Google Maps to better showcase the course and groundtracks of specific objects. This took a long time, first trying to use Pygame to create from scratch then trying Leaflet in Python, Folium to finally settle on the use of MapBox in Plotly which is still not 100% certain to remain as its use is quite funky.
+
+I first announced the next version to be finilized around the end of Summer 2021 but the GUI and my attempts at creating my own SGP4 propagator lengthen the amount of work needed. So maybe around September of October of this year ? We will see, I will try to focus on other projects for now to rest from this project for a little while.
