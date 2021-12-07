@@ -22,7 +22,14 @@ class Earth:
         self.observer_elevation = None
         self.observer_position = None  # np.array([X, Y, Z])
 
-    def sidereal_rotation(self, unix):
+    def define_observer(self, lon, lat, elev):
+        self.observer_longitude = lon
+        self.observer_latitude = lat
+        self.observer_elevation = elev
+        self.observer_position = self.geodetic_ECEF(lat, lon, elev)
+
+    @staticmethod
+    def sidereal_rotation(unix):
         DJ = day_fraction(unix)
         du = julian_date(unix) - 2451545.0 - DJ
         Tu = du / 36525
@@ -147,7 +154,13 @@ class Earth:
         X, Y, Z = result[0, :], result[1, :], result[2, :]
         return X, Y, Z
 
-    def ENU_Topocentric(self, X, Y, Z):
-        pass
+    @staticmethod
+    def ENU_AER(E, N, U):
+        r = np.sqrt(E ** 2 + N ** 2)
+        slant_range = np.qrt(U ** 2 + r ** 2)
+        elev = np.atan2(U, r)
+        az = np.atan2(E, N)
+        return az, elev, slant_range
+
 
 
