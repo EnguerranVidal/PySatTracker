@@ -1,6 +1,7 @@
 # Python Satellite Tracker and Propagator (2020/2021)
 
-Time passed on new instance [![wakatime](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker.svg)](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker)
+[![HitCount](http://hits.dwyl.com/EnguerranVidal/PySatTracker.svg?style=flat)](http://hits.dwyl.com/EnguerranVidal/PySatTracker) [![wakatime](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker.svg)](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker)
+
 
 This project vows to create a software capble of tracking satellites or propagate their orbits to complete many predictions such as pass-bys, passing over head, communication capabilities ...
 It will consist of two different systems : 
