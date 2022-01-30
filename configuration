@@ -1,0 +1,3 @@
+DEFAULT_TOGGLE{Active=1;Molniya=1;Iridium_33_Debris=0;Cosmos_2251_Debris=0;Fengyun_1C_Debris=0;Indian_ASAT_Test_Debris=0;Russian_ASAT_Test_Debris=0}
+DEFAULT_LINKS{https://www.celestrak.com/NORAD/elements/active.txt;https://www.celestrak.com/NORAD/elements/molniya.txt;https://www.celestrak.com/NORAD/elements/iridium-33-debris.txt;https://www.celestrak.com/NORAD/elements/cosmos-2251-debris.txt;https://www.celestrak.com/NORAD/elements/1999-025.txt;https://www.celestrak.com/NORAD/elements/2019-006.txt;https://www.celestrak.com/NORAD/elements/1982-092.txt}
+SUPP_SOURCES{}

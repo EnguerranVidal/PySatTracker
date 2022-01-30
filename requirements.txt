@@ -1,6 +1,5 @@
 numpy~=1.21.2
-matplotlib~=3.4.3
 cartopy~=0.18.0
 sgp4~=2.20
 requests~=2.26.0
-pillow~=8.4.0
+matplotlib~=3.4.3
