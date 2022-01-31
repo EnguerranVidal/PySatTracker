@@ -16,14 +16,16 @@
   <img src="https://user-images.githubusercontent.com/80796115/151719481-c8c6e5fd-38d5-4aa7-8eff-4e4b8bde5a7e.png">
 </p>
 
-## Presentation
+## PRESENTATION
 
 This project vows to create a software capable of tracking known satellites with a huge accuracy as well as allowing the pursue of propagating a specified orbit using perturbations calculations.
 It will consist of two different systems : 
 - a satellite tracker using TLE Data for quick predictions for known satellites in the NORAD Database.
 - a satellite propagator using ephemeride or user-inputted data in order to predict their future orbits, accounting for various perturbations such as the Moon and Sun, solar radiation or the roughness of the geoid.
 
-## Satellite Tracker 
+
+
+## SATELLITE TRACKER
 
 This satellite tracker uses TLE Data provided by NORAD in order to estimate the position of satellites at certain times. We used to be doing the estimation in a simple naive way although the estimator needs a SGP4 algorithm in order to provide accurate results.
  
@@ -40,7 +42,34 @@ Our code updates its NORAD TLE database by downloading it directly from the **[C
 
 Keplerian parameters from TLE Data cannot be used as is and need a specific algorithm in order to estimate the associated orbit. This is the role of the SGP4 estimator algorithm. It is provided by the **[sgp4](https://pypi.org/project/sgp4/)** Python library in our case.
 
-## Future Version ?
+
+
+
+## INSTALLATION
+
+```
+git clone https://github.com/EnguerranVidal/PySatTracker.git
+```
+
+```
+cd PySatTracker
+```
+
+```
+pip install -r requirements.txt
+```
+
+
+## USING THE CODE
+
+To start the GUI, the following command can be entered :
+```
+python3 main.py
+```
+
+
+
+## FUTURE VERSION ?
 
 I first announced the new version to be finilized around the end of Summer 2021 but the GUI and my attempts at creating my own SGP4 propagator lengthen the amount of work needed. But since some personal projects have been finished and college gave me a slight breaks between exams and assignements, I could finally get back to it and finish this version with a SGP4 estimator (not home made however). The promised GUI is finally done, with a lot of work still needed in creating the 3D view and propagator mechanics as well as expand the amount of shown data.
 
