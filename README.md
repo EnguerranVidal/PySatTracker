@@ -29,17 +29,11 @@ This satellite tracker uses TLE Data provided by NORAD in order to estimate the 
  
  ### TLE Data:
  
- TLE or Two Line Element is a format capable of transmitting info about a satellte's position easily created and updated regularly by NORAD. It gives us an access to some values of our satellite's orbit through some Keplerian parameters that can be propagated through a SPG4 estimator taking into account perturbations of the satellite's trajectory.
- A Two Line Elements format looks like so :
- 
-ICESAT
-1 27642U 03002A   03175.25018279  .00000722  00000-0  75456-4 0  1631
-2 27642  94.0031 263.4514 0002250  85.5696 274.5785 14.90462832 24163
-
-Our program updates its NORAD TLE database by downloading it directly from the **[Celestrak](https://www.celestrak.com/NORAD/elements/)** website where many categories can be found. We managed to associate an active satellites database with many famous debris families such as the Iridium 33 debris. These multiple databases can be switched on/off via the **Tracker/Preferences** option through checkboxes as shown right below :
+TLE or Two Line Element is a format capable of transmitting info about a satellte's position easily created and updated regularly by NORAD. It gives us an access to some values of our satellite's orbit through some Keplerian parameters that can be propagated through a SPG4 estimator taking into account perturbations of the satellite's trajectory. However, given the amount of perturbations changing a satellite's trajectory and also the possibility of maneuvers, this data has a low life expectancy.
+Our code updates its NORAD TLE database by downloading it directly from the **[Celestrak](https://www.celestrak.com/NORAD/elements/)** website where many categories can be found. We managed to associate an active satellites database with many famous debris families such as the Iridium 33 debris. These multiple databases can be switched on/off via the **Tracker/Preferences** option through checkboxes as shown right below :
 
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/80796115/151730082-01c1642c-0534-40e2-b7a5-379de6ce93fa.png">
+  <img src="https://user-images.githubusercontent.com/80796115/151730082-01c1642c-0534-40e2-b7a5-379de6ce93fa.png" width="200">
 </p>
 
 ### SGP4 Estimator
