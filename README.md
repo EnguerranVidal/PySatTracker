@@ -6,7 +6,6 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/EnguerranVidal/PySatTracker)
 ![Github issus open](https://img.shields.io/github/issues-raw/EnguerranVidal/PySatTracker)
 ![Github issus closed](https://img.shields.io/github/issues-closed-raw/EnguerranVidal/PySatTracker)
-[![HitCount](http://hits.dwyl.com/EnguerranVidal/PySatTracker.svg?style=flat)](http://hits.dwyl.com/EnguerranVidal/PySatTracker)
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 ![GitHub repo size](https://img.shields.io/github/repo-size/EnguerranVidal/PySatTracker)
