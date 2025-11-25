@@ -1,5 +1,0 @@
-numpy~=1.21.2
-cartopy~=0.18.0
-sgp4~=2.20
-requests~=2.26.0
-matplotlib~=3.4.3
