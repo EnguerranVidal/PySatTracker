@@ -101,7 +101,7 @@ class OrbitalMechanicsEngine:
         return np.cbrt(self.earthGravParameter / meanMotion ** 2)
 
     @staticmethod
-    def tleElements(sat: Satrec):
+    def tleOrbitalElements(sat: Satrec):
         return {"inclination": sat.inclo, "RAAN": sat.nodeo, "arg_perigee": sat.argpo, "eccentricity": sat.ecco}
 
     @staticmethod
@@ -110,10 +110,3 @@ class OrbitalMechanicsEngine:
         if rNorm == 0 or vNorm == 0:
             return 0.0
         return np.arcsin(np.dot(rVec, vVec) / (rNorm * vNorm))
-
-
-
-
-
-
-

@@ -1,3 +1,4 @@
+import os
 import sys
 
 import qdarktheme
@@ -10,11 +11,12 @@ from src.gui.mainWindow import MainWindow
 if __name__ == "__main__":
     qdarktheme.enable_hi_dpi()
     app = QApplication(sys.argv)
+    currentDirectory = os.path.dirname(os.path.realpath(__file__))
 
-    window = MainWindow()
+    window = MainWindow(currentDirectory)
 
     splash = LoadingScreen()
-    splash.main_window = window
+    splash.mainWindow = window
     splash.show()
 
     sys.exit(app.exec_())

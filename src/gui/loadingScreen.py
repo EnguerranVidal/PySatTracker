@@ -4,9 +4,9 @@ from PyQt5.QtCore import Qt, QTimer
 
 
 class LoadingScreen(QSplashScreen):
-    def __init__(self, pixmap_path="", duration=2000):
-        pixmap = QPixmap(pixmap_path) if pixmap_path else QPixmap(400, 300)
-        if pixmap_path == "":
+    def __init__(self, pixmapPath="", duration=2000):
+        pixmap = QPixmap(pixmapPath) if pixmapPath else QPixmap(400, 300)
+        if pixmapPath == "":
             pixmap.fill(Qt.black)
 
         super().__init__(pixmap)
@@ -21,10 +21,10 @@ class LoadingScreen(QSplashScreen):
         self.duration = duration
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_progress)
+        self.timer.timeout.connect(self.updateProgress)
         self.timer.start(30)
 
-    def update_progress(self):
+    def updateProgress(self):
         step = int((30 / self.duration) * 100)
         self.counter += step
         self.counter = min(self.counter, 100)
@@ -32,5 +32,5 @@ class LoadingScreen(QSplashScreen):
 
         if self.counter >= 100:
             self.timer.stop()
-            self.finish(self.main_window)
-            self.main_window.show()
+            self.finish(self.mainWindow)
+            self.mainWindow.show()

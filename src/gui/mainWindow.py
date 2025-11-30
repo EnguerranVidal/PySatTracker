@@ -1,8 +1,11 @@
+import os
+
 import qdarktheme
+import time
 
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QMainWindow, QLabel, QWidget, QVBoxLayout
+from PyQt5.QtCore import Qt, QDateTime, QTimer
+from PyQt5.QtWidgets import QMainWindow, QLabel, QWidget, QVBoxLayout, QDesktopWidget
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -10,9 +13,11 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
+from src.core.tleDatabase import TLEDatabase
+
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, currentDIr: str):
         super().__init__()
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
         self.setWindowTitle("Satellite Tracker")
@@ -20,6 +25,50 @@ class MainWindow(QMainWindow):
         self.mapWidget = MapWidget(self)
         self.setCentralWidget(self.mapWidget)
 
+        # FOLDER PATHS
+        self.currentDir = currentDIr
+        self.dataPath = os.path.join(self.currentDir, "data")
+        self.noradPath = os.path.join(self.dataPath, "norad")
+        self._checkEnvironment()
+
+        # TLE DATABASE
+        self.tleDatabase = TLEDatabase(self.noradPath)
+
+        # STATUS BAR
+        self.lastUpdate = time.perf_counter()
+        self.avgFps = 0.0
+        self.fpsLabel = QLabel('Fps : ---')
+        self.fpsLabel.setStyleSheet('border: 0;')
+        self.statusBar().addPermanentWidget(self.fpsLabel)
+        self.datetime = QDateTime.currentDateTime()
+        self.dateLabel = QLabel(self.datetime.toString('dd.MM.yyyy  hh:mm:ss'))
+        self.dateLabel.setStyleSheet('border: 0;')
+        self.statusBar().addPermanentWidget(self.dateLabel)
+        self.statusBar().showMessage('Ready')
+        self.statusDateTimer = QTimer()
+        self.statusDateTimer.timeout.connect(self._updateStatus)
+        self.statusDateTimer.start(1000)
+
+    def _center(self):
+        frameGeometry = self.frameGeometry()
+        screenCenter = QDesktopWidget().availableGeometry().center()
+        frameGeometry.moveCenter(screenCenter)
+        self.move(frameGeometry.topLeft())
+
+    def _updateStatus(self):
+        self.datetime = QDateTime.currentDateTime()
+        self.dateLabel.setText(self.datetime.toString('dd.MM.yyyy  hh:mm:ss'))
+        now = time.perf_counter()
+        fps = 1000 / (now - self.lastUpdate)
+        self.lastUpdate = now
+        self.avgFps = self.avgFps * 0.8 + fps * 0.2
+        self.fpsLabel.setText('Fps : %0.2f ' % self.avgFps)
+
+    def _checkEnvironment(self):
+        if not os.path.exists(self.dataPath):
+            os.mkdir(self.dataPath)
+        if not os.path.exists(self.noradPath):
+            os.mkdir(self.noradPath)
 
 
 class MapWidget(QWidget):

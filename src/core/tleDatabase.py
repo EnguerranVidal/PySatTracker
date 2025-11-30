@@ -1,43 +1,108 @@
+import os
+import time
 import pandas as pd
 import requests
-from datetime import datetime
-from sgp4.api import Satrec
-from sgp4.conveniences import jday, eci_to_geodetic
+from datetime import datetime, timedelta
+from sgp4.api import Satrec, jday
 
 
 class TLEDatabase:
-    def __init__(self):
-        self.dataFrame = pd.DataFrame(columns=["name", "firstLine", "secondLine", "source", "updated"])
+    CELESTRAK_SOURCES = {
+        "stations": "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle",
+        "active": "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle",
+        "starlink": "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle",
+        "gnss": "https://celestrak.org/NORAD/elements/gp.php?GROUP=gnss&FORMAT=tle",
+        "weather": "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle",
+        "planet": "https://celestrak.org/NORAD/elements/gp.php?GROUP=planets&FORMAT=tle",
+        "visual": "https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle",
+        "iridium": "https://celestrak.org/NORAD/elements/gp.php?GROUP=iridium&FORMAT=tle",
+        "geosynchronous": "https://celestrak.org/NORAD/elements/gp.php?GROUP=geo&FORMAT=tle",
+    }
 
-    def loadFromUrl(self, url, sourceName=None):
-        res = requests.get(url)
-        res.raise_for_status()
-        text = res.text.strip().split("\n")
-        entries = []
-        for i in range(0, len(text), 3):
-            name = text[i].strip()
-            firstLine, secondLine = text[i + 1].strip(), text[i + 2].strip()
-            entries.append({"name": name, "firstLine": firstLine, "secondLine": secondLine, "source": sourceName or url, "updated": datetime.utcnow().isoformat()})
-        newDataFrame = pd.DataFrame(entries)
-        self.dataFrame = pd.concat([self.dataFrame, newDataFrame], ignore_index=True)
+    UPDATE_INTERVAL = timedelta(days=2)
 
-    def getSatellite(self, name):
-        row = self.dataFrame[self.dataFrame["name"] == name].iloc[0]
-        return Satrec.twoline2rv(row.firstLine, row.secondLine)
+    def __init__(self, tleDataDir="data/norad"):
+        self.tleDataDir = tleDataDir
+        self.dataFrame = pd.DataFrame(columns=[
+            "OBJECT_NAME", "NORAD_CAT_ID", "EPOCH", "MEAN_MOTION", "ECCENTRICITY",
+            "INCLINATION", "RA_OF_ASC_NODE", "ARG_OF_PERICENTER", "MEAN_ANOMALY",
+            "BSTAR", "REV_AT_EPOCH", "TLE_LINE1", "TLE_LINE2", "tags", "source"
+        ])
+        os.makedirs(self.tleDataDir, exist_ok=True)
+        for tag in self.CELESTRAK_SOURCES:
+            self.loadSource(tag)
 
-    def propagate(self, name, when=None):
-        if when is None:
-            when = datetime.utcnow()
-        sat = self.getSatellite(name)
-        julianDate, fractionDate = jday(when.year, when.month, when.day, when.hour, when.minute, when.second + when.microsecond / 1e6)
-        error, position, velocity = sat.sgp4(julianDate, fractionDate)
-        if error != 0:
-            raise RuntimeError(f"SGP4 error code {error} for '{name}'")
-        lat, lon, alt = eci_to_geodetic(position[0], position[1], position[2])
-        return position, velocity , lat * 180.0 / 3.1415926535, lon * 180.0 / 3.1415926535, alt
+    def _fileNeedsUpdate(self, path):
+        if not os.path.exists(path):
+            return True
+        lastMod = datetime.fromtimestamp(os.path.getmtime(path))
+        return datetime.utcnow() - lastMod > self.UPDATE_INTERVAL
 
-    def listSatellites(self):
-        return self.dataFrame["name"].tolist()
+    def _download(self, tag, url):
+        localPath = os.path.join(self.tleDataDir, f"{tag}.txt")
+        if self._fileNeedsUpdate(localPath):
+            print(f"Downloading {tag}...")
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            with open(localPath, "w", encoding="utf-8") as f:
+                f.write(res.text)
+        return localPath
 
-    def filterBySource(self, source):
-        return self.dataFrame[self.dataFrame["source"] == source]
+    @staticmethod
+    def _parseTLE(name, line1, line2, tag=None, source=None):
+        idNorad = int(line1[2:7])
+
+        # EPOCH CONVERSION
+        epochString = line1[18:32]
+        year = int(epochString[:2])
+        doy = float(epochString[2:])
+        year = 2000 + year if year < 57 else 1900 + year
+        epochBase = datetime(year, 1, 1) + timedelta(days=doy - 1)
+        seconds = epochBase.second + epochBase.microsecond / 1e6
+        jdEpoch = jday(year, epochBase.month, epochBase.day, epochBase.hour, epochBase.minute, seconds)
+
+        # ORBITAL ELEMENTS
+        bStar = float(f"{line1[53]}0.{line1[54:59]}e{line1[59:61]}")
+        inclination, eccentricity = float(line2[8:16]), float(f"0.{line2[26:33]}")
+        raan, argPerigee = float(line2[17:25]), float(line2[34:42])
+        meanAnomaly, meanMotion = float(line2[43:51]), float(line2[52:63])
+        revNumber = int(line2[63:68])
+
+        return {
+            "OBJECT_NAME": name, "NORAD_CAT_ID": idNorad, "EPOCH": jdEpoch,
+            "MEAN_MOTION": meanMotion, "ECCENTRICITY": eccentricity, "INCLINATION": inclination,
+            "RA_OF_ASC_NODE": raan, "ARG_OF_PERICENTER": argPerigee, "MEAN_ANOMALY": meanAnomaly,
+            "BSTAR": bStar, "REV_AT_EPOCH": revNumber, "TLE_LINE1": line1, "TLE_LINE2": line2,
+            "tags": [tag] if tag else [], "source": source
+        }
+
+    def loadSource(self, tag):
+        if tag not in self.CELESTRAK_SOURCES:
+            raise ValueError(f"Unknown CelesTrak tag: {tag}")
+        path = self._download(tag, self.CELESTRAK_SOURCES[tag])
+        with open(path, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        for i in range(0, len(lines), 3):
+            try:
+                row = self._parseTLE(lines[i], lines[i+1], lines[i+2], tag, self.CELESTRAK_SOURCES[tag])
+            except Exception as e:
+                print(f"Skipping {lines[i] if i<len(lines) else 'unknown'}: {e}")
+                continue
+            existing = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == row["NORAD_CAT_ID"]]
+            if existing.empty:
+                self.dataFrame = pd.concat([self.dataFrame, pd.DataFrame([row])], ignore_index=True)
+            else:
+                idx = existing.index[0]
+                if row["EPOCH"] > existing.at[idx, "EPOCH"]:
+                    for k in row:
+                        self.dataFrame.at[idx, k] = row[k]
+                tags = set(existing.at[idx, "tags"])
+                tags.update(row["tags"])
+                self.dataFrame.at[idx, "tags"] = list(tags)
+
+    def getSatrec(self, norad_id):
+        row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == norad_id]
+        if row.empty:
+            raise ValueError(f"Satellite NORAD ID {norad_id} not found")
+        row = row.iloc[0]
+        return Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
