@@ -5,7 +5,8 @@ import time
 
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QDateTime, QTimer
-from PyQt5.QtWidgets import QMainWindow, QLabel, QWidget, QVBoxLayout, QDesktopWidget
+from PyQt5.QtWidgets import QMainWindow, QLabel, QWidget, QVBoxLayout, QDesktopWidget, QListWidgetItem, QLineEdit, \
+    QListWidget, QDockWidget
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -22,8 +23,14 @@ class MainWindow(QMainWindow):
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
         self.setWindowTitle("Satellite Tracker")
         self.setGeometry(300, 150, 1200, 700)
+
+        # CENTRAL MAP WIDGET
         self.mapWidget = MapWidget(self)
         self.setCentralWidget(self.mapWidget)
+
+        # SATELLITE LIST WIDGET
+        self.satelliteDock = SatelliteDockWidget(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.satelliteDock)
 
         # FOLDER PATHS
         self.currentDir = currentDIr
@@ -72,6 +79,7 @@ class MainWindow(QMainWindow):
 
     def setDatabase(self, database: TLEDatabase):
         self.tleDatabase = database
+        self.satelliteDock.populate(self.tleDatabase)
 
 
 class MapWidget(QWidget):
@@ -96,3 +104,59 @@ class MapWidget(QWidget):
 
         self.canvas = FigureCanvas(fig)
         layout.addWidget(self.canvas)
+
+
+class SatelliteDockWidget(QDockWidget):
+    def __init__(self, mainWindow, title="Satellites"):
+        super().__init__(title, mainWindow)
+        self.mainWindow = mainWindow
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.setTitleBarWidget(QWidget())
+
+        # LAYOUT
+        container = QWidget()
+        self.setWidget(container)
+        layout = QVBoxLayout(container)
+
+        # SEARCH BAR
+        self.searchBar = QLineEdit()
+        self.searchBar.setPlaceholderText("Search satellites...")
+        self.searchBar.textChanged.connect(self.filterSatelliteList)
+        layout.addWidget(self.searchBar)
+
+        # LIST WIDGET
+        self.listWidget = QListWidget()
+        layout.addWidget(self.listWidget)
+        self.allItemsList = []
+
+    def populate(self, satelliteDatabase):
+        self.listWidget.clear()
+        self.allItemsList.clear()
+        categories = {}
+        for _, row in satelliteDatabase.dataFrame.iterrows():
+            for tag in row["tags"]:
+                if tag not in categories:
+                    categories[tag] = []
+                categories[tag].append(row["OBJECT_NAME"])
+
+        # POPULATING LIST WIDGET
+        for cat, satellites in categories.items():
+            catItem = QListWidgetItem(f"[{cat.upper()}]")
+            catItem.setFlags(Qt.ItemIsEnabled)
+            self.listWidget.addItem(catItem)
+            self.allItemsList.append((catItem, None))
+            for sat in satellites:
+                satelliteItem = QListWidgetItem(f"  {sat}")
+                self.listWidget.addItem(satelliteItem)
+                self.allItemsList.append((satelliteItem, cat))
+
+    def filterSatelliteList(self, text):
+        text = text.lower()
+        for item, cat in self.allItemsList:
+            if cat is None:
+                categoryName = item.text()[1:-1].lower()
+                show = any(sat_item.text().lower().find(text) >= 0 for sat_item, sat_cat in self.allItemsList if sat_cat == categoryName)
+                item.setHidden(not show)
+            else:
+                item.setHidden(text not in item.text().lower())

@@ -25,11 +25,8 @@ class TLEDatabase:
 
     def __init__(self, tleDataDir="data/norad"):
         self.tleDataDir = tleDataDir
-        self.dataFrame = pd.DataFrame(columns=[
-            "OBJECT_NAME", "NORAD_CAT_ID", "EPOCH", "MEAN_MOTION", "ECCENTRICITY",
-            "INCLINATION", "RA_OF_ASC_NODE", "ARG_OF_PERICENTER", "MEAN_ANOMALY",
-            "BSTAR", "REV_AT_EPOCH", "TLE_LINE1", "TLE_LINE2", "tags", "source"
-        ])
+        self.rows = []  # <<< FAST ACCUMULATION LIST
+        self.dataFrame = None
         os.makedirs(self.tleDataDir, exist_ok=True)
 
     def _fileNeedsUpdate(self, path):
@@ -85,17 +82,10 @@ class TLEDatabase:
             except Exception as e:
                 print(f"Skipping {lines[i] if i<len(lines) else 'unknown'}: {e}")
                 continue
-            existing = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == row["NORAD_CAT_ID"]]
-            if existing.empty:
-                self.dataFrame = pd.concat([self.dataFrame, pd.DataFrame([row])], ignore_index=True)
-            else:
-                idx = existing.index[0]
-                if row["EPOCH"] > existing.at[idx, "EPOCH"]:
-                    for k in row:
-                        self.dataFrame.at[idx, k] = row[k]
-                tags = set(existing.at[idx, "tags"])
-                tags.update(row["tags"])
-                self.dataFrame.at[idx, "tags"] = list(tags)
+            self.rows.append(row)
+
+    def finalize(self):
+        self.dataFrame = pd.DataFrame(self.rows)
 
     def getSatrec(self, norad_id):
         row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == norad_id]
@@ -120,8 +110,8 @@ class TLELoaderWorker(QObject):
         step = 100 / total
         current = 0
         for tag in TLEDatabase.CELESTRAK_SOURCES:
-            self.status.emit(f"Loading: {tag}")
             db.loadSource(tag)
             current += step
             self.progress.emit(int(current))
+        db.finalize()
         self.finished.emit(db)
