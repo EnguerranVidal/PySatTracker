@@ -3,6 +3,8 @@ import time
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+
+from PyQt5.QtCore import QObject, pyqtSignal
 from sgp4.api import Satrec, jday
 
 
@@ -29,8 +31,6 @@ class TLEDatabase:
             "BSTAR", "REV_AT_EPOCH", "TLE_LINE1", "TLE_LINE2", "tags", "source"
         ])
         os.makedirs(self.tleDataDir, exist_ok=True)
-        for tag in self.CELESTRAK_SOURCES:
-            self.loadSource(tag)
 
     def _fileNeedsUpdate(self, path):
         if not os.path.exists(path):
@@ -54,12 +54,9 @@ class TLEDatabase:
 
         # EPOCH CONVERSION
         epochString = line1[18:32]
-        year = int(epochString[:2])
-        doy = float(epochString[2:])
-        year = 2000 + year if year < 57 else 1900 + year
-        epochBase = datetime(year, 1, 1) + timedelta(days=doy - 1)
-        seconds = epochBase.second + epochBase.microsecond / 1e6
-        jdEpoch = jday(year, epochBase.month, epochBase.day, epochBase.hour, epochBase.minute, seconds)
+        year = 2000 + int(epochString[:2]) if int(epochString[:2]) < 57 else 1900 + int(epochString[:2])
+        epochBase = datetime(year, 1, 1) + timedelta(days=float(epochString[2:]) - 1)
+        jdEpoch = jday(year, epochBase.month, epochBase.day, epochBase.hour, epochBase.minute, epochBase.second + epochBase.microsecond / 1e6)
 
         # ORBITAL ELEMENTS
         bStar = float(f"{line1[53]}0.{line1[54:59]}e{line1[59:61]}")
@@ -106,3 +103,25 @@ class TLEDatabase:
             raise ValueError(f"Satellite NORAD ID {norad_id} not found")
         row = row.iloc[0]
         return Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
+
+
+class TLELoaderWorker(QObject):
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    finished = pyqtSignal(object)
+
+    def __init__(self, tleDir):
+        super().__init__()
+        self.tleDir = tleDir
+
+    def run(self):
+        db = TLEDatabase(self.tleDir)
+        total = len(TLEDatabase.CELESTRAK_SOURCES)
+        step = 100 / total
+        current = 0
+        for tag in TLEDatabase.CELESTRAK_SOURCES:
+            self.status.emit(f"Loading: {tag}")
+            db.loadSource(tag)
+            current += step
+            self.progress.emit(int(current))
+        self.finished.emit(db)

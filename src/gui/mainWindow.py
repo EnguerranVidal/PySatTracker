@@ -32,9 +32,9 @@ class MainWindow(QMainWindow):
         self._checkEnvironment()
 
         # TLE DATABASE
-        self.tleDatabase = TLEDatabase(self.noradPath)
+        self.tleDatabase = None
 
-        # STATUS BAR
+        # STATUS BARS
         self.lastUpdate = time.perf_counter()
         self.avgFps = 0.0
         self.fpsLabel = QLabel('Fps : ---')
@@ -69,6 +69,9 @@ class MainWindow(QMainWindow):
             os.mkdir(self.dataPath)
         if not os.path.exists(self.noradPath):
             os.mkdir(self.noradPath)
+
+    def setDatabase(self, database: TLEDatabase):
+        self.tleDatabase = database
 
 
 class MapWidget(QWidget):
