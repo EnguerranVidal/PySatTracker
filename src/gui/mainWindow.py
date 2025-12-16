@@ -4,6 +4,7 @@ import time
 
 from PyQt5.QtCore import Qt, QDateTime, QTimer
 from PyQt5.QtWidgets import *
+from PyQt5.QtGui import QCloseEvent
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -11,14 +12,23 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from src.core.tleDatabase import TLEDatabase
+from src.gui.objects import SimulationClock
+from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
 
 class MainWindow(QMainWindow):
     def __init__(self, currentDIr: str):
         super().__init__()
+        # FOLDER PATHS & SETTINGS
+        self.currentDir = currentDIr
+        self.settingsPath = os.path.join(self.currentDir, "settings.json")
+        self.dataPath = os.path.join(self.currentDir, "data")
+        self.noradPath = os.path.join(self.dataPath, "norad")
+        self._checkEnvironment()
+        self.settings = loadSettingsJson(self.settingsPath)
+
+        # APPEARANCE
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
-        self.setWindowTitle("Satellite Tracker")
-        self.setGeometry(300, 150, 1200, 700)
 
         # CENTRAL MAP WIDGET
         self.centralViewWidget = CentralViewWidget(self)
@@ -27,12 +37,6 @@ class MainWindow(QMainWindow):
         # SATELLITE LIST WIDGET
         self.satelliteDock = SatelliteDockWidget(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.satelliteDock)
-
-        # FOLDER PATHS
-        self.currentDir = currentDIr
-        self.dataPath = os.path.join(self.currentDir, "data")
-        self.noradPath = os.path.join(self.dataPath, "norad")
-        self._checkEnvironment()
 
         # TLE DATABASE
         self.tleDatabase = None
@@ -52,6 +56,14 @@ class MainWindow(QMainWindow):
         self.statusDateTimer.timeout.connect(self._updateStatus)
         self.statusDateTimer.start(1000)
 
+        # WINDOW DIMENSIONS / MAXIMIZED
+        self.setWindowTitle("Satellite Tracker")
+        if self.settings['WINDOW']['MAXIMIZED']:
+            self.showMaximized()
+        else:
+            g = self.settings['WINDOW']['GEOMETRY']
+            self.setGeometry(g["X"], g["Y"], g["WIDTH"], g["HEIGHT"])
+
     def _center(self):
         frameGeometry = self.frameGeometry()
         screenCenter = QDesktopWidget().availableGeometry().center()
@@ -68,6 +80,8 @@ class MainWindow(QMainWindow):
         self.fpsLabel.setText('Fps : %0.2f ' % self.avgFps)
 
     def _checkEnvironment(self):
+        if not os.path.exists(self.settingsPath):
+            generateDefaultSettingsJson(self.settingsPath)
         if not os.path.exists(self.dataPath):
             os.mkdir(self.dataPath)
         if not os.path.exists(self.noradPath):
@@ -77,11 +91,20 @@ class MainWindow(QMainWindow):
         self.tleDatabase = database
         self.satelliteDock.populate(self.tleDatabase)
 
+    def closeEvent(self, event):
+        self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
+        if not self.isMaximized():
+            g = self.geometry()
+            self.settings["WINDOW"]["GEOMETRY"] = {"X": g.x(), "Y": g.y(), "WIDTH": g.width(), "HEIGHT": g.height()}
+        saveSettingsJson(self.settingsPath, self.settings)
+        event.accept()
+
 
 class MapWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, clock, parent=None):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        self.clock = clock
+        self.clock.timeChanged.connect(self.updateMap)
 
         fig = plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree(), facecolor='#1e1e1e')
@@ -97,9 +120,12 @@ class MapWidget(QWidget):
 
         fig.subplots_adjust(left=0, right=0.5, top=0.5, bottom=0)
         fig.tight_layout(pad=1)
-
         self.canvas = FigureCanvas(fig)
+        layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
+
+    def updateMap(self, simulationTime: float):
+        pass
 
 
 class SatelliteDockWidget(QDockWidget):
@@ -164,9 +190,9 @@ class CentralViewWidget(QWidget):
         mainLayout = QVBoxLayout(self)
         mainLayout.setContentsMargins(0, 0, 0, 0)
         mainLayout.setSpacing(0)
+        self.clock = SimulationClock()
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.North)
-        self.mapWidget = MapWidget()
+        self.mapWidget = MapWidget(self.clock)
         self.tabs.addTab(self.mapWidget, "Map")
         mainLayout.addWidget(self.tabs, stretch=1)
-        # mainLayout.addWidget(self.timeline, stretch=0)
