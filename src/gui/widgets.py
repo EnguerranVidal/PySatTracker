@@ -10,13 +10,9 @@ class LoadingScreen(QSplashScreen):
             pixmap.fill(Qt.black)
         super().__init__(pixmap)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
-
-        # STATUS LABEL
         self.statusLabel = QLabel("Starting…", self)
         self.statusLabel.setStyleSheet("color: white;")
         self.statusLabel.setGeometry(20, pixmap.height() - 90, pixmap.width() - 40, 25)
-
-        # PROGRESS BAR
         self.progress = QProgressBar(self)
         self.progress.setGeometry(20, pixmap.height() - 60, pixmap.width() - 40, 20)
         self.progress.setValue(0)

@@ -3,10 +3,10 @@ import sys
 
 import qdarktheme
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtCore import QThread
 
 from src.core.tleDatabase import TLELoaderWorker
-from src.gui.loadingScreen import LoadingScreen
+from src.gui.widgets import LoadingScreen
 from src.gui.mainWindow import MainWindow
 
 def main():

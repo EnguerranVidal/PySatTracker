@@ -1,16 +1,12 @@
 import os
-
 import qdarktheme
 import time
 
-from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QDateTime, QTimer
-from PyQt5.QtWidgets import QMainWindow, QLabel, QWidget, QVBoxLayout, QDesktopWidget, QListWidgetItem, QLineEdit, \
-    QListWidget, QDockWidget
+from PyQt5.QtWidgets import *
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
-
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
@@ -25,8 +21,8 @@ class MainWindow(QMainWindow):
         self.setGeometry(300, 150, 1200, 700)
 
         # CENTRAL MAP WIDGET
-        self.mapWidget = MapWidget(self)
-        self.setCentralWidget(self.mapWidget)
+        self.centralViewWidget = CentralViewWidget(self)
+        self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
         self.satelliteDock = SatelliteDockWidget(self)
@@ -89,10 +85,10 @@ class MapWidget(QWidget):
 
         fig = plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree(), facecolor='#1e1e1e')
-        ax.coastlines(color='white', resolution="50m")
         ax.add_feature(cfeature.BORDERS.with_scale('50m'), edgecolor='white')
-        ax.set_global()
         ax.add_feature(cfeature.OCEAN.with_scale('50m'), facecolor='#001122')
+        ax.coastlines(color='white', resolution="50m")
+        ax.set_global()
 
         ax.spines['geo'].set_edgecolor('white')
         ax.tick_params(colors='white', which='both')
@@ -160,3 +156,17 @@ class SatelliteDockWidget(QDockWidget):
                 item.setHidden(not show)
             else:
                 item.setHidden(text not in item.text().lower())
+
+
+class CentralViewWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+        mainLayout.setSpacing(0)
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.North)
+        self.mapWidget = MapWidget()
+        self.tabs.addTab(self.mapWidget, "Map")
+        mainLayout.addWidget(self.tabs, stretch=1)
+        # mainLayout.addWidget(self.timeline, stretch=0)
