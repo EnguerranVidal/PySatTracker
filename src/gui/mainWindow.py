@@ -2,7 +2,7 @@ import os
 import qdarktheme
 import time
 
-from PyQt5.QtCore import Qt, QDateTime, QTimer
+from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import QCloseEvent
 
@@ -19,13 +19,14 @@ from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, sav
 class MainWindow(QMainWindow):
     def __init__(self, currentDIr: str):
         super().__init__()
+        self.settings = {}
         # FOLDER PATHS & SETTINGS
         self.currentDir = currentDIr
         self.settingsPath = os.path.join(self.currentDir, "settings.json")
         self.dataPath = os.path.join(self.currentDir, "data")
         self.noradPath = os.path.join(self.dataPath, "norad")
         self._checkEnvironment()
-        self.settings = loadSettingsJson(self.settingsPath)
+        self.loadSettings()
 
         # APPEARANCE
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
@@ -89,14 +90,20 @@ class MainWindow(QMainWindow):
 
     def setDatabase(self, database: TLEDatabase):
         self.tleDatabase = database
-        self.satelliteDock.populate(self.tleDatabase)
+        self.satelliteDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+
+    def loadSettings(self):
+        self.settings = loadSettingsJson(self.settingsPath)
+
+    def saveSettings(self):
+        saveSettingsJson(self.settingsPath, self.settings)
 
     def closeEvent(self, event):
         self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
             self.settings["WINDOW"]["GEOMETRY"] = {"X": g.x(), "Y": g.y(), "WIDTH": g.width(), "HEIGHT": g.height()}
-        saveSettingsJson(self.settingsPath, self.settings)
+        self.saveSettings()
         event.accept()
 
 
@@ -129,59 +136,84 @@ class MapWidget(QWidget):
 
 
 class SatelliteDockWidget(QDockWidget):
-    def __init__(self, mainWindow, title="Satellites"):
+    toggleVisibilityRequested = pyqtSignal(int)
+    removeRequested = pyqtSignal(int)
+
+    def __init__(self, mainWindow, title="Selected Satellites"):
         super().__init__(title, mainWindow)
         self.mainWindow = mainWindow
+        container = QWidget()
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
         self.setTitleBarWidget(QWidget())
-
-        # LAYOUT
-        container = QWidget()
         self.setWidget(container)
-        layout = QVBoxLayout(container)
-
-        # SEARCH BAR
         self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText("Search satellites...")
+        self.searchBar.setPlaceholderText("Search selected satellites…")
         self.searchBar.textChanged.connect(self.filterSatelliteList)
-        layout.addWidget(self.searchBar)
-
-        # LIST WIDGET
         self.listWidget = QListWidget()
+        self.listWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.listWidget.customContextMenuRequested.connect(self.showContextMenu)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(self.searchBar)
         layout.addWidget(self.listWidget)
-        self.allItemsList = []
+        self._items = []
 
-    def populate(self, satelliteDatabase):
+    def populate(self, database, selectedNoradIds):
         self.listWidget.clear()
-        self.allItemsList.clear()
+        self._items.clear()
         categories = {}
-        for _, row in satelliteDatabase.dataFrame.iterrows():
+        for norad in selectedNoradIds:
+            try:
+                row = database.dataFrame.loc[
+                    database.dataFrame["NORAD_CAT_ID"] == norad
+                    ].iloc[0]
+            except IndexError:
+                continue
             for tag in row["tags"]:
-                if tag not in categories:
-                    categories[tag] = []
-                categories[tag].append(row["OBJECT_NAME"])
-
-        # POPULATING LIST WIDGET
-        for cat, satellites in categories.items():
-            catItem = QListWidgetItem(f"[{cat.upper()}]")
-            catItem.setFlags(Qt.ItemIsEnabled)
-            self.listWidget.addItem(catItem)
-            self.allItemsList.append((catItem, None))
-            for sat in satellites:
-                satelliteItem = QListWidgetItem(f"  {sat}")
-                self.listWidget.addItem(satelliteItem)
-                self.allItemsList.append((satelliteItem, cat))
+                categories.setdefault(tag, []).append(row)
+        for category, rows in sorted(categories.items()):
+            header = QListWidgetItem(f"[{category.upper()}]")
+            header.setFlags(Qt.ItemIsEnabled)
+            self.listWidget.addItem(header)
+            self._items.append((header, None))
+            for row in rows:
+                item = QListWidgetItem(f"  {row['OBJECT_NAME']}")
+                item.setData(Qt.UserRole, row["NORAD_CAT_ID"])
+                self.listWidget.addItem(item)
+                self._items.append((item, category))
 
     def filterSatelliteList(self, text):
         text = text.lower()
-        for item, cat in self.allItemsList:
-            if cat is None:
-                categoryName = item.text()[1:-1].lower()
-                show = any(sat_item.text().lower().find(text) >= 0 for sat_item, sat_cat in self.allItemsList if sat_cat == categoryName)
-                item.setHidden(not show)
-            else:
-                item.setHidden(text not in item.text().lower())
+        visibleCategories = set()
+        for item, category in self._items:
+            if category is None:
+                continue
+            match = text in item.text().lower()
+            item.setHidden(not match)
+            if match:
+                visibleCategories.add(category)
+        for item, category in self._items:
+            if category is None:
+                catName = item.text()[1:-1].lower()
+                item.setHidden(catName not in visibleCategories)
+
+    def showContextMenu(self, position: QPoint):
+        item = self.listWidget.itemAt(position)
+        if not item:
+            return
+        noradId = item.data(Qt.UserRole)
+        if noradId is None:
+            return
+        menu = QMenu(self)
+        actionToggle = menu.addAction("Toggle Visibility")
+        actionRemove = menu.addAction("Remove from Selection")
+        selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
+        if selectedAction == actionToggle:
+            self.toggleVisibilityRequested.emit(noradId)
+        elif selectedAction == actionRemove:
+            self.removeSatellite(noradId)
 
 
 class CentralViewWidget(QWidget):
