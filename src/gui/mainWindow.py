@@ -12,7 +12,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from src.core.tleDatabase import TLEDatabase
-from src.gui.objects import SimulationClock
+from src.gui.objects import SimulationClock, AddObjectDialog
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
 
@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
         # SATELLITE LIST WIDGET
         self.satelliteDock = SatelliteDockWidget(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.satelliteDock)
+        self.satelliteDock.addObject.connect(self.addSelectedObjects)
+        self.satelliteDock.removeObject.connect(self.removeSelectedObjects)
 
         # TLE DATABASE
         self.tleDatabase = None
@@ -98,6 +100,17 @@ class MainWindow(QMainWindow):
     def saveSettings(self):
         saveSettingsJson(self.settingsPath, self.settings)
 
+    def addSelectedObjects(self, noradIndices):
+        for noradIndex in noradIndices:
+            self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
+        self.saveSettings()
+        self.satelliteDock.addItems(self.tleDatabase, noradIndices)
+
+    def removeSelectedObjects(self, noradIndices):
+        for index in noradIndices:
+            self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
+        self.saveSettings()
+
     def closeEvent(self, event):
         self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
         if not self.isMaximized():
@@ -136,8 +149,11 @@ class MapWidget(QWidget):
 
 
 class SatelliteDockWidget(QDockWidget):
-    toggleVisibilityRequested = pyqtSignal(int)
-    removeRequested = pyqtSignal(int)
+    addObject = pyqtSignal(list)
+    objectSelected = pyqtSignal(list)
+    toggleVisibility = pyqtSignal(list)
+    showObjectInfo = pyqtSignal(list)
+    removeObject = pyqtSignal(list)
 
     def __init__(self, mainWindow, title="Selected Satellites"):
         super().__init__(title, mainWindow)
@@ -147,42 +163,40 @@ class SatelliteDockWidget(QDockWidget):
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
         self.setTitleBarWidget(QWidget())
         self.setWidget(container)
+
+        topBar = QHBoxLayout()
         self.searchBar = QLineEdit()
         self.searchBar.setPlaceholderText("Search selected satellites…")
         self.searchBar.textChanged.connect(self.filterSatelliteList)
+        self.addButton = QPushButton("+")
+        self.addButton.setFixedWidth(28)
+        self.addButton.setToolTip("Add satellites")
+        self.addButton.clicked.connect(self.openAddDialog)
+        topBar.addWidget(self.searchBar)
+        topBar.addWidget(self.addButton)
+
         self.listWidget = QListWidget()
         self.listWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.listWidget.customContextMenuRequested.connect(self.showContextMenu)
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(self.searchBar)
+        layout.addLayout(topBar)
         layout.addWidget(self.listWidget)
         self._items = []
+        self.database = None
 
     def populate(self, database, selectedNoradIds):
+        self.database = database
         self.listWidget.clear()
-        self._items.clear()
-        categories = {}
         for norad in selectedNoradIds:
-            try:
-                row = database.dataFrame.loc[
-                    database.dataFrame["NORAD_CAT_ID"] == norad
-                    ].iloc[0]
-            except IndexError:
+            row = database.dataFrame[database.dataFrame["NORAD_CAT_ID"] == norad]
+            if row.empty:
                 continue
-            for tag in row["tags"]:
-                categories.setdefault(tag, []).append(row)
-        for category, rows in sorted(categories.items()):
-            header = QListWidgetItem(f"[{category.upper()}]")
-            header.setFlags(Qt.ItemIsEnabled)
-            self.listWidget.addItem(header)
-            self._items.append((header, None))
-            for row in rows:
-                item = QListWidgetItem(f"  {row['OBJECT_NAME']}")
-                item.setData(Qt.UserRole, row["NORAD_CAT_ID"])
-                self.listWidget.addItem(item)
-                self._items.append((item, category))
+            row = row.iloc[0]
+            item = QListWidgetItem(row["OBJECT_NAME"])
+            item.setData(Qt.UserRole, norad)
+            self.listWidget.addItem(item)
 
     def filterSatelliteList(self, text):
         text = text.lower()
@@ -208,12 +222,37 @@ class SatelliteDockWidget(QDockWidget):
             return
         menu = QMenu(self)
         actionToggle = menu.addAction("Toggle Visibility")
-        actionRemove = menu.addAction("Remove from Selection")
+        actionRemove = menu.addAction("Remove Object")
         selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
         if selectedAction == actionToggle:
-            self.toggleVisibilityRequested.emit(noradId)
+            self.toggleVisibility.emit(noradId)
         elif selectedAction == actionRemove:
-            self.removeSatellite(noradId)
+            self.removeObject.emit([noradId])
+            self.listWidget.takeItem(self.listWidget.row(item))
+
+    def openAddDialog(self):
+        if self.database is None:
+            return
+        dialog = AddObjectDialog(self.database, self)
+        if dialog.exec_():
+            if dialog.selectedNoradIndices:
+                self.addObject.emit(dialog.selectedNoradIndices)
+
+    def addItems(self, database, noradIndices):
+        self.database = database
+        for norad in noradIndices:
+            if any(item.data(Qt.UserRole) == norad for item, _ in self._items):
+                continue
+            try:
+                row = database.dataFrame.loc[database.dataFrame["NORAD_CAT_ID"] == norad].iloc[0]
+            except IndexError:
+                continue
+            item = QListWidgetItem(row["OBJECT_NAME"])
+            item.setData(Qt.UserRole, norad)
+            self.listWidget.addItem(item)
+            self._items.append((item, None))
+
+
 
 
 class CentralViewWidget(QWidget):
