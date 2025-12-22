@@ -1,4 +1,7 @@
 import os
+from datetime import datetime
+
+import numpy as np
 import qdarktheme
 import time
 
@@ -11,6 +14,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
+from src.core.orbitalEngine import OrbitalMechanicsEngine
 from src.core.tleDatabase import TLEDatabase
 from src.gui.objects import SimulationClock, AddObjectDialog
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
@@ -31,8 +35,9 @@ class MainWindow(QMainWindow):
         # APPEARANCE
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
 
-        # CENTRAL MAP WIDGET
-        self.centralViewWidget = CentralViewWidget(self)
+        # CENTRAL MAP WIDGET & CLOCK
+        self.clock = SimulationClock()
+        self.centralViewWidget = CentralViewWidget(self.clock, self)
         self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
@@ -93,6 +98,9 @@ class MainWindow(QMainWindow):
     def setDatabase(self, database: TLEDatabase):
         self.tleDatabase = database
         self.satelliteDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.mapWidget.setDatabase(database)
+        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings["VISUALIZATION"]["SELECTED_OBJECTS"]
+        self.clock.play()
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -105,11 +113,13 @@ class MainWindow(QMainWindow):
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
         self.saveSettings()
         self.satelliteDock.addItems(self.tleDatabase, noradIndices)
+        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings['VISUALIZATION']['SELECTED_OBJECTS']
 
     def removeSelectedObjects(self, noradIndices):
         for index in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
         self.saveSettings()
+        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings['VISUALIZATION']['SELECTED_OBJECTS']
 
     def closeEvent(self, event):
         self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
@@ -125,27 +135,46 @@ class MapWidget(QWidget):
         super().__init__(parent)
         self.clock = clock
         self.clock.timeChanged.connect(self.updateMap)
+        self.database = None
+        self.visibleNoradIndices = []
+        self.objectArtists = {}
+        self.engine = OrbitalMechanicsEngine()
 
+        self._setupMap()
+
+    def _setupMap(self):
         fig = plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
-        ax = fig.add_subplot(111, projection=ccrs.PlateCarree(), facecolor='#1e1e1e')
-        ax.add_feature(cfeature.BORDERS.with_scale('50m'), edgecolor='white')
-        ax.add_feature(cfeature.OCEAN.with_scale('50m'), facecolor='#001122')
-        ax.coastlines(color='white', resolution="50m")
-        ax.set_global()
-
-        ax.spines['geo'].set_edgecolor('white')
-        ax.tick_params(colors='white', which='both')
-        ax.xaxis.label.set_color('white')
-        ax.yaxis.label.set_color('white')
-
+        self.ax = fig.add_subplot(111, projection=ccrs.PlateCarree(), facecolor='#1e1e1e')
+        self.ax.add_feature(cfeature.BORDERS.with_scale('50m'), edgecolor='white')
+        self.ax.add_feature(cfeature.OCEAN.with_scale('50m'), facecolor='#001122')
+        self.ax.coastlines(color='white', resolution="50m")
+        self.ax.set_global()
         fig.subplots_adjust(left=0, right=0.5, top=0.5, bottom=0)
-        fig.tight_layout(pad=1)
+        fig.tight_layout(pad=0.2)
         self.canvas = FigureCanvas(fig)
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
 
-    def updateMap(self, simulationTime: float):
-        pass
+    def setDatabase(self, database):
+        self.database = database
+
+    def updateMap(self, simulationTime: datetime):
+        if self.database is None:
+            return
+        for artist in self.objectArtists.values():
+            artist.remove()
+        self.objectArtists.clear()
+        for noradIndex in self.visibleNoradIndices:
+            try:
+                sat = self.database.getSatrec(noradIndex)
+                state = self.engine.satelliteState(sat, simulationTime)
+                longitude, latitude = np.rad2deg(state["longitude"]), np.rad2deg(state["latitude"])
+                artist = self.ax.plot(longitude, latitude, marker="o", markersize=8, color="red", transform=ccrs.PlateCarree())[0]
+                self.objectArtists[noradIndex] = artist
+            except Exception as e:
+                print(f"Map update failed for {noradIndex}: {e}")
+
+        self.canvas.draw_idle()
 
 
 class SatelliteDockWidget(QDockWidget):
@@ -225,7 +254,7 @@ class SatelliteDockWidget(QDockWidget):
         actionRemove = menu.addAction("Remove Object")
         selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
         if selectedAction == actionToggle:
-            self.toggleVisibility.emit(noradId)
+            self.toggleVisibility.emit([noradId])
         elif selectedAction == actionRemove:
             self.removeObject.emit([noradId])
             self.listWidget.takeItem(self.listWidget.row(item))
@@ -256,12 +285,12 @@ class SatelliteDockWidget(QDockWidget):
 
 
 class CentralViewWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, clock, parent=None):
         super().__init__(parent)
+        self.clock = clock
         mainLayout = QVBoxLayout(self)
         mainLayout.setContentsMargins(0, 0, 0, 0)
         mainLayout.setSpacing(0)
-        self.clock = SimulationClock()
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.North)
         self.mapWidget = MapWidget(self.clock)

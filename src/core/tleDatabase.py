@@ -28,6 +28,7 @@ class TLEDatabase:
         self.rows = []  # <<< FAST ACCUMULATION LIST
         self.dataFrame = None
         os.makedirs(self.tleDataDir, exist_ok=True)
+        self._satrecCache = {}
 
     def _fileNeedsUpdate(self, path):
         if not os.path.exists(path):
@@ -88,11 +89,10 @@ class TLEDatabase:
         self.dataFrame = pd.DataFrame(self.rows)
 
     def getSatrec(self, norad_id):
-        row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == norad_id]
-        if row.empty:
-            raise ValueError(f"Satellite NORAD ID {norad_id} not found")
-        row = row.iloc[0]
-        return Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
+        if norad_id not in self._satrecCache:
+            row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == norad_id].iloc[0]
+            self._satrecCache[norad_id] = Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
+        return self._satrecCache[norad_id]
 
 
 class TLELoaderWorker(QObject):
