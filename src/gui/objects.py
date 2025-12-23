@@ -1,3 +1,5 @@
+import time
+
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
@@ -11,21 +13,27 @@ class SimulationClock(QObject):
 
     def __init__(self, startTime=None, parent=None):
         super().__init__(parent)
+
         self.currentTime = startTime or datetime.utcnow()
         self.speed = 1.0
         self.running = False
-        self.timer = QTimer()
+        self._lastRealTime = time.perf_counter()
+        self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
-        self.timer.start(33)
+        self.timer.start(30)
 
     def _tick(self):
+        now = time.perf_counter()
+        realDelta = now - self._lastRealTime
+        self._lastRealTime = now
         if not self.running:
             return
-        delta = timedelta(seconds=self.speed * 0.033)
-        self.currentTime += delta
+        simDelta = timedelta(seconds=realDelta * self.speed)
+        self.currentTime += simDelta
         self.timeChanged.emit(self.currentTime)
 
     def play(self):
+        self._lastRealTime = time.perf_counter()
         self.running = True
         self.stateChanged.emit(True)
 
@@ -36,12 +44,13 @@ class SimulationClock(QObject):
     def toggle(self):
         self.play() if not self.running else self.pause()
 
-    def setSpeed(self, speed):
-        self.speed = speed
-        self.speedChanged.emit(speed)
+    def setSpeed(self, speed: float):
+        self.speed = max(0.0, speed)
+        self.speedChanged.emit(self.speed)
 
-    def setTime(self, newTime):
+    def setTime(self, newTime: datetime):
         self.currentTime = newTime
+        self._lastRealTime = time.perf_counter()
         self.timeChanged.emit(self.currentTime)
 
 
