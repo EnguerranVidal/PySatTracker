@@ -5,7 +5,7 @@ import numpy as np
 import qdarktheme
 import time
 
-from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal
+from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import QCloseEvent
 
@@ -16,7 +16,7 @@ import cartopy.feature as cfeature
 
 from src.core.orbitalEngine import OrbitalMechanicsEngine
 from src.core.tleDatabase import TLEDatabase
-from src.gui.objects import SimulationClock, AddObjectDialog
+from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
 
@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self.tleDatabase = database
         self.satelliteDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
         self.centralViewWidget.mapWidget.setDatabase(database)
-        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings["VISUALIZATION"]["SELECTED_OBJECTS"]
+        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
         self.clock.play()
 
     def loadSettings(self):
@@ -113,15 +113,21 @@ class MainWindow(QMainWindow):
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
         self.saveSettings()
         self.satelliteDock.addItems(self.tleDatabase, noradIndices)
-        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings['VISUALIZATION']['SELECTED_OBJECTS']
+        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
 
     def removeSelectedObjects(self, noradIndices):
         for index in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
         self.saveSettings()
-        self.centralViewWidget.mapWidget.visibleNoradIndices = self.settings['VISUALIZATION']['SELECTED_OBJECTS']
+        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
 
     def closeEvent(self, event):
+        # STOPPING MAP UPDATES
+        self.clock.pause()
+        mapWidget = self.centralViewWidget.mapWidget
+        mapWidget.stopOrbitWorker()
+
+        # SAVING SETTINGS
         self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
@@ -134,11 +140,15 @@ class MapWidget(QWidget):
     def __init__(self, clock, parent=None):
         super().__init__(parent)
         self.clock = clock
-        self.clock.timeChanged.connect(self.updateMap)
-        self.database = None
-        self.visibleNoradIndices = []
         self.objectArtists = {}
-        self.engine = OrbitalMechanicsEngine()
+
+        # ORBITAL CALCULATIONS WORKER
+        self.workerThread = QThread(self)
+        self.orbitWorker = OrbitWorker(None)
+        self.orbitWorker.moveToThread(self.workerThread)
+        self.orbitWorker.positionsReady.connect(self._applyPositions)
+        self.clock.timeChanged.connect(self.orbitWorker.compute)
+        self.workerThread.start()
 
         self._setupMap()
 
@@ -156,25 +166,35 @@ class MapWidget(QWidget):
         layout.addWidget(self.canvas)
 
     def setDatabase(self, database):
-        self.database = database
+        self.orbitWorker.database = database
 
-    def updateMap(self, simulationTime: datetime):
-        if self.database is None:
-            return
-        for artist in self.objectArtists.values():
-            artist.remove()
-        self.objectArtists.clear()
-        for noradIndex in self.visibleNoradIndices:
-            try:
-                sat = self.database.getSatrec(noradIndex)
-                state = self.engine.satelliteState(sat, simulationTime)
-                longitude, latitude = np.rad2deg(state["longitude"]), np.rad2deg(state["latitude"])
+    def setVisibleNoradIndices(self, noradIndices):
+        self.orbitWorker.visibleNoradIndices = noradIndices
+
+    def _applyPositions(self, positions: dict):
+        # REMOVE MISSING SATELLITES
+        for norad in list(self.objectArtists.keys()):
+            if norad not in positions:
+                self.objectArtists[norad].remove()
+                del self.objectArtists[norad]
+        # UPDATE / CREATE ARTISTS
+        for norad, (longitude, latitude) in positions.items():
+            if norad in self.objectArtists:
+                artist = self.objectArtists[norad]
+                artist.set_data([longitude], [latitude])
+            else:
                 artist = self.ax.plot(longitude, latitude, marker="o", markersize=8, color="red", transform=ccrs.PlateCarree())[0]
-                self.objectArtists[noradIndex] = artist
-            except Exception as e:
-                print(f"Map update failed for {noradIndex}: {e}")
-
+                self.objectArtists[norad] = artist
         self.canvas.draw_idle()
+
+    def stopOrbitWorker(self):
+        try:
+            self.clock.timeChanged.disconnect(self.orbitWorker.compute)
+        except TypeError:
+            pass
+        self.orbitWorker.stop()
+        self.workerThread.quit()
+        self.workerThread.wait()
 
 
 class SatelliteDockWidget(QDockWidget):

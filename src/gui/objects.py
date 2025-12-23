@@ -1,9 +1,12 @@
 import time
 
+import numpy as np
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
+
+from src.core.orbitalEngine import OrbitalMechanicsEngine
 
 
 class SimulationClock(QObject):
@@ -52,6 +55,34 @@ class SimulationClock(QObject):
         self.currentTime = newTime
         self._lastRealTime = time.perf_counter()
         self.timeChanged.emit(self.currentTime)
+
+
+class OrbitWorker(QObject):
+    positionsReady = pyqtSignal(dict)
+
+    def __init__(self, database):
+        super().__init__()
+        self.engine = OrbitalMechanicsEngine()
+        self.database = database
+        self.visibleNoradIndices = []
+        self._running = True
+
+    def stop(self):
+        self._running = False
+
+    def compute(self, simulationTime: datetime):
+        if not self._running or self.database is None:
+            return
+        results = {}
+        for noradIndex in self.visibleNoradIndices:
+            try:
+                satellite = self.database.getSatrec(noradIndex)
+                state = self.engine.satelliteState(satellite, simulationTime)
+                longitude, latitude = np.rad2deg(state["longitude"]), np.rad2deg(state["latitude"])
+                results[noradIndex] = (longitude, latitude)
+            except Exception as e:
+                print(f"Worker error {noradIndex}: {e}")
+        self.positionsReady.emit(results)
 
 
 class AddObjectDialog(QDialog):
