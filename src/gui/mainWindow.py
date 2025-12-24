@@ -4,18 +4,18 @@ from datetime import datetime
 import numpy as np
 import qdarktheme
 import time
+import imageio
+import pyqtgraph as pg
+from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread
 from PyQt5.QtWidgets import *
-from PyQt5.QtGui import QCloseEvent
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-from src.core.orbitalEngine import OrbitalMechanicsEngine
-from src.core.tleDatabase import TLEDatabase
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
@@ -132,39 +132,42 @@ class MainWindow(QMainWindow):
 
 
 class MapWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, mapImagePath="src/assets/world_map.png"):
         super().__init__(parent)
         self.objectArtists = {}
+        self.mapImagePath = mapImagePath
         self._setupMap()
 
     def _setupMap(self):
-        fig = plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
-        self.ax = fig.add_subplot(111, projection=ccrs.PlateCarree(), facecolor='#1e1e1e')
-        self.ax.add_feature(cfeature.BORDERS.with_scale('50m'), edgecolor='white')
-        self.ax.add_feature(cfeature.OCEAN.with_scale('50m'), facecolor='#001122')
-        self.ax.coastlines(color='white', resolution="50m")
-        self.ax.set_global()
-        fig.subplots_adjust(left=0, right=0.5, top=0.5, bottom=0)
-        fig.tight_layout(pad=0.2)
-        self.canvas = FigureCanvas(fig)
+        # LOAD WORLD MAP
+        if not os.path.exists(self.mapImagePath):
+            raise FileNotFoundError(f"Map image not found at {self.mapImagePath}")
+        img = imageio.imread(self.mapImagePath)
+        img = np.rot90(img, k=-1)
+        self.mapImage = pg.ImageItem(img)
+        self.mapWidth, self.mapHeight = self.mapImage.width(), self.mapImage.height()
+        # SETUP WORLD MAP VIEW
+        self.view = GraphicsLayoutWidget()
+        self.plot = self.view.addPlot()
+        self.plot.addItem(self.mapImage)
+        self.plot.setAspectLocked(True)
+        self.plot.hideAxis('bottom')
+        self.plot.hideAxis('left')
         layout = QVBoxLayout(self)
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.view)
+        # SATELLITE SCATTER
+        self.scatter = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(255, 0, 0))
+        self.plot.addItem(self.scatter)
+
+    def lonlatToCartesian(self, longitude, latitude):
+        return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
 
     def updatePositions(self, positions: dict):
-        # REMOVE MISSING SATELLITES
-        for norad in list(self.objectArtists.keys()):
-            if norad not in positions:
-                self.objectArtists[norad].remove()
-                del self.objectArtists[norad]
-        # UPDATE / CREATE ARTISTS
+        spots = []
         for norad, (longitude, latitude) in positions.items():
-            if norad in self.objectArtists:
-                artist = self.objectArtists[norad]
-                artist.set_data([longitude], [latitude])
-            else:
-                artist = self.ax.plot(longitude, latitude, marker="o", markersize=8, color="red", transform=ccrs.PlateCarree())[0]
-                self.objectArtists[norad] = artist
-        self.canvas.draw_idle()
+            x, y = self.lonlatToCartesian(longitude, latitude)
+            spots.append({'pos': (x, y), 'data': norad})
+        self.scatter.setData(spots)
 
 
 class SatelliteDockWidget(QDockWidget):
@@ -208,7 +211,6 @@ class SatelliteDockWidget(QDockWidget):
     def populate(self, database, selectedNoradIds):
         self.database = database
         self.listWidget.clear()
-        print(database.dataFrame)
         for norad in selectedNoradIds:
             row = database.dataFrame[database.dataFrame["NORAD_CAT_ID"] == norad]
             if row.empty:

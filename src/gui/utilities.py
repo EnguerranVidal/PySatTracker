@@ -25,14 +25,19 @@ def saveSettingsJson(path, settings):
         json.dump(settings, f)
 
 def generateWorldMap(filename="world_map.png", width=8192, height=4096, dpi=300):
+    width //= 2
+    height //= 2
     fig = plt.figure(figsize=(width / dpi, height / dpi), dpi=dpi)
     ax = plt.axes(projection=ccrs.PlateCarree())
     ax.set_global()
     ax.axis("off")
     ax.add_feature(cfeature.OCEAN.with_scale("50m"), facecolor="#001122")
     ax.add_feature(cfeature.LAND.with_scale("50m"), facecolor="#2c2c2c")
-    ax.add_feature(cfeature.BORDERS.with_scale("50m"), edgecolor="white", linewidth=0.3)
-    ax.coastlines(resolution="50m", color="white", linewidth=0.4)
+    ax.add_feature(cfeature.BORDERS.with_scale("50m"), edgecolor="white", linewidth=0.6)
+    ax.coastlines(resolution="50m", color="white", linewidth=0.8)
     plt.savefig(filename, bbox_inches="tight", pad_inches=0, facecolor=fig.get_facecolor())
     plt.close(fig)
     print(f"Saved {filename}")
+
+if __name__ == "__main__":
+    generateWorldMap(filename="../assets/world_map.png")
