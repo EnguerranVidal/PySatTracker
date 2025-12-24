@@ -35,9 +35,8 @@ class MainWindow(QMainWindow):
         # APPEARANCE
         qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
 
-        # CENTRAL MAP WIDGET & CLOCK
-        self.clock = SimulationClock()
-        self.centralViewWidget = CentralViewWidget(self.clock, self)
+        # CENTRAL VISUALIZATION WIDGET
+        self.centralViewWidget = CentralViewWidget(self)
         self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
@@ -95,12 +94,12 @@ class MainWindow(QMainWindow):
         if not os.path.exists(self.noradPath):
             os.mkdir(self.noradPath)
 
-    def setDatabase(self, database: TLEDatabase):
+    def setDatabase(self, database):
         self.tleDatabase = database
+        self.centralViewWidget.setDatabase(database)
+        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
         self.satelliteDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
-        self.centralViewWidget.mapWidget.setDatabase(database)
-        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
-        self.clock.play()
+        self.centralViewWidget.start()
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -113,20 +112,16 @@ class MainWindow(QMainWindow):
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
         self.saveSettings()
         self.satelliteDock.addItems(self.tleDatabase, noradIndices)
-        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
 
     def removeSelectedObjects(self, noradIndices):
         for index in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
         self.saveSettings()
-        self.centralViewWidget.mapWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
 
     def closeEvent(self, event):
-        # STOPPING MAP UPDATES
-        self.clock.pause()
-        mapWidget = self.centralViewWidget.mapWidget
-        mapWidget.stopOrbitWorker()
-
+        self.centralViewWidget.close()
         # SAVING SETTINGS
         self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
         if not self.isMaximized():
@@ -137,19 +132,9 @@ class MainWindow(QMainWindow):
 
 
 class MapWidget(QWidget):
-    def __init__(self, clock, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.clock = clock
         self.objectArtists = {}
-
-        # ORBITAL CALCULATIONS WORKER
-        self.workerThread = QThread(self)
-        self.orbitWorker = OrbitWorker(None)
-        self.orbitWorker.moveToThread(self.workerThread)
-        self.orbitWorker.positionsReady.connect(self._applyPositions)
-        self.clock.timeChanged.connect(self.orbitWorker.compute)
-        self.workerThread.start()
-
         self._setupMap()
 
     def _setupMap(self):
@@ -165,13 +150,7 @@ class MapWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
 
-    def setDatabase(self, database):
-        self.orbitWorker.database = database
-
-    def setVisibleNoradIndices(self, noradIndices):
-        self.orbitWorker.visibleNoradIndices = noradIndices
-
-    def _applyPositions(self, positions: dict):
+    def updatePositions(self, positions: dict):
         # REMOVE MISSING SATELLITES
         for norad in list(self.objectArtists.keys()):
             if norad not in positions:
@@ -186,15 +165,6 @@ class MapWidget(QWidget):
                 artist = self.ax.plot(longitude, latitude, marker="o", markersize=8, color="red", transform=ccrs.PlateCarree())[0]
                 self.objectArtists[norad] = artist
         self.canvas.draw_idle()
-
-    def stopOrbitWorker(self):
-        try:
-            self.clock.timeChanged.disconnect(self.orbitWorker.compute)
-        except TypeError:
-            pass
-        self.orbitWorker.stop()
-        self.workerThread.quit()
-        self.workerThread.wait()
 
 
 class SatelliteDockWidget(QDockWidget):
@@ -238,6 +208,7 @@ class SatelliteDockWidget(QDockWidget):
     def populate(self, database, selectedNoradIds):
         self.database = database
         self.listWidget.clear()
+        print(database.dataFrame)
         for norad in selectedNoradIds:
             row = database.dataFrame[database.dataFrame["NORAD_CAT_ID"] == norad]
             if row.empty:
@@ -302,17 +273,50 @@ class SatelliteDockWidget(QDockWidget):
             self._items.append((item, None))
 
 
-
-
 class CentralViewWidget(QWidget):
-    def __init__(self, clock, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.clock = clock
-        mainLayout = QVBoxLayout(self)
-        mainLayout.setContentsMargins(0, 0, 0, 0)
-        mainLayout.setSpacing(0)
-        self.tabs = QTabWidget()
-        self.tabs.setTabPosition(QTabWidget.North)
-        self.mapWidget = MapWidget(self.clock)
-        self.tabs.addTab(self.mapWidget, "Map")
-        mainLayout.addWidget(self.tabs, stretch=1)
+        # CLOCK & ORBITS CALCULATIONS WORKER
+        self.clock = SimulationClock()
+        self.workerThread = QThread(self)
+        self.orbitWorker = OrbitWorker(None)
+        self.orbitWorker.moveToThread(self.workerThread)
+        self.clock.timeChanged.connect(self.orbitWorker.compute)
+        self.workerThread.start()
+
+        # MAIN TABS
+        self.mapWidget = MapWidget()
+        self.tabWidget = QTabWidget()
+        self.tabWidget.addTab(self.mapWidget, "Map")
+
+        # MAP LINKING
+        self.orbitWorker.positionsReady.connect(self._onPositionsReady)
+        self.tabWidget.currentChanged.connect(self._onTabChanged)
+        self.mapVisible = True
+
+        # MAIN LAYOUT
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.tabWidget)
+
+    def _onTabChanged(self, index):
+        self.mapVisible = (self.tabWidget.widget(index) is self.mapWidget)
+
+    def _onPositionsReady(self, positions: dict):
+        if self.mapVisible:
+            self.mapWidget.updatePositions(positions)
+
+    def setDatabase(self, database):
+        self.orbitWorker.database = database
+
+    def setVisibleNoradIndices(self, indices):
+        self.orbitWorker.visibleNoradIndices = indices
+
+    def start(self):
+        self.clock.play()
+
+    def closeEvent(self, event):
+        self.orbitWorker.stop()
+        self.workerThread.quit()
+        self.workerThread.wait()
+        super().closeEvent(event)
