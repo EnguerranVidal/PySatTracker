@@ -76,10 +76,18 @@ class OrbitWorker(QObject):
         results = {}
         for noradIndex in self.visibleNoradIndices:
             try:
+                calculations = {}
                 satellite = self.database.getSatrec(noradIndex)
                 state = self.engine.satelliteState(satellite, simulationTime)
+                groundLongitudes, groundLatitudes, groundElevations = self.engine.satelliteGroundTrack(satellite, simulationTime)
+                visibilityLongitudes, visibilityLatitudes = self.engine.satelliteVisibilityFootPrint(state, nbPoints=360)
                 longitude, latitude = np.rad2deg(state["longitude"]), np.rad2deg(state["latitude"])
-                results[noradIndex] = (longitude, latitude)
+                groundLongitudes, groundLatitudes = np.rad2deg(groundLongitudes), np.rad2deg(groundLatitudes)
+                visibilityLongitudes, visibilityLatitudes = np.rad2deg(visibilityLongitudes), np.rad2deg(visibilityLatitudes)
+                calculations['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
+                calculations['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
+                calculations['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
+                results[noradIndex] = calculations
             except Exception as e:
                 print(f"Worker error {noradIndex}: {e}")
         self.positionsReady.emit(results)

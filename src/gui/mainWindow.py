@@ -134,8 +134,8 @@ class MainWindow(QMainWindow):
 class MapWidget(QWidget):
     def __init__(self, parent=None, mapImagePath="src/assets/world_map.png"):
         super().__init__(parent)
-        self.objectArtists = {}
         self.mapImagePath = mapImagePath
+        self.objectSpots, self.objectGroundTracks, self.objectFootprints = {}, {}, {}
         self._setupMap()
 
     def _setupMap(self):
@@ -155,19 +155,40 @@ class MapWidget(QWidget):
         self.plot.hideAxis('left')
         layout = QVBoxLayout(self)
         layout.addWidget(self.view)
-        # SATELLITE SCATTER
-        self.scatter = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(255, 0, 0))
-        self.plot.addItem(self.scatter)
 
     def lonlatToCartesian(self, longitude, latitude):
         return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
 
-    def updatePositions(self, positions: dict):
-        spots = []
-        for norad, (longitude, latitude) in positions.items():
-            x, y = self.lonlatToCartesian(longitude, latitude)
-            spots.append({'pos': (x, y), 'data': norad})
-        self.scatter.setData(spots)
+    def updatePositions(self, data: dict):
+        # DELETING REMOVED OBJECT VISUALIZATION
+        for norad in list(self.objectSpots.keys()):
+            if norad not in data:
+                self.plot.removeItem(self.objectSpots[norad])
+                self.plot.removeItem(self.objectGroundTracks[norad])
+                self.plot.removeItem(self.objectFootprints[norad])
+                del self.objectSpots[norad]
+                del self.objectGroundTracks[norad]
+                del self.objectFootprints[norad]
+        # ADDING / UPDATING OBJECT VISUALIZATION
+        for norad, content in data.items():
+            x, y = self.lonlatToCartesian(content['POSITION']['LONGITUDE'], content['POSITION']['LATITUDE'])
+            if norad not in self.objectSpots:
+                spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(255, 0, 0))
+                self.objectSpots[norad] = spot
+                self.plot.addItem(self.objectSpots[norad])
+            self.objectSpots[norad].setData([x], [y])
+            gx, gy = self.lonlatToCartesian(content['GROUND_TRACK']['LONGITUDE'], content['GROUND_TRACK']['LATITUDE'])
+            if norad not in self.objectGroundTracks:
+                line = pg.PlotCurveItem(pen=pg.mkPen((0, 180, 255), width=1))
+                self.objectGroundTracks[norad] = line
+                # self.plot.addItem(self.objectGroundTracks[norad])
+            self.objectGroundTracks[norad].setData(gx, gy)
+            fx, fy = self.lonlatToCartesian(content['VISIBILITY']['LONGITUDE'], content['VISIBILITY']['LATITUDE'])
+            if norad not in self.objectFootprints:
+                pen = pg.mkPen((255, 255, 255), width=1)
+                self.objectFootprints[norad] = pg.PlotCurveItem(pen=pen)
+                self.plot.addItem(self.objectFootprints[norad])
+            self.objectFootprints[norad].setData(fx, fy)
 
 
 class SatelliteDockWidget(QDockWidget):

@@ -1,5 +1,5 @@
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from sgp4.api import Satrec, jday
 
 
@@ -89,9 +89,32 @@ class OrbitalMechanicsEngine:
         state = {'rECI': rEci, 'vECI': vEci, 'rECEF': rEcef, 'altitude': altitude, 'latitude': latitude, 'longitude': longitude}
         if obsLongitude is not None:
             enu = self.ecefToEnu(rEcef, obsLongitude, obsLatitude, obsAltitude)
-            azimuth, elevation, slantRange = self.enuToAzimuthElevation(enu)
-            state["azimuth"], state["elevation"], state["range"] = azimuth, elevation, slantRange
+            state["azimuth"], state["elevation"], state["range"] = self.enuToAzimuthElevation(enu)
         return state
+
+    def satelliteVisibilityFootPrint(self, state, nbPoints=360):
+        longitude, latitude, altitude = state["longitude"], state["latitude"], state["altitude"]
+        cosLatitude, sinLatitude = np.cos(latitude), np.sin(latitude)
+        localRadius = np.sqrt((self.equatorialRadius ** 2 * cosLatitude ** 2 + self.polarRadius ** 2 * sinLatitude ** 2) / (cosLatitude ** 2 + sinLatitude ** 2))
+        angleHorizon = np.arccos(localRadius / (localRadius + altitude))
+        circlePoints = np.linspace(0, 2 * np.pi, nbPoints)
+        cosHorizon, sinHorizon = np.cos(angleHorizon), np.sin(angleHorizon)
+        circleLatitude = np.arcsin(sinLatitude * cosHorizon + cosLatitude * sinHorizon * np.cos(circlePoints))
+        circleLongitude = longitude + np.arctan2(np.sin(circlePoints) * sinHorizon * cosLatitude, cosHorizon - sinLatitude * np.sin(circleLatitude))
+        circleLongitude = (circleLongitude + np.pi) % (2 * np.pi) - np.pi
+        return circleLongitude, circleLatitude
+
+    def satelliteGroundTrack(self, sat: Satrec, dt: datetime, nbPoints=360, nbPast=0.5, nbFuture=0.5):
+        orbitalPeriod = self.orbitalPeriod(sat)
+        times = np.linspace( - nbPast * orbitalPeriod, nbFuture * orbitalPeriod, nbPoints)
+        longitudes, latitudes, altitudes = np.empty(nbPoints), np.empty(nbPoints), np.empty(nbPoints)
+        for i, offset in enumerate(times):
+            t =  dt + timedelta(seconds=float(offset))
+            rEci, _ = self.propagateSgp4(sat, t)
+            rEcef = self.eciToEcef(rEci, t)
+            longitudes[i], latitudes[i], altitudes[i] = self.ecefToLongitudeLatitude(rEcef)
+        longitudes = (longitudes + np.pi) % (2 * np.pi) - np.pi
+        return longitudes, latitudes, altitudes
 
     def orbitalPeriod(self, sat: Satrec):
         return 2 * np.pi * np.sqrt(self.semiMajorAxis(sat) ** 3 / self.earthGravParameter)
