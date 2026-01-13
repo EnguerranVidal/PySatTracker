@@ -104,7 +104,7 @@ class OrbitalMechanicsEngine:
         circleLongitude = (circleLongitude + np.pi) % (2 * np.pi) - np.pi
         return circleLongitude, circleLatitude
 
-    def satelliteGroundTrack(self, sat: Satrec, dt: datetime, nbPoints=360, nbPast=0.5, nbFuture=0.5):
+    def satelliteGroundTrack(self, sat: Satrec, dt: datetime, nbPoints=361, nbPast=0.5, nbFuture=0.5):
         orbitalPeriod = self.orbitalPeriod(sat)
         times = np.linspace( - nbPast * orbitalPeriod, nbFuture * orbitalPeriod, nbPoints)
         longitudes, latitudes, altitudes = np.empty(nbPoints), np.empty(nbPoints), np.empty(nbPoints)
@@ -116,11 +116,13 @@ class OrbitalMechanicsEngine:
         longitudes = (longitudes + np.pi) % (2 * np.pi) - np.pi
         return longitudes, latitudes, altitudes
 
-    def orbitalPeriod(self, sat: Satrec):
-        return 2 * np.pi * np.sqrt(self.semiMajorAxis(sat) ** 3 / self.earthGravParameter)
+    @staticmethod
+    def orbitalPeriod(sat: Satrec):
+        meanMotion = sat.no / 60
+        return 2 * np.pi / meanMotion
 
     def semiMajorAxis(self, sat: Satrec):
-        meanMotion = sat.no_kozai * 2 * np.pi / 86400.0
+        meanMotion = sat.no / 60
         return np.cbrt(self.earthGravParameter / meanMotion ** 2)
 
     @staticmethod

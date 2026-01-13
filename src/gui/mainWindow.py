@@ -135,7 +135,7 @@ class MapWidget(QWidget):
     def __init__(self, parent=None, mapImagePath="src/assets/world_map.png"):
         super().__init__(parent)
         self.mapImagePath = mapImagePath
-        self.objectSpots, self.objectGroundTracks, self.objectFootprints = {}, {}, {}
+        self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
         self._setupMap()
 
     def _setupMap(self):
@@ -156,40 +156,100 @@ class MapWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.view)
 
-    def lonlatToCartesian(self, longitude, latitude):
+    def _lonlatToCartesian(self, longitude, latitude):
+        longitude, latitude = np.asarray(longitude), np.asarray(latitude)
         return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
+
+    @staticmethod
+    def _arrowAngle(x0, y0, x1, y1):
+        return - np.degrees(np.arctan2(y1 - y0, x1 - x0)) + 180
+
+    @staticmethod
+    def _splitWrapSegment(longitudes, latitudes, threshold=180):
+        longitudes, latitudes = np.asarray(longitudes), np.asarray(latitudes)
+        if longitudes.size < 2:
+            return [(longitudes, latitudes)]
+        diffLongitudes = np.diff(longitudes)
+        jumps = np.abs(diffLongitudes) > threshold
+        if not np.any(jumps):
+            return [(longitudes, latitudes)]
+        splitIndices = np.where(jumps)[0] + 1
+        longitudeSegments = np.split(longitudes, splitIndices)
+        latitudeSegments = np.split(latitudes, splitIndices)
+        # ADDING BORDER POINTS
+        for k, index in enumerate(splitIndices):
+            previousLongitude, nextLongitude = longitudes[index - 1], longitudes[index]
+            previousLatitude, nextLatitude = latitudes[index - 1], latitudes[index]
+            if previousLongitude > nextLongitude:
+                longitudeA, longitudeB = previousLongitude, nextLongitude + 360
+                borderA, borderB = 180, -180
+            else:
+                longitudeA, longitudeB = previousLongitude + 360, nextLongitude
+                borderA, borderB = -180, 180
+            t = (borderA - longitudeA) / (longitudeB - longitudeA)
+            latitudeBorder = previousLatitude + t * (nextLatitude - previousLatitude)
+            longitudeSegments[k] = np.append(longitudeSegments[k], borderA)
+            latitudeSegments[k] = np.append(latitudeSegments[k], latitudeBorder)
+            longitudeSegments[k + 1] = np.insert(longitudeSegments[k + 1], 0, borderB)
+            latitudeSegments[k + 1] = np.insert(latitudeSegments[k + 1], 0, latitudeBorder)
+        return list(zip(longitudeSegments, latitudeSegments))
 
     def updatePositions(self, data: dict):
         # DELETING REMOVED OBJECT VISUALIZATION
         for norad in list(self.objectSpots.keys()):
             if norad not in data:
                 self.plot.removeItem(self.objectSpots[norad])
-                self.plot.removeItem(self.objectGroundTracks[norad])
-                self.plot.removeItem(self.objectFootprints[norad])
+                self.plot.removeItem(self.objectArrows[norad])
+                for item in self.objectGroundTracks[norad]:
+                    self.plot.removeItem(item)
+                for item in self.objectFootprints[norad]:
+                    self.plot.removeItem(item)
                 del self.objectSpots[norad]
                 del self.objectGroundTracks[norad]
                 del self.objectFootprints[norad]
+                del self.objectArrows[norad]
         # ADDING / UPDATING OBJECT VISUALIZATION
         for norad, content in data.items():
-            x, y = self.lonlatToCartesian(content['POSITION']['LONGITUDE'], content['POSITION']['LATITUDE'])
+            # GROUND TRACKS
+            groundLongitudes, groundLatitudes = content['GROUND_TRACK']['LONGITUDE'], content['GROUND_TRACK']['LATITUDE']
+            groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
+            for item in self.objectGroundTracks.get(norad, []):
+                self.plot.removeItem(item)
+            self.objectGroundTracks[norad] = []
+            for segmentLongitudes, segmentLatitudes in groundSegments:
+                gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
+                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen((255, 0, 0), width=1))
+                self.objectGroundTracks[norad].append(curve)
+                self.plot.addItem(self.objectGroundTracks[norad][-1])
+            # GROUND TRACK ARROW
+            lastLongitude, lastLatitude = groundSegments[-1]
+            x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
+            x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
+            angle = self._arrowAngle(x0, y0, x1, y1)
+            if norad not in self.objectArrows:
+                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=12, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0))
+                self.objectArrows[norad] = arrow
+                self.plot.addItem(self.objectArrows[norad])
+            self.objectArrows[norad].setStyle(angle=angle)
+            self.objectArrows[norad].setPos(x1, y1)
+            # VISIBILITY FOOTPRINT
+            footLongitudes, footLatitudes = content['VISIBILITY']['LONGITUDE'], content['VISIBILITY']['LATITUDE']
+            footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
+            for item in self.objectFootprints.get(norad, []):
+                self.plot.removeItem(item)
+            self.objectFootprints[norad] = []
+            for segmentLongitudes, segmentLatitudes in footSegments:
+                fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
+                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen((0, 180, 255), width=1))
+                self.objectFootprints[norad].append(curve)
+                self.plot.addItem(self.objectFootprints[norad][-1])
+            # OBJECT POSITIONS
+            x, y = self._lonlatToCartesian(content['POSITION']['LONGITUDE'], content['POSITION']['LATITUDE'])
             if norad not in self.objectSpots:
                 spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(255, 0, 0))
                 self.objectSpots[norad] = spot
                 self.plot.addItem(self.objectSpots[norad])
             self.objectSpots[norad].setData([x], [y])
-            gx, gy = self.lonlatToCartesian(content['GROUND_TRACK']['LONGITUDE'], content['GROUND_TRACK']['LATITUDE'])
-            if norad not in self.objectGroundTracks:
-                line = pg.PlotCurveItem(pen=pg.mkPen((0, 180, 255), width=1))
-                self.objectGroundTracks[norad] = line
-                # self.plot.addItem(self.objectGroundTracks[norad])
-            self.objectGroundTracks[norad].setData(gx, gy)
-            fx, fy = self.lonlatToCartesian(content['VISIBILITY']['LONGITUDE'], content['VISIBILITY']['LATITUDE'])
-            if norad not in self.objectFootprints:
-                pen = pg.mkPen((255, 255, 255), width=1)
-                self.objectFootprints[norad] = pg.PlotCurveItem(pen=pen)
-                self.plot.addItem(self.objectFootprints[norad])
-            self.objectFootprints[norad].setData(fx, fy)
-
 
 class SatelliteDockWidget(QDockWidget):
     addObject = pyqtSignal(list)
