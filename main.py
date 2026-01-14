@@ -13,7 +13,7 @@ def main():
     qdarktheme.enable_hi_dpi()
     app = QApplication(sys.argv)
     currentDirectory = os.path.dirname(os.path.realpath(__file__))
-    dataDir = os.path.join(currentDirectory, "data", "norad")
+    dataDir = os.path.join(currentDirectory, "data")
     splash = LoadingScreen()
     splash.show()
 

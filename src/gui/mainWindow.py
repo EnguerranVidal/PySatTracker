@@ -40,10 +40,15 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
-        self.satelliteDock = SatelliteDockWidget(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.satelliteDock)
-        self.satelliteDock.addObject.connect(self.addSelectedObjects)
-        self.satelliteDock.removeObject.connect(self.removeSelectedObjects)
+        self.objectListDock = ObjectListDockWidget(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.objectListDock)
+        self.objectListDock.objectSelected.connect(self.onObjectSelected)
+        self.objectListDock.addObject.connect(self.addSelectedObjects)
+        self.objectListDock.removeObject.connect(self.removeSelectedObjects)
+
+        # OBJECT INFO DOCK WIDGET
+        self.objectInfoDock = ObjectInfoDockWidget(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
 
         # TLE DATABASE
         self.tleDatabase = None
@@ -98,7 +103,7 @@ class MainWindow(QMainWindow):
         self.tleDatabase = database
         self.centralViewWidget.setDatabase(database)
         self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
-        self.satelliteDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.objectListDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
         self.centralViewWidget.start()
 
     def loadSettings(self):
@@ -111,7 +116,7 @@ class MainWindow(QMainWindow):
         for noradIndex in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
         self.saveSettings()
-        self.satelliteDock.addItems(self.tleDatabase, noradIndices)
+        self.objectListDock.addItems(self.tleDatabase, noradIndices)
         self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
 
     def removeSelectedObjects(self, noradIndices):
@@ -119,6 +124,13 @@ class MainWindow(QMainWindow):
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
         self.saveSettings()
         self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+
+    def onObjectSelected(self, noradIndex):
+        if len(noradIndex) == 0:
+            self.objectInfoDock.clear()
+            return
+        row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame["NORAD_CAT_ID"] == noradIndex[0]].iloc[0]
+        self.objectInfoDock.setObject(row)
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -255,7 +267,7 @@ class MapWidget(QWidget):
                 self.plot.addItem(self.objectSpots[norad])
             self.objectSpots[norad].setData([x], [y])
 
-class SatelliteDockWidget(QDockWidget):
+class ObjectListDockWidget(QDockWidget):
     addObject = pyqtSignal(list)
     objectSelected = pyqtSignal(list)
     toggleVisibility = pyqtSignal(list)
@@ -274,7 +286,7 @@ class SatelliteDockWidget(QDockWidget):
         topBar = QHBoxLayout()
         self.searchBar = QLineEdit()
         self.searchBar.setPlaceholderText("Search selected satellites…")
-        self.searchBar.textChanged.connect(self.filterSatelliteList)
+        self.searchBar.textChanged.connect(self.filterObjectList)
         self.addButton = QPushButton("+")
         self.addButton.setFixedWidth(28)
         self.addButton.setToolTip("Add satellites")
@@ -285,6 +297,7 @@ class SatelliteDockWidget(QDockWidget):
         self.listWidget = QListWidget()
         self.listWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.listWidget.customContextMenuRequested.connect(self.showContextMenu)
+        self.listWidget.itemSelectionChanged.connect(self.onSelectionChanged)
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -305,7 +318,7 @@ class SatelliteDockWidget(QDockWidget):
             item.setData(Qt.UserRole, norad)
             self.listWidget.addItem(item)
 
-    def filterSatelliteList(self, text):
+    def filterObjectList(self, text):
         text = text.lower()
         visibleCategories = set()
         for item, category in self._items:
@@ -358,6 +371,60 @@ class SatelliteDockWidget(QDockWidget):
             item.setData(Qt.UserRole, norad)
             self.listWidget.addItem(item)
             self._items.append((item, None))
+
+    def onSelectionChanged(self):
+        items = self.listWidget.selectedItems()
+        if not items:
+            self.objectSelected.emit([])
+            return
+        noradId = items[0].data(Qt.UserRole)
+        self.objectSelected.emit([noradId])
+
+
+class ObjectInfoDockWidget(QDockWidget):
+    def __init__(self, parent=None):
+        super().__init__("Object Info", parent)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self._labels = {}
+        self._setupUi()
+
+    def _setupUi(self):
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.addWidget(self._createGroup("Identification", [("Name", "OBJECT_NAME"), ("NORAD ID", "NORAD_CAT_ID"), ("COSPAR ID", "OBJECT_ID"),]))
+        layout.addWidget(self._createGroup("Status", [("Object Type", "OBJECT_TYPE"), ("Owner", "OWNER"), ("Operational Status", "OPS_STATUS_CODE"),]))
+        layout.addWidget(self._createGroup("Orbit (TLE)", [("Inclination (deg)", "INCLINATION"), ("Eccentricity", "ECCENTRICITY"), ("Mean Motion (rev/day)", "MEAN_MOTION"), ("B*", "BSTAR"),]))
+        layout.addStretch()
+        self.setWidget(container)
+
+    def _createGroup(self, title, fields):
+        groupBox = QGroupBox(title)
+        formLayout = QFormLayout()
+        for labelText, fieldKey in fields:
+            label = QLabel("---")
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            formLayout.addRow(QLabel(labelText + ":"), label)
+            self._labels[fieldKey] = label
+        groupBox.setLayout(formLayout)
+        return groupBox
+
+    def clear(self):
+        for label in self._labels.values():
+            label.setText("---")
+
+    def setObject(self, row):
+        if row is None:
+            self.clear()
+            return
+        for key, label in self._labels.items():
+            value = row.get(key, None)
+            if value is None or value == "":
+                label.setText("—")
+            else:
+                label.setText(str(value))
 
 
 class CentralViewWidget(QWidget):

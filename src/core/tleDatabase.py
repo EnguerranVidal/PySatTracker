@@ -20,11 +20,13 @@ class TLEDatabase:
         "iridium": "https://celestrak.org/NORAD/elements/gp.php?GROUP=iridium&FORMAT=tle",
         "geosynchronous": "https://celestrak.org/NORAD/elements/gp.php?GROUP=geo&FORMAT=tle",
     }
-
+    SATCAT_URL = "https://celestrak.org/pub/satcat.csv"
+    SATCAT_FILENAME = "satcat.csv"
+    SATCAT_ORBITAL_COLUMNS = {"INCLINATION", "PERIOD", "APOGEE", "PERIGEE"}
     UPDATE_INTERVAL = timedelta(days=2)
 
-    def __init__(self, tleDataDir="data/norad"):
-        self.tleDataDir = tleDataDir
+    def __init__(self, dataDir="data"):
+        self.dataDir, self.tleDataDir = dataDir, os.path.join(dataDir, 'norad')
         self.rows = []  # <<< FAST ACCUMULATION LIST
         self.dataFrame = None
         os.makedirs(self.tleDataDir, exist_ok=True)
@@ -46,9 +48,20 @@ class TLEDatabase:
                 f.write(res.text)
         return localPath
 
+    def _loadSatCat(self):
+        path = os.path.join(self.dataDir, self.SATCAT_FILENAME)
+        if self._fileNeedsUpdate(path):
+            print("Downloading SATCAT...")
+            import requests
+            r = requests.get(self.SATCAT_URL, timeout=10)
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                f.write(r.content)
+        self.satcat = pd.read_csv(path)
+
     @staticmethod
     def _parseTLE(name, line1, line2, tag=None, source=None):
-        idNorad = int(line1[2:7])
+        noradIndex = int(line1[2:7])
 
         # EPOCH CONVERSION
         epochString = line1[18:32]
@@ -64,7 +77,7 @@ class TLEDatabase:
         revNumber = int(line2[63:68])
 
         return {
-            "OBJECT_NAME": name, "NORAD_CAT_ID": idNorad, "EPOCH": jdEpoch,
+            "OBJECT_NAME": name, "NORAD_CAT_ID": noradIndex, "EPOCH": jdEpoch,
             "MEAN_MOTION": meanMotion, "ECCENTRICITY": eccentricity, "INCLINATION": inclination,
             "RA_OF_ASC_NODE": raan, "ARG_OF_PERICENTER": argPerigee, "MEAN_ANOMALY": meanAnomaly,
             "BSTAR": bStar, "REV_AT_EPOCH": revNumber, "TLE_LINE1": line1, "TLE_LINE2": line2,
@@ -89,6 +102,13 @@ class TLEDatabase:
         df = pd.DataFrame(self.rows)
         df = df.sort_values("EPOCH")
         df = df.drop_duplicates(subset="NORAD_CAT_ID", keep="last")
+        self._loadSatCat()
+        satcat = self.satcat.drop(columns=self.SATCAT_ORBITAL_COLUMNS & set(self.satcat.columns), errors="ignore")
+        df = df.merge(satcat, how="left", on="NORAD_CAT_ID")
+        if "OBJECT_NAME_x" in df.columns:
+            df["OBJECT_NAME"] = df["OBJECT_NAME_x"]
+        df = df.drop(columns=[c for c in ["OBJECT_NAME_x", "OBJECT_NAME_y"] if c in df.columns])
+        print(df.columns.tolist())
         df = df.sort_values("OBJECT_NAME").reset_index(drop=True)
         self.dataFrame = df
 

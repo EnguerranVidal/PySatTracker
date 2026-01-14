@@ -110,14 +110,14 @@ class AddObjectDialog(QDialog):
 
         # BUTTON BAR
         buttonBar = QHBoxLayout()
-        cancelButton = QPushButton("Cancel")
         addButton = QPushButton("Add")
-        cancelButton.clicked.connect(self.reject)
+        cancelButton = QPushButton("Cancel")
         addButton.clicked.connect(self.acceptSelection)
+        cancelButton.clicked.connect(self.reject)
         buttonBar.addStretch()
-        buttonBar.addWidget(cancelButton)
         buttonBar.addWidget(addButton)
-
+        buttonBar.addWidget(cancelButton)
+        # DIALOG LAYOUT
         layout = QVBoxLayout(self)
         layout.addWidget(self.searchBar)
         layout.addWidget(self.listWidget)
