@@ -15,7 +15,7 @@ class TLEDatabase:
         "starlink": "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle",
         "gnss": "https://celestrak.org/NORAD/elements/gp.php?GROUP=gnss&FORMAT=tle",
         "weather": "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle",
-        "planet": "https://celestrak.org/NORAD/elements/gp.php?GROUP=planets&FORMAT=tle",
+        "planet": "https://celestrak.org/NORAD/elements/gp.php?GROUP=planet&FORMAT=tle",
         "visual": "https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle",
         "iridium": "https://celestrak.org/NORAD/elements/gp.php?GROUP=iridium&FORMAT=tle",
         "geosynchronous": "https://celestrak.org/NORAD/elements/gp.php?GROUP=geo&FORMAT=tle",
@@ -86,13 +86,17 @@ class TLEDatabase:
             self.rows.append(row)
 
     def finalize(self):
-        self.dataFrame = pd.DataFrame(self.rows)
+        df = pd.DataFrame(self.rows)
+        df = df.sort_values("EPOCH")
+        df = df.drop_duplicates(subset="NORAD_CAT_ID", keep="last")
+        df = df.sort_values("OBJECT_NAME").reset_index(drop=True)
+        self.dataFrame = df
 
-    def getSatrec(self, norad_id):
-        if norad_id not in self._satrecCache:
-            row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == norad_id].iloc[0]
-            self._satrecCache[norad_id] = Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
-        return self._satrecCache[norad_id]
+    def getSatrec(self, noradIndex):
+        if noradIndex not in self._satrecCache:
+            row = self.dataFrame[self.dataFrame["NORAD_CAT_ID"] == noradIndex].iloc[0]
+            self._satrecCache[noradIndex] = Satrec.twoline2rv(row["TLE_LINE1"], row["TLE_LINE2"])
+        return self._satrecCache[noradIndex]
 
 
 class TLELoaderWorker(QObject):
