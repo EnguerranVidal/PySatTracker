@@ -176,18 +176,22 @@ class MapWidget(QWidget):
         splitIndices = np.where(jumps)[0] + 1
         longitudeSegments = np.split(longitudes, splitIndices)
         latitudeSegments = np.split(latitudes, splitIndices)
-        # ADDING BORDER POINTS
         for k, index in enumerate(splitIndices):
+            # LINEAR INTERPOLATION
             previousLongitude, nextLongitude = longitudes[index - 1], longitudes[index]
             previousLatitude, nextLatitude = latitudes[index - 1], latitudes[index]
             if previousLongitude > nextLongitude:
                 longitudeA, longitudeB = previousLongitude, nextLongitude + 360
+                latitudeA, latitudeB = previousLatitude, nextLatitude
                 borderA, borderB = 180, -180
             else:
-                longitudeA, longitudeB = previousLongitude + 360, nextLongitude
+                longitudeA, longitudeB = nextLongitude + 360, previousLongitude
+                latitudeA, latitudeB = nextLatitude, previousLatitude
                 borderA, borderB = -180, 180
-            t = (borderA - longitudeA) / (longitudeB - longitudeA)
-            latitudeBorder = previousLatitude + t * (nextLatitude - previousLatitude)
+            a = (latitudeB - latitudeA) / (longitudeB - longitudeA)
+            b = latitudeA - a * longitudeA
+            latitudeBorder = a * 180 + b
+            # ADDING BORDER POINTS TO SEGMENTS
             longitudeSegments[k] = np.append(longitudeSegments[k], borderA)
             latitudeSegments[k] = np.append(latitudeSegments[k], latitudeBorder)
             longitudeSegments[k + 1] = np.insert(longitudeSegments[k + 1], 0, borderB)

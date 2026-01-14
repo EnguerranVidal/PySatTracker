@@ -128,12 +128,15 @@ class AddObjectDialog(QDialog):
         self.listWidget.clear()
         rows = self.database.dataFrame.sort_values("OBJECT_NAME")
         for _, row in rows.iterrows():
-            item = QListWidgetItem(row["OBJECT_NAME"])
-            item.setData(Qt.UserRole, row["NORAD_CAT_ID"])
+            name, noradIndex = row["OBJECT_NAME"], row["NORAD_CAT_ID"]
+            text = f"{name} — {noradIndex}"
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, noradIndex)
+            item.setData(Qt.UserRole + 1, f"{name.lower()} {noradIndex}")
             self.listWidget.addItem(item)
 
     def filterList(self, text):
-        text = text.lower()
+        text = text.lower().strip()
         for i in range(self.listWidget.count()):
             item = self.listWidget.item(i)
             item.setHidden(text not in item.text().lower())
