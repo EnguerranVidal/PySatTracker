@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 import numpy as np
 import qdarktheme
@@ -11,11 +10,6 @@ from pyqtgraph import GraphicsLayoutWidget
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread
 from PyQt5.QtWidgets import *
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
@@ -26,14 +20,14 @@ class MainWindow(QMainWindow):
         self.settings = {}
         # FOLDER PATHS & SETTINGS
         self.currentDir = currentDIr
-        self.settingsPath = os.path.join(self.currentDir, "settings.json")
-        self.dataPath = os.path.join(self.currentDir, "data")
-        self.noradPath = os.path.join(self.dataPath, "norad")
+        self.settingsPath = os.path.join(self.currentDir, 'settings.json')
+        self.dataPath = os.path.join(self.currentDir, 'data')
+        self.noradPath = os.path.join(self.dataPath, 'norad')
         self._checkEnvironment()
         self.loadSettings()
 
         # APPEARANCE
-        qdarktheme.setup_theme('dark', additional_qss="QToolTip {color: black;}")
+        qdarktheme.setup_theme('dark', additional_qss='QToolTip {color: black;}')
 
         # CENTRAL VISUALIZATION WIDGET
         self.centralViewWidget = CentralViewWidget(self)
@@ -45,6 +39,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.objectSelected.connect(self.onObjectSelected)
         self.objectListDock.addObject.connect(self.addSelectedObjects)
         self.objectListDock.removeObject.connect(self.removeSelectedObjects)
+        self.centralViewWidget.mapWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
 
         # OBJECT INFO DOCK WIDGET
         self.objectInfoDock = ObjectInfoDockWidget(self)
@@ -69,12 +64,12 @@ class MainWindow(QMainWindow):
         self.statusDateTimer.start(1000)
 
         # WINDOW DIMENSIONS / MAXIMIZED
-        self.setWindowTitle("Satellite Tracker")
+        self.setWindowTitle('Satellite Tracker')
         if self.settings['WINDOW']['MAXIMIZED']:
             self.showMaximized()
         else:
             g = self.settings['WINDOW']['GEOMETRY']
-            self.setGeometry(g["X"], g["Y"], g["WIDTH"], g["HEIGHT"])
+            self.setGeometry(g['X'], g['Y'], g['WIDTH'], g['HEIGHT'])
 
     def _center(self):
         frameGeometry = self.frameGeometry()
@@ -102,8 +97,8 @@ class MainWindow(QMainWindow):
     def setDatabase(self, database):
         self.tleDatabase = database
         self.centralViewWidget.setDatabase(database)
-        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
-        self.objectListDock.populate(self.tleDatabase, self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.setConfiguration(self.settings)
+        self.objectListDock.populate(self.tleDatabase, self.settings['VISUALIZATION']['SELECTED_OBJECTS'])
         self.centralViewWidget.start()
 
     def loadSettings(self):
@@ -115,45 +110,57 @@ class MainWindow(QMainWindow):
     def addSelectedObjects(self, noradIndices):
         for noradIndex in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].append(noradIndex)
+            self.settings['MAP']['CONFIG'][noradIndex] = {'GROUND_TRACK': {'ENABLED': False, 'COLOR': (255, 0, 0)}, 'FOOTPRINT': {'ENABLED': False, 'COLOR': (0, 180, 255)}, 'SPOT': {'COLOR': (255, 0, 0)}}
         self.saveSettings()
         self.objectListDock.addItems(self.tleDatabase, noradIndices)
-        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.setConfiguration(self.settings)
 
     def removeSelectedObjects(self, noradIndices):
         for index in noradIndices:
             self.settings['VISUALIZATION']['SELECTED_OBJECTS'].remove(index)
         self.saveSettings()
-        self.centralViewWidget.setVisibleNoradIndices(self.settings["VISUALIZATION"]["SELECTED_OBJECTS"])
+        self.centralViewWidget.setConfiguration(self.settings)
 
     def onObjectSelected(self, noradIndex):
         if len(noradIndex) == 0:
             self.objectInfoDock.clear()
+            self.centralViewWidget.setSelectedObject(None)
             return
-        row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame["NORAD_CAT_ID"] == noradIndex[0]].iloc[0]
+        if isinstance(noradIndex[0], list):
+            noradIndex = noradIndex[0]
+        row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame['NORAD_CAT_ID'] == noradIndex[0]].iloc[0]
         self.objectInfoDock.setObject(row)
+        self.centralViewWidget.setSelectedObject(noradIndex[0])
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
         # SAVING SETTINGS
-        self.settings["WINDOW"]["MAXIMIZED"] = self.isMaximized()
+        self.settings['WINDOW']['MAXIMIZED'] = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
-            self.settings["WINDOW"]["GEOMETRY"] = {"X": g.x(), "Y": g.y(), "WIDTH": g.width(), "HEIGHT": g.height()}
+            self.settings['WINDOW']['GEOMETRY'] = {'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()}
         self.saveSettings()
         event.accept()
 
 
 class MapWidget(QWidget):
-    def __init__(self, parent=None, mapImagePath="src/assets/world_map.png"):
+    objectSelected = pyqtSignal(list)
+
+    def __init__(self, parent=None, mapImagePath='src/assets/world_map.png'):
         super().__init__(parent)
         self.mapImagePath = mapImagePath
         self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
+        self.renderConfiguration = {}
+        self.selectedObject = None
         self._setupMap()
+
+    def setRenderConfiguration(self, configuration):
+        self.renderConfiguration = configuration
 
     def _setupMap(self):
         # LOAD WORLD MAP
         if not os.path.exists(self.mapImagePath):
-            raise FileNotFoundError(f"Map image not found at {self.mapImagePath}")
+            raise FileNotFoundError(f'Map image not found at {self.mapImagePath}')
         img = imageio.imread(self.mapImagePath)
         img = np.rot90(img, k=-1)
         self.mapImage = pg.ImageItem(img)
@@ -214,58 +221,91 @@ class MapWidget(QWidget):
         # DELETING REMOVED OBJECT VISUALIZATION
         for norad in list(self.objectSpots.keys()):
             if norad not in data:
-                self.plot.removeItem(self.objectSpots[norad])
-                self.plot.removeItem(self.objectArrows[norad])
-                for item in self.objectGroundTracks[norad]:
-                    self.plot.removeItem(item)
-                for item in self.objectFootprints[norad]:
-                    self.plot.removeItem(item)
-                del self.objectSpots[norad]
-                del self.objectGroundTracks[norad]
-                del self.objectFootprints[norad]
-                del self.objectArrows[norad]
+                self._removeItems(self.objectSpots.get(norad))
+                self._removeItems(self.objectArrows.get(norad))
+                self._removeItems(self.objectGroundTracks.get(norad))
+                self._removeItems(self.objectFootprints.get(norad))
+
+                self.objectSpots.pop(norad, None)
+                self.objectArrows.pop(norad, None)
+                self.objectGroundTracks.pop(norad, None)
+                self.objectFootprints.pop(norad, None)
         # ADDING / UPDATING OBJECT VISUALIZATION
         for norad, content in data.items():
+            renderConfiguration = self.renderConfiguration.get(str(norad))
+            if renderConfiguration is None:
+                continue
             # GROUND TRACKS
-            groundLongitudes, groundLatitudes = content['GROUND_TRACK']['LONGITUDE'], content['GROUND_TRACK']['LATITUDE']
-            groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
-            for item in self.objectGroundTracks.get(norad, []):
-                self.plot.removeItem(item)
-            self.objectGroundTracks[norad] = []
-            for segmentLongitudes, segmentLatitudes in groundSegments:
-                gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen((255, 0, 0), width=1))
-                self.objectGroundTracks[norad].append(curve)
-                self.plot.addItem(self.objectGroundTracks[norad][-1])
-            # GROUND TRACK ARROW
-            lastLongitude, lastLatitude = groundSegments[-1]
-            x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
-            x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
-            angle = self._arrowAngle(x0, y0, x1, y1)
-            if norad not in self.objectArrows:
-                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=12, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0))
-                self.objectArrows[norad] = arrow
-                self.plot.addItem(self.objectArrows[norad])
-            self.objectArrows[norad].setStyle(angle=angle)
-            self.objectArrows[norad].setPos(x1, y1)
+            if renderConfiguration['GROUND_TRACK']['ENABLED'] is True or self.selectedObject == norad:
+                groundLongitudes, groundLatitudes = content['MAP']['GROUND_TRACK']['LONGITUDE'], content['MAP']['GROUND_TRACK']['LATITUDE']
+                groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
+                for item in self.objectGroundTracks.get(norad, []):
+                    self.plot.removeItem(item)
+                self.objectGroundTracks[norad] = []
+                for segmentLongitudes, segmentLatitudes in groundSegments:
+                    gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
+                    curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen((255, 0, 0), width=1))
+                    self.objectGroundTracks[norad].append(curve)
+                    self.plot.addItem(self.objectGroundTracks[norad][-1])
+                # GROUND TRACK ARROW
+                lastLongitude, lastLatitude = groundSegments[-1]
+                x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
+                x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
+                angle = self._arrowAngle(x0, y0, x1, y1)
+                if norad not in self.objectArrows:
+                    arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=12, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0))
+                    self.objectArrows[norad] = arrow
+                    self.plot.addItem(self.objectArrows[norad])
+                self.objectArrows[norad].setStyle(angle=angle)
+                self.objectArrows[norad].setPos(x1, y1)
+            else:
+                self._removeItems(self.objectGroundTracks.get(norad))
+                self._removeItems(self.objectArrows.get(norad))
+                self.objectGroundTracks.pop(norad, None)
+                self.objectArrows.pop(norad, None)
             # VISIBILITY FOOTPRINT
-            footLongitudes, footLatitudes = content['VISIBILITY']['LONGITUDE'], content['VISIBILITY']['LATITUDE']
-            footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
-            for item in self.objectFootprints.get(norad, []):
-                self.plot.removeItem(item)
-            self.objectFootprints[norad] = []
-            for segmentLongitudes, segmentLatitudes in footSegments:
-                fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen((0, 180, 255), width=1))
-                self.objectFootprints[norad].append(curve)
-                self.plot.addItem(self.objectFootprints[norad][-1])
+            if renderConfiguration['FOOTPRINT']['ENABLED'] is True or self.selectedObject == norad:
+                footLongitudes, footLatitudes = content['MAP']['VISIBILITY']['LONGITUDE'], content['MAP']['VISIBILITY']['LATITUDE']
+                footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
+                for item in self.objectFootprints.get(norad, []):
+                    self.plot.removeItem(item)
+                self.objectFootprints[norad] = []
+                for segmentLongitudes, segmentLatitudes in footSegments:
+                    fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
+                    curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen((0, 180, 255), width=1))
+                    self.objectFootprints[norad].append(curve)
+                    self.plot.addItem(self.objectFootprints[norad][-1])
+            else:
+                self._removeItems(self.objectFootprints.get(norad))
+                self.objectFootprints.pop(norad, None)
             # OBJECT POSITIONS
-            x, y = self._lonlatToCartesian(content['POSITION']['LONGITUDE'], content['POSITION']['LATITUDE'])
+            color = (255, 0, 0) if self.selectedObject == norad else (150, 150, 150)
+            x, y = self._lonlatToCartesian(content['MAP']['POSITION']['LONGITUDE'], content['MAP']['POSITION']['LATITUDE'])
             if norad not in self.objectSpots:
-                spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(255, 0, 0))
+                spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color))
+                spot.sigClicked.connect(self._onObjectClicked)
                 self.objectSpots[norad] = spot
                 self.plot.addItem(self.objectSpots[norad])
-            self.objectSpots[norad].setData([x], [y])
+            self.objectSpots[norad].setData([{'pos': (x, y), 'data': norad}], brush=pg.mkBrush(*color), pen=None)
+
+    def _onObjectClicked(self, plot, points):
+        if not points:
+            return
+        noradIndex = points[0].data()
+        if noradIndex is None:
+            return
+        self.objectSelected.emit([noradIndex])
+
+    def _removeItems(self, items):
+        if not items:
+            return
+        if isinstance(items, list):
+            for item in items:
+                self.plot.removeItem(item)
+        else:
+            self.plot.removeItem(items)
+
+
 
 class ObjectListDockWidget(QDockWidget):
     addObject = pyqtSignal(list)
@@ -274,7 +314,7 @@ class ObjectListDockWidget(QDockWidget):
     showObjectInfo = pyqtSignal(list)
     removeObject = pyqtSignal(list)
 
-    def __init__(self, mainWindow, title="Selected Satellites"):
+    def __init__(self, mainWindow, title='Selected Satellites'):
         super().__init__(title, mainWindow)
         self.mainWindow = mainWindow
         container = QWidget()
@@ -285,11 +325,11 @@ class ObjectListDockWidget(QDockWidget):
 
         topBar = QHBoxLayout()
         self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText("Search selected satellites…")
+        self.searchBar.setPlaceholderText('Search selected satellites…')
         self.searchBar.textChanged.connect(self.filterObjectList)
-        self.addButton = QPushButton("+")
+        self.addButton = QPushButton('+')
         self.addButton.setFixedWidth(28)
-        self.addButton.setToolTip("Add satellites")
+        self.addButton.setToolTip('Add satellites')
         self.addButton.clicked.connect(self.openAddDialog)
         topBar.addWidget(self.searchBar)
         topBar.addWidget(self.addButton)
@@ -310,11 +350,11 @@ class ObjectListDockWidget(QDockWidget):
         self.database = database
         self.listWidget.clear()
         for norad in selectedNoradIds:
-            row = database.dataFrame[database.dataFrame["NORAD_CAT_ID"] == norad]
+            row = database.dataFrame[database.dataFrame['NORAD_CAT_ID'] == norad]
             if row.empty:
                 continue
             row = row.iloc[0]
-            item = QListWidgetItem(row["OBJECT_NAME"])
+            item = QListWidgetItem(row['OBJECT_NAME'])
             item.setData(Qt.UserRole, norad)
             self.listWidget.addItem(item)
 
@@ -341,8 +381,8 @@ class ObjectListDockWidget(QDockWidget):
         if noradId is None:
             return
         menu = QMenu(self)
-        actionToggle = menu.addAction("Toggle Visibility")
-        actionRemove = menu.addAction("Remove Object")
+        actionToggle = menu.addAction('Toggle Visibility')
+        actionRemove = menu.addAction('Remove Object')
         selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
         if selectedAction == actionToggle:
             self.toggleVisibility.emit([noradId])
@@ -364,10 +404,10 @@ class ObjectListDockWidget(QDockWidget):
             if any(item.data(Qt.UserRole) == norad for item, _ in self._items):
                 continue
             try:
-                row = database.dataFrame.loc[database.dataFrame["NORAD_CAT_ID"] == norad].iloc[0]
+                row = database.dataFrame.loc[database.dataFrame['NORAD_CAT_ID'] == norad].iloc[0]
             except IndexError:
                 continue
-            item = QListWidgetItem(row["OBJECT_NAME"])
+            item = QListWidgetItem(row['OBJECT_NAME'])
             item.setData(Qt.UserRole, norad)
             self.listWidget.addItem(item)
             self._items.append((item, None))
@@ -380,10 +420,22 @@ class ObjectListDockWidget(QDockWidget):
         noradId = items[0].data(Qt.UserRole)
         self.objectSelected.emit([noradId])
 
+    def selectNoradIndex(self, noradIndex):
+        self.listWidget.blockSignals(True)
+        self.listWidget.clearSelection()
+        for i in range(self.listWidget.count()):
+            item = self.listWidget.item(i)
+            if item.data(Qt.UserRole) == noradIndex:
+                item.setSelected(True)
+                self.listWidget.scrollToItem(item)
+                break
+        self.listWidget.blockSignals(False)
+        self.objectSelected.emit([noradIndex])
+
 
 class ObjectInfoDockWidget(QDockWidget):
     def __init__(self, parent=None):
-        super().__init__("Object Info", parent)
+        super().__init__('Object Info', parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
@@ -394,9 +446,9 @@ class ObjectInfoDockWidget(QDockWidget):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.addWidget(self._createGroup("Identification", [("Name", "OBJECT_NAME"), ("NORAD ID", "NORAD_CAT_ID"), ("COSPAR ID", "OBJECT_ID"),]))
-        layout.addWidget(self._createGroup("Status", [("Object Type", "OBJECT_TYPE"), ("Owner", "OWNER"), ("Operational Status", "OPS_STATUS_CODE"),]))
-        layout.addWidget(self._createGroup("Orbit (TLE)", [("Inclination (deg)", "INCLINATION"), ("Eccentricity", "ECCENTRICITY"), ("Mean Motion (rev/day)", "MEAN_MOTION"), ("B*", "BSTAR"),]))
+        layout.addWidget(self._createGroup('Identification', [('Name', 'OBJECT_NAME'), ('NORAD ID', 'NORAD_CAT_ID'), ('COSPAR ID', 'OBJECT_ID'),]))
+        layout.addWidget(self._createGroup('Status', [("Object Type", "OBJECT_TYPE"), ('Owner', 'OWNER'), ('Operational Status', 'OPS_STATUS_CODE'),]))
+        layout.addWidget(self._createGroup('Orbit (TLE)', [('Inclination (deg)', 'INCLINATION'), ('Eccentricity', 'ECCENTRICITY'), ('Mean Motion (rev/day)', 'MEAN_MOTION'), ('B*', 'BSTAR'),]))
         layout.addStretch()
         self.setWidget(container)
 
@@ -441,7 +493,7 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.mapWidget = MapWidget()
         self.tabWidget = QTabWidget()
-        self.tabWidget.addTab(self.mapWidget, "Map")
+        self.tabWidget.addTab(self.mapWidget, 'Map')
 
         # MAP LINKING
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
@@ -457,14 +509,21 @@ class CentralViewWidget(QWidget):
         self.mapVisible = (self.tabWidget.widget(index) is self.mapWidget)
 
     def _onPositionsReady(self, positions: dict):
+        self.lastPositions = positions
         if self.mapVisible:
             self.mapWidget.updatePositions(positions)
 
     def setDatabase(self, database):
         self.orbitWorker.database = database
 
-    def setVisibleNoradIndices(self, indices):
-        self.orbitWorker.visibleNoradIndices = indices
+    def setConfiguration(self, settings):
+        self.orbitWorker.visibleNoradIndices = settings['VISUALIZATION']['SELECTED_OBJECTS']
+        self.mapWidget.setRenderConfiguration(settings['MAP']['CONFIG'])
+
+    def setSelectedObject(self, noradIndex):
+        self.mapWidget.selectedObject = noradIndex
+        if self.mapVisible:
+            self.mapWidget.updatePositions(self.lastPositions)
 
     def start(self):
         self.clock.play()

@@ -19,7 +19,7 @@ class OrbitalMechanicsEngine:
         jd, fr = self.datetimeToJd(dt)
         error, r, v = sat.sgp4(jd, fr)
         if error != 0:
-            raise RuntimeError(f"SGP4 error code {error}")
+            raise RuntimeError(f'SGP4 error code {error}')
         return np.array(r), np.array(v)
 
     def greenwichMeridianSiderealTime(self, dt: datetime):
@@ -89,11 +89,11 @@ class OrbitalMechanicsEngine:
         state = {'rECI': rEci, 'vECI': vEci, 'rECEF': rEcef, 'altitude': altitude, 'latitude': latitude, 'longitude': longitude}
         if obsLongitude is not None:
             enu = self.ecefToEnu(rEcef, obsLongitude, obsLatitude, obsAltitude)
-            state["azimuth"], state["elevation"], state["range"] = self.enuToAzimuthElevation(enu)
+            state['azimuth'], state['elevation'], state['range'] = self.enuToAzimuthElevation(enu)
         return state
 
     def satelliteVisibilityFootPrint(self, state, nbPoints=360):
-        longitude, latitude, altitude = state["longitude"], state["latitude"], state["altitude"]
+        longitude, latitude, altitude = state['longitude'], state['latitude'], state['altitude']
         cosLatitude, sinLatitude = np.cos(latitude), np.sin(latitude)
         localRadius = np.sqrt((self.equatorialRadius ** 2 * cosLatitude ** 2 + self.polarRadius ** 2 * sinLatitude ** 2) / (cosLatitude ** 2 + sinLatitude ** 2))
         angleHorizon = np.arccos(localRadius / (localRadius + altitude))
@@ -127,7 +127,7 @@ class OrbitalMechanicsEngine:
 
     @staticmethod
     def tleOrbitalElements(sat: Satrec):
-        return {"inclination": sat.inclo, "RAAN": sat.nodeo, "arg_perigee": sat.argpo, "eccentricity": sat.ecco}
+        return {'inclination': sat.inclo, 'RAAN': sat.nodeo, 'arg_perigee': sat.argpo, 'eccentricity': sat.ecco}
 
     @staticmethod
     def flightPathAngle(rVec, vVec):

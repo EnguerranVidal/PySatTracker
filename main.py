@@ -13,7 +13,7 @@ def main():
     qdarktheme.enable_hi_dpi()
     app = QApplication(sys.argv)
     currentDirectory = os.path.dirname(os.path.realpath(__file__))
-    dataDir = os.path.join(currentDirectory, "data")
+    dataDir = os.path.join(currentDirectory, 'data')
     splash = LoadingScreen()
     splash.show()
 
@@ -37,5 +37,5 @@ def main():
     thread.start()
     sys.exit(app.exec_())
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

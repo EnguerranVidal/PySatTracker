@@ -73,21 +73,22 @@ class OrbitWorker(QObject):
     def compute(self, simulationTime: datetime):
         if not self._running or self.database is None:
             return
-        results = {}
+        results = {noradIndex: {}  for noradIndex in self.visibleNoradIndices}
         for noradIndex in self.visibleNoradIndices:
             try:
-                calculations = {}
+                # MAP CALCULATIONS
+                mapResults = {}
                 satellite = self.database.getSatrec(noradIndex)
                 state = self.engine.satelliteState(satellite, simulationTime)
                 groundLongitudes, groundLatitudes, groundElevations = self.engine.satelliteGroundTrack(satellite, simulationTime)
                 visibilityLongitudes, visibilityLatitudes = self.engine.satelliteVisibilityFootPrint(state, nbPoints=360)
-                longitude, latitude = np.rad2deg(state["longitude"]), np.rad2deg(state["latitude"])
+                longitude, latitude = np.rad2deg(state['longitude']), np.rad2deg(state['latitude'])
                 groundLongitudes, groundLatitudes = np.rad2deg(groundLongitudes), np.rad2deg(groundLatitudes)
                 visibilityLongitudes, visibilityLatitudes = np.rad2deg(visibilityLongitudes), np.rad2deg(visibilityLatitudes)
-                calculations['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
-                calculations['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
-                calculations['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
-                results[noradIndex] = calculations
+                mapResults['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
+                mapResults['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
+                mapResults['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
+                results[noradIndex]['MAP'] = mapResults
             except Exception as e:
                 print(f"Worker error {noradIndex}: {e}")
         self.positionsReady.emit(results)
@@ -96,22 +97,22 @@ class OrbitWorker(QObject):
 class AddObjectDialog(QDialog):
     def __init__(self, database, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add Satellites")
+        self.setWindowTitle('Add Satellites')
         self.resize(400, 500)
         self.database = database
         self.selectedNoradIndices = []
 
         # LIST & SEARCH BAR
         self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText("Search satellites…")
+        self.searchBar.setPlaceholderText('Search satellites…')
         self.searchBar.textChanged.connect(self.filterList)
         self.listWidget = QListWidget()
         self.listWidget.setSelectionMode(QListWidget.MultiSelection)
 
         # BUTTON BAR
         buttonBar = QHBoxLayout()
-        addButton = QPushButton("Add")
-        cancelButton = QPushButton("Cancel")
+        addButton = QPushButton('Add')
+        cancelButton = QPushButton('Cancel')
         addButton.clicked.connect(self.acceptSelection)
         cancelButton.clicked.connect(self.reject)
         buttonBar.addStretch()
@@ -126,13 +127,13 @@ class AddObjectDialog(QDialog):
 
     def _populate(self):
         self.listWidget.clear()
-        rows = self.database.dataFrame.sort_values("OBJECT_NAME")
+        rows = self.database.dataFrame.sort_values('OBJECT_NAME')
         for _, row in rows.iterrows():
-            name, noradIndex = row["OBJECT_NAME"], row["NORAD_CAT_ID"]
-            text = f"{name} — {noradIndex}"
+            name, noradIndex = row['OBJECT_NAME'], row['NORAD_CAT_ID']
+            text = f'{name} — {noradIndex}'
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, noradIndex)
-            item.setData(Qt.UserRole + 1, f"{name.lower()} {noradIndex}")
+            item.setData(Qt.UserRole + 1, f'{name.lower()} {noradIndex}')
             self.listWidget.addItem(item)
 
     def filterList(self, text):
