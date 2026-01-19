@@ -135,3 +135,31 @@ class OrbitalMechanicsEngine:
         if rNorm == 0 or vNorm == 0:
             return 0.0
         return np.arcsin(np.dot(rVec, vVec) / (rNorm * vNorm))
+
+    @staticmethod
+    def subSolarPoint(dt: datetime, radians=True):
+        julianCenturies = (dt - datetime(2000, 1, 1, 12, 0)) / timedelta(days=1) / 36525.0
+        # ECLIPTICAL COORDINATES
+        meanSunLongitude = (280.460 + 36000.771 * julianCenturies) % 360
+        meanAnomaly = (357.5277233 + 35999.05034 * julianCenturies) % 360
+        eclipticLongitude = meanSunLongitude + 1.914666471 * np.sin(np.deg2rad(meanAnomaly)) + 0.019994643 * np.sin(np.deg2rad(2 * meanAnomaly))
+        obliquity = 23.439291 - 0.0130042 * julianCenturies
+        # EQUATORIAL COORDINATES
+        sunEarthDistance = (1.00014 - 0.01671 * np.cos(np.deg2rad(meanAnomaly)) - 0.00014 * np.cos(np.deg2rad(2 * meanAnomaly)))
+        sunLatitude = np.rad2deg(np.arcsin(np.sin(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude))))
+        rightAscension = np.rad2deg(np.arctan2(np.cos(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude)), np.cos(np.deg2rad(eclipticLongitude))))
+        gmstTheta = ((67310.54841 + (876600 * 3600 + 8640184.812866) * julianCenturies + 0.093104 * julianCenturies ** 2 - 6.2e-6 * julianCenturies ** 3) % 86400) / 240
+        sunLongitude = -(gmstTheta - rightAscension)
+        sunLongitude = (sunLongitude + 180) % 360 - 180
+        if radians:
+            return np.deg2rad(sunLongitude), np.deg2rad(sunLatitude), sunEarthDistance
+        return sunLongitude, sunLatitude, sunEarthDistance
+
+    def terminatorCurve(self, dt: datetime, nbPoints=361, radians=True):
+        sunLongitude, sunLatitude, _ = self.subSolarPoint(dt, radians=True)
+        longitudes = np.linspace(-np.pi, np.pi, nbPoints)
+        latitudes = np.arctan(-np.cos(longitudes - sunLongitude) / np.tan(sunLatitude))
+        if not radians:
+            return np.rad2deg(longitudes), np.rad2deg(latitudes)
+        return longitudes, latitudes
+

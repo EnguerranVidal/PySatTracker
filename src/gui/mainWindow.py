@@ -152,6 +152,7 @@ class MapWidget(QWidget):
         self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
         self.renderConfiguration = {}
         self.selectedObject = None
+        self.sunIndicator, self.nightLayer = None, None
         self._setupMap()
 
     def setRenderConfiguration(self, configuration):
@@ -167,6 +168,7 @@ class MapWidget(QWidget):
         self.mapWidth, self.mapHeight = self.mapImage.width(), self.mapImage.height()
         # SETUP WORLD MAP VIEW
         self.view = GraphicsLayoutWidget()
+        self.view.setBackground('#202124')
         self.plot = self.view.addPlot()
         self.plot.addItem(self.mapImage)
         self.plot.setAspectLocked(True)
@@ -230,6 +232,22 @@ class MapWidget(QWidget):
                 self.objectArrows.pop(norad, None)
                 self.objectGroundTracks.pop(norad, None)
                 self.objectFootprints.pop(norad, None)
+        # ADDING / UPDATING NIGHT LAYER AND SUN POSITION
+        subPointLongitude, subPointLatitude = data['MAP']['SUN']['LONGITUDE'], data['MAP']['SUN']['LATITUDE']
+        longitudes, latitudes = data['MAP']['NIGHT']['LONGITUDE'], data['MAP']['NIGHT']['LATITUDE']
+        x, y = self._lonlatToCartesian(longitudes, latitudes)
+        xSun, ySun = self._lonlatToCartesian(subPointLongitude, subPointLatitude)
+        fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
+        if self.nightLayer is None:
+            self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
+            self.plot.addItem(self.nightLayer)
+        else:
+            self.nightLayer.setData(x, y)
+            self.nightLayer.setFillLevel(fillLevel)
+        if self.sunIndicator is None:
+            self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
+            self.plot.addItem(self.sunIndicator)
+        self.sunIndicator.setData([xSun], [ySun])
         # ADDING / UPDATING OBJECT VISUALIZATION
         for norad, content in data.items():
             renderConfiguration = self.renderConfiguration.get(str(norad))
@@ -237,7 +255,7 @@ class MapWidget(QWidget):
                 continue
             # GROUND TRACKS
             if renderConfiguration['GROUND_TRACK']['ENABLED'] is True or self.selectedObject == norad:
-                groundLongitudes, groundLatitudes = content['MAP']['GROUND_TRACK']['LONGITUDE'], content['MAP']['GROUND_TRACK']['LATITUDE']
+                groundLongitudes, groundLatitudes = content['GROUND_TRACK']['LONGITUDE'], content['GROUND_TRACK']['LATITUDE']
                 groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
                 for item in self.objectGroundTracks.get(norad, []):
                     self.plot.removeItem(item)
@@ -265,7 +283,7 @@ class MapWidget(QWidget):
                 self.objectArrows.pop(norad, None)
             # VISIBILITY FOOTPRINT
             if renderConfiguration['FOOTPRINT']['ENABLED'] is True or self.selectedObject == norad:
-                footLongitudes, footLatitudes = content['MAP']['VISIBILITY']['LONGITUDE'], content['MAP']['VISIBILITY']['LATITUDE']
+                footLongitudes, footLatitudes = content['VISIBILITY']['LONGITUDE'], content['VISIBILITY']['LATITUDE']
                 footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
                 for item in self.objectFootprints.get(norad, []):
                     self.plot.removeItem(item)
@@ -280,7 +298,7 @@ class MapWidget(QWidget):
                 self.objectFootprints.pop(norad, None)
             # OBJECT POSITIONS
             color = (255, 0, 0) if self.selectedObject == norad else (150, 150, 150)
-            x, y = self._lonlatToCartesian(content['MAP']['POSITION']['LONGITUDE'], content['MAP']['POSITION']['LATITUDE'])
+            x, y = self._lonlatToCartesian(content['POSITION']['LONGITUDE'], content['POSITION']['LATITUDE'])
             if norad not in self.objectSpots:
                 spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color))
                 spot.sigClicked.connect(self._onObjectClicked)
@@ -427,6 +445,7 @@ class ObjectListDockWidget(QDockWidget):
             item = self.listWidget.item(i)
             if item.data(Qt.UserRole) == noradIndex:
                 item.setSelected(True)
+                self.listWidget.setCurrentItem(item)
                 self.listWidget.scrollToItem(item)
                 break
         self.listWidget.blockSignals(False)

@@ -73,7 +73,9 @@ class OrbitWorker(QObject):
     def compute(self, simulationTime: datetime):
         if not self._running or self.database is None:
             return
-        results = {noradIndex: {}  for noradIndex in self.visibleNoradIndices}
+        results = {}
+        # FLAT 2D MAP CALCULATIONS
+        mapResults = {noradIndex: {}  for noradIndex in self.visibleNoradIndices}
         for noradIndex in self.visibleNoradIndices:
             try:
                 # MAP CALCULATIONS
@@ -88,9 +90,16 @@ class OrbitWorker(QObject):
                 mapResults['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
                 mapResults['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
                 mapResults['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
-                results[noradIndex]['MAP'] = mapResults
+                results[noradIndex] = mapResults
             except Exception as e:
                 print(f"Worker error {noradIndex}: {e}")
+        # SUN POSITION AND TERMINATOR CALCULATION
+        sunLongitude, sunLatitude, sunDistance = self.engine.subSolarPoint(simulationTime, radians=False)
+        terminatorLongitudes, terminatorLatitudes = self.engine.terminatorCurve(simulationTime, nbPoints=361, radians=False)
+        mapResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
+        mapResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}
+        results['MAP'] = mapResults
+        # RESULTS EMISSION
         self.positionsReady.emit(results)
 
 
