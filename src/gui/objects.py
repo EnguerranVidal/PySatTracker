@@ -106,14 +106,14 @@ class OrbitWorker(QObject):
 class AddObjectDialog(QDialog):
     def __init__(self, database, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Add Satellites')
+        self.setWindowTitle('Add Objects')
         self.resize(400, 500)
         self.database = database
         self.selectedNoradIndices = []
 
         # LIST & SEARCH BAR
         self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText('Search satellites…')
+        self.searchBar.setPlaceholderText('Search Objects…')
         self.searchBar.textChanged.connect(self.filterList)
         self.listWidget = QListWidget()
         self.listWidget.setSelectionMode(QListWidget.MultiSelection)

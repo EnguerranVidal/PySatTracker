@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
         qdarktheme.setup_theme('dark', additional_qss='QToolTip {color: black;}')
 
         # CENTRAL VISUALIZATION WIDGET
-        self.activeObjects, self.selectedObject = list(self.settings['VISUALIZATION']['SELECTED_OBJECTS']), None
+        self.activeObjects, self.selectedObject = list(self.settings['VISUALIZATION']['ACTIVE_OBJECTS']), None
         self.centralViewWidget = CentralViewWidget(self)
         self.setCentralWidget(self.centralViewWidget)
 
@@ -116,9 +116,9 @@ class MainWindow(QMainWindow):
             if noradIndex in self.activeObjects:
                 continue
             self.activeObjects.append(noradIndex)
-            if noradIndex not in self.settings['MAP']['CONFIG']:
-                self.settings['MAP']['CONFIG'][noradIndex] = {'GROUND_TRACK': {'ENABLED': False, 'COLOR': (255, 0, 0)}, 'FOOTPRINT': {'ENABLED': False, 'COLOR': (0, 180, 255)}, 'SPOT': {'COLOR': (255, 0, 0)}}
-        self.settings['VISUALIZATION']['SELECTED_OBJECTS'] = self.activeObjects
+            if str(noradIndex) not in self.settings['MAP']['CONFIG']:
+                self.settings['MAP']['CONFIG'][str(noradIndex)] = {'GROUND_TRACK': {'ENABLED': False, 'COLOR': (255, 0, 0)}, 'FOOTPRINT': {'ENABLED': False, 'COLOR': (0, 180, 255)}, 'SPOT': {'COLOR': (255, 0, 0)}}
+        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
@@ -130,22 +130,35 @@ class MainWindow(QMainWindow):
             if self.selectedObject == noradIndex:
                 self.selectedObject = None
                 self.objectInfoDock.clear()
-        self.settings['VISUALIZATION']['SELECTED_OBJECTS'] = self.activeObjects
+        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.setSelectedObject(self.selectedObject)
 
     def onObjectSelected(self, noradIndex):
-        if len(noradIndex) == 0:
+        if noradIndex is None:
+            noradIndex = []
+        if isinstance(noradIndex, list):
+            if len(noradIndex) == 0:
+                self.selectedObject = None
+                self.objectInfoDock.clear()
+                self.centralViewWidget.setSelectedObject(None)
+                return
+            noradIndex = noradIndex[0]
+        try:
+            self.selectedObject = int(noradIndex)
+        except (TypeError, ValueError):
+            self.selectedObject = None
             self.objectInfoDock.clear()
             self.centralViewWidget.setSelectedObject(None)
             return
-        if isinstance(noradIndex[0], list):
-            noradIndex = noradIndex[0]
-        row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame['NORAD_CAT_ID'] == noradIndex[0]].iloc[0]
-        self.objectInfoDock.setObject(row)
-        self.centralViewWidget.setSelectedObject(noradIndex[0])
+        row = self.tleDatabase.dataFrame.loc[self.tleDatabase.dataFrame['NORAD_CAT_ID'].astype(int) == self.selectedObject]
+        if not row.empty:
+            self.objectInfoDock.setObject(row.iloc[0])
+        else:
+            self.objectInfoDock.clear()
+        self.centralViewWidget.setSelectedObject(self.selectedObject)
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -154,7 +167,7 @@ class MainWindow(QMainWindow):
         if not self.isMaximized():
             g = self.geometry()
             self.settings['WINDOW']['GEOMETRY'] = {'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()}
-        self.settings['VISUALIZATION']['SELECTED_OBJECTS'] = self.activeObjects
+        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         event.accept()
 
@@ -347,7 +360,7 @@ class ObjectListDockWidget(QDockWidget):
     showObjectInfo = pyqtSignal(list)
     removeObject = pyqtSignal(list)
 
-    def __init__(self, mainWindow, title='Selected Satellites'):
+    def __init__(self, mainWindow, title='Active Objects'):
         super().__init__(title, mainWindow)
         self.mainWindow = mainWindow
         container = QWidget()
@@ -358,11 +371,11 @@ class ObjectListDockWidget(QDockWidget):
 
         topBar = QHBoxLayout()
         self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText('Search selected satellites…')
+        self.searchBar.setPlaceholderText('Search Active Objects…')
         self.searchBar.textChanged.connect(self.filterObjectList)
         self.addButton = QPushButton('+')
         self.addButton.setFixedWidth(28)
-        self.addButton.setToolTip('Add satellites')
+        self.addButton.setToolTip('Add Objects')
         self.addButton.clicked.connect(self.openAddDialog)
         topBar.addWidget(self.searchBar)
         topBar.addWidget(self.addButton)
@@ -410,18 +423,17 @@ class ObjectListDockWidget(QDockWidget):
         item = self.listWidget.itemAt(position)
         if not item:
             return
-        noradId = item.data(Qt.UserRole)
-        if noradId is None:
+        noradIndex = item.data(Qt.UserRole)
+        if noradIndex is None:
             return
         menu = QMenu(self)
         actionToggle = menu.addAction('Toggle Visibility')
         actionRemove = menu.addAction('Remove Object')
         selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
         if selectedAction == actionToggle:
-            self.toggleVisibility.emit([noradId])
+            self.toggleVisibility.emit([noradIndex])
         elif selectedAction == actionRemove:
-            self.removeObject.emit([noradId])
-            self.listWidget.takeItem(self.listWidget.row(item))
+            self.removeObject.emit([noradIndex])
 
     def openAddDialog(self):
         if self.database is None:
@@ -464,7 +476,10 @@ class ObjectListDockWidget(QDockWidget):
                 self.listWidget.scrollToItem(item)
                 break
         self.listWidget.blockSignals(False)
-        self.objectSelected.emit([noradIndex])
+        if isinstance(noradIndex, list):
+            self.objectSelected.emit(noradIndex)
+        else:
+            self.objectSelected.emit([noradIndex])
 
 
 class ObjectInfoDockWidget(QDockWidget):
