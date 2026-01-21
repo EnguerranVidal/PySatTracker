@@ -9,7 +9,6 @@
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 ![GitHub repo size](https://img.shields.io/github/repo-size/EnguerranVidal/PySatTracker)
-[![wakatime](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker.svg)](https://wakatime.com/badge/github/EnguerranVidal/PySatTracker)
 
 <p align="center">
   <img src="https://user-images.githubusercontent.com/80796115/151719481-c8c6e5fd-38d5-4aa7-8eff-4e4b8bde5a7e.png">

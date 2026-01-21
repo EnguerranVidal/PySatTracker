@@ -1,5 +1,10 @@
-numpy~=1.21.2
-cartopy~=0.18.0
-sgp4~=2.20
-requests~=2.26.0
-matplotlib~=3.4.3
+numpy~=2.2.6
+pyqt5~=5.15.11
+matplotlib~=3.10.7
+cartopy~=0.24.1
+imageio~=2.37.2
+pyqtgraph~=0.13.7
+pandas~=2.3.3
+requests~=2.32.5
+sgp4~=2.25
+pyqtdarktheme~=2.1.0
