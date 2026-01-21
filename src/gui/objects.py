@@ -64,7 +64,7 @@ class OrbitWorker(QObject):
         super().__init__()
         self.engine = OrbitalMechanicsEngine()
         self.database = database
-        self.visibleNoradIndices = []
+        self.noradIndices = []
         self._running = True
 
     def stop(self):
@@ -75,8 +75,8 @@ class OrbitWorker(QObject):
             return
         results = {}
         # FLAT 2D MAP CALCULATIONS
-        mapResults = {noradIndex: {}  for noradIndex in self.visibleNoradIndices}
-        for noradIndex in self.visibleNoradIndices:
+        mapResults = {noradIndex: {} for noradIndex in self.noradIndices}
+        for noradIndex in self.noradIndices:
             try:
                 # MAP CALCULATIONS
                 mapResults = {}
