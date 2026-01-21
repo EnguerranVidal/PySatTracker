@@ -208,7 +208,7 @@ class MapWidget(QWidget):
 
     @staticmethod
     def _arrowAngle(x0, y0, x1, y1):
-        return - np.degrees(np.arctan2(y1 - y0, x1 - x0)) + 180
+        return np.degrees(np.arctan2(y1 - y0, x1 - x0)) + 180
 
     @staticmethod
     def _splitWrapSegment(longitudes, latitudes, threshold=180):
@@ -297,9 +297,10 @@ class MapWidget(QWidget):
             lastLongitude, lastLatitude = groundSegments[-1]
             x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
             x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
+            length = np.hypot(x1 - x0, y1 - y0)
             angle = self._arrowAngle(x0, y0, x1, y1)
             if noradIndex not in self.objectArrows:
-                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=12, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0))
+                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0), pxMode=False)
                 self.objectArrows[noradIndex] = arrow
                 self.plot.addItem(self.objectArrows[noradIndex])
             self.objectArrows[noradIndex].setStyle(angle=angle)
