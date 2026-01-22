@@ -179,6 +179,7 @@ class MapWidget(QWidget):
         super().__init__(parent)
         self.mapImagePath = mapImagePath
         self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
+        self.objectLabels = {}
         self.selectedObject, self.displayConfiguration = None, {}
         self.sunIndicator, self.nightLayer = None, None
         self._setupMap()
@@ -270,6 +271,7 @@ class MapWidget(QWidget):
                 self._removeItems(self.objectGroundTracks.pop(noradIndex, None))
                 self._removeItems(self.objectFootprints.pop(noradIndex, None))
                 self._removeItems(self.objectArrows.pop(noradIndex, None))
+                self._removeItems(self.objectLabels.pop(noradIndex, None))
         # NIGHT LAYER AND SUN POSITION
         self._updateSunAndNight(positions['MAP'])
         # DRAW VISIBLE NORAD OBJECTS
@@ -329,11 +331,22 @@ class MapWidget(QWidget):
         color = (255, 0, 0) if self.selectedObject == noradIndex else (150, 150, 150)
         x, y = self._lonlatToCartesian(noradPosition['POSITION']['LONGITUDE'], noradPosition['POSITION']['LATITUDE'])
         if noradIndex not in self.objectSpots:
-            spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color))
+            spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color), hoverable=True)
             spot.sigClicked.connect(self._onObjectClicked)
             self.objectSpots[noradIndex] = spot
             self.plot.addItem(self.objectSpots[noradIndex])
         self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*color), pen=None)
+        if noradIndex not in self.objectLabels:
+            label = pg.TextItem(text=noradPosition['NAME'], anchor=(0.5, 1.2), color=(255, 255, 255))
+            label.setZValue(10)
+            label.hide()
+            self.objectLabels[noradIndex] = label
+            self.plot.addItem(label)
+        self.objectLabels[noradIndex].setPos(x, y)
+        if isSelected:
+            self.objectLabels[noradIndex].show()
+        else:
+            self.objectLabels[noradIndex].hide()
 
     def _onObjectClicked(self, plot, points):
         if not points:

@@ -118,6 +118,10 @@ class TLEDatabase:
             self._satrecCache[noradIndex] = Satrec.twoline2rv(row['TLE_LINE1'], row['TLE_LINE2'])
         return self._satrecCache[noradIndex]
 
+    def getObjectName(self, noradIndex):
+        row = self.dataFrame[self.dataFrame['NORAD_CAT_ID'] == noradIndex].iloc[0]
+        return row['OBJECT_NAME']
+
 
 class TLELoaderWorker(QObject):
     progress = pyqtSignal(int)
