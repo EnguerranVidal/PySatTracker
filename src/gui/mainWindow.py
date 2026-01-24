@@ -180,7 +180,8 @@ class MapWidget(QWidget):
         self.mapImagePath = mapImagePath
         self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
         self.objectLabels = {}
-        self.selectedObject, self.displayConfiguration = None, {}
+        self._lastMouseScenePos = None
+        self.selectedObject, self.hoveredObject, self.hoverRadius, self.displayConfiguration = None, None, 15, {}
         self.sunIndicator, self.nightLayer = None, None
         self._setupMap()
 
@@ -200,6 +201,10 @@ class MapWidget(QWidget):
         self.plot.setAspectLocked(True)
         self.plot.hideAxis('bottom')
         self.plot.hideAxis('left')
+        self.plot.scene().sigMouseMoved.connect(self._onMouseMoved)
+        self.view.setMouseTracking(True)
+        self.view.viewport().setMouseTracking(True)
+
         layout = QVBoxLayout(self)
         layout.addWidget(self.view)
 
@@ -282,6 +287,8 @@ class MapWidget(QWidget):
 
     def _updateObjectDisplay(self, noradIndex, noradPosition):
         isSelected = (noradIndex == self.selectedObject)
+        isHovered = (noradIndex == self.hoveredObject)
+        isActive = isSelected or isHovered
         noradObjectConfiguration = self.displayConfiguration[str(noradIndex)]
         # GROUND TRACKS
         if noradObjectConfiguration['GROUND_TRACK']['ENABLED'] is True or isSelected:
@@ -328,10 +335,10 @@ class MapWidget(QWidget):
             self._removeItems(self.objectFootprints.get(noradIndex))
             self.objectFootprints.pop(noradIndex, None)
         # OBJECT POSITIONS
-        color = (255, 0, 0) if self.selectedObject == noradIndex else (150, 150, 150)
+        color = (255, 0, 0) if isActive else (150, 150, 150)
         x, y = self._lonlatToCartesian(noradPosition['POSITION']['LONGITUDE'], noradPosition['POSITION']['LATITUDE'])
         if noradIndex not in self.objectSpots:
-            spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color), hoverable=True)
+            spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color))
             spot.sigClicked.connect(self._onObjectClicked)
             self.objectSpots[noradIndex] = spot
             self.plot.addItem(self.objectSpots[noradIndex])
@@ -343,10 +350,12 @@ class MapWidget(QWidget):
             self.objectLabels[noradIndex] = label
             self.plot.addItem(label)
         self.objectLabels[noradIndex].setPos(x, y)
-        if isSelected:
+        if isSelected or isHovered:
             self.objectLabels[noradIndex].show()
         else:
             self.objectLabels[noradIndex].hide()
+        if self._lastMouseScenePos is not None:
+            self._onMouseMoved(self._lastMouseScenePos)
 
     def _onObjectClicked(self, plot, points):
         if not points:
@@ -356,6 +365,38 @@ class MapWidget(QWidget):
             return
         self.objectSelected.emit([noradIndex])
 
+    def _onMouseMoved(self, scenePos):
+        self._lastMouseScenePos = scenePos
+        self.hoverRadius = 15 * self.plot.vb.viewPixelSize()[0]
+        if not self.objectSpots:
+            return
+        closestNorad, closestDist = None, float("inf")
+        mouseViewPos = self.plot.vb.mapSceneToView(scenePos)
+        for noradIndex, spot in self.objectSpots.items():
+            pts = spot.points()
+            if not pts:
+                continue
+            spotViewPos = pts[0].pos()
+            dist = np.sqrt((spotViewPos.x() - mouseViewPos.x()) ** 2 + (spotViewPos.y() - mouseViewPos.y()) ** 2)
+            if dist < self.hoverRadius and dist < closestDist:
+                closestNorad, closestDist = noradIndex, dist
+        if closestNorad is not None and self.hoveredObject is None:
+            self.hoveredObject = closestNorad
+            if closestNorad in self.objectLabels:
+                self.objectLabels[closestNorad].show()
+        elif closestNorad is None and self.hoveredObject is not None:
+            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
+                self.objectLabels[self.hoveredObject].hide()
+            self.hoveredObject = None
+        elif closestNorad is not None and closestNorad != self.hoveredObject:
+            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
+                self.objectLabels[self.hoveredObject].hide()
+            self.hoveredObject = closestNorad
+            if closestNorad in self.objectLabels:
+                self.objectLabels[closestNorad].show()
+
+
+
     def _removeItems(self, items):
         if not items:
             return
@@ -364,7 +405,6 @@ class MapWidget(QWidget):
                 self.plot.removeItem(item)
         else:
             self.plot.removeItem(items)
-
 
 
 class ObjectListDockWidget(QDockWidget):
