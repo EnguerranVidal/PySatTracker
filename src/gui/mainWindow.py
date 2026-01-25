@@ -11,7 +11,7 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread
 from PyQt5.QtWidgets import *
 
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
-from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
+from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, giveDefaultMapConfig
 
 
 class MainWindow(QMainWindow):
@@ -42,9 +42,13 @@ class MainWindow(QMainWindow):
         self.objectListDock.removeObject.connect(self.removeSelectedObjects)
         self.centralViewWidget.mapWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
 
-        # OBJECT INFO DOCK WIDGET
+        # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
+        self.objectMapConfigDock = ObjectMapConfigDockWidget(self)
+        self.objectMapConfigDock.configChanged.connect(self._onMapConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
+        self.tabifyDockWidget(self.objectInfoDock, self.objectMapConfigDock)
 
         self.tleDatabase = None
         self._setupStatusBar()
@@ -117,7 +121,7 @@ class MainWindow(QMainWindow):
                 continue
             self.activeObjects.append(noradIndex)
             if str(noradIndex) not in self.settings['MAP']['CONFIG']:
-                self.settings['MAP']['CONFIG'][str(noradIndex)] = {'GROUND_TRACK': {'ENABLED': False, 'COLOR': (255, 0, 0)}, 'FOOTPRINT': {'ENABLED': False, 'COLOR': (0, 180, 255)}, 'SPOT': {'COLOR': (255, 0, 0)}}
+                self.settings['MAP']['CONFIG'][str(noradIndex)] = giveDefaultMapConfig()
         self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
@@ -159,6 +163,13 @@ class MainWindow(QMainWindow):
         else:
             self.objectInfoDock.clear()
         self.centralViewWidget.setSelectedObject(self.selectedObject)
+        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['CONFIG'])
+
+
+    def _onMapConfigChanged(self, noradIndex, newConfiguration):
+        self.settings['MAP']['CONFIG'][str(noradIndex)] = newConfiguration
+        self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(self.settings['MAP']['CONFIG'])
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -186,7 +197,6 @@ class MapWidget(QWidget):
         self._setupMap()
 
     def _setupMap(self):
-        # LOAD WORLD MAP
         if not os.path.exists(self.mapImagePath):
             raise FileNotFoundError(f'Map image not found at {self.mapImagePath}')
         img = imageio.imread(self.mapImagePath)
@@ -291,6 +301,7 @@ class MapWidget(QWidget):
         isActive = isSelected or isHovered
         noradObjectConfiguration = self.displayConfiguration[str(noradIndex)]
         # GROUND TRACKS
+        groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
         if noradObjectConfiguration['GROUND_TRACK']['ENABLED'] is True or isSelected:
             groundLongitudes, groundLatitudes = noradPosition['GROUND_TRACK']['LONGITUDE'], noradPosition['GROUND_TRACK']['LATITUDE']
             groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
@@ -299,7 +310,7 @@ class MapWidget(QWidget):
             self.objectGroundTracks[noradIndex] = []
             for segmentLongitudes, segmentLatitudes in groundSegments:
                 gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen((255, 0, 0), width=1))
+                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen(groundTrackColor, width=groundTrackWidth))
                 self.objectGroundTracks[noradIndex].append(curve)
                 self.plot.addItem(self.objectGroundTracks[noradIndex][-1])
             # GROUND TRACK ARROW
@@ -320,6 +331,7 @@ class MapWidget(QWidget):
             self.objectGroundTracks.pop(noradIndex, None)
             self.objectArrows.pop(noradIndex, None)
         # VISIBILITY FOOTPRINT
+        footColor, footWidth = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
         if noradObjectConfiguration['FOOTPRINT']['ENABLED'] is True or isSelected:
             footLongitudes, footLatitudes = noradPosition['VISIBILITY']['LONGITUDE'], noradPosition['VISIBILITY']['LATITUDE']
             footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
@@ -328,21 +340,22 @@ class MapWidget(QWidget):
             self.objectFootprints[noradIndex] = []
             for segmentLongitudes, segmentLatitudes in footSegments:
                 fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen((0, 180, 255), width=1))
+                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen(footColor, width=footWidth))
                 self.objectFootprints[noradIndex].append(curve)
                 self.plot.addItem(self.objectFootprints[noradIndex][-1])
         else:
             self._removeItems(self.objectFootprints.get(noradIndex))
             self.objectFootprints.pop(noradIndex, None)
         # OBJECT POSITIONS
-        color = (255, 0, 0) if isActive else (150, 150, 150)
+        spotColor = tuple(noradObjectConfiguration['SPOT']['COLOR']) if isActive else (150, 150, 150)
         x, y = self._lonlatToCartesian(noradPosition['POSITION']['LONGITUDE'], noradPosition['POSITION']['LATITUDE'])
         if noradIndex not in self.objectSpots:
-            spot = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(*color))
+            spot = pg.ScatterPlotItem(size=noradObjectConfiguration['SPOT']['SIZE'], brush=pg.mkBrush(*spotColor))
             spot.sigClicked.connect(self._onObjectClicked)
             self.objectSpots[noradIndex] = spot
             self.plot.addItem(self.objectSpots[noradIndex])
-        self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*color), pen=None)
+        self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*spotColor), pen=None)
+        self.objectSpots[noradIndex].setSize(noradObjectConfiguration['SPOT']['SIZE'])
         if noradIndex not in self.objectLabels:
             label = pg.TextItem(text=noradPosition['NAME'], anchor=(0.5, 1.2), color=(255, 255, 255))
             label.setZValue(10)
@@ -539,9 +552,9 @@ class ObjectListDockWidget(QDockWidget):
 class ObjectInfoDockWidget(QDockWidget):
     def __init__(self, parent=None):
         super().__init__('Object Info', parent)
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
         self._labels = {}
         self._setupUi()
 
@@ -580,6 +593,96 @@ class ObjectInfoDockWidget(QDockWidget):
                 label.setText("—")
             else:
                 label.setText(str(value))
+
+
+class ObjectMapConfigDockWidget(QDockWidget):
+    configChanged = pyqtSignal(int, dict)
+
+    def __init__(self, parent=None):
+        super().__init__("Map Configuration", parent)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
+        self.noradIndex = None
+        self._currentConfig = None
+        self._setupUi()
+        self.setEnabled(False)
+
+    def _setupUi(self):
+        self.editorWidget = QWidget()
+        layout = QFormLayout(self.editorWidget)
+
+        self.spotSizeSpin = QSpinBox()
+        self.spotSizeSpin.setRange(4, 30)
+        self.spotColorButton = QPushButton("Change color")
+        self.groundTrackEnabled = QCheckBox("Enable ground track")
+        self.groundTrackWidthSpin = QSpinBox()
+        self.groundTrackWidthSpin.setRange(1, 5)
+        self.groundTrackColorButton = QPushButton("Change color")
+        self.footprintEnabled = QCheckBox("Enable footprint")
+        self.footprintWidthSpin = QSpinBox()
+        self.footprintWidthSpin.setRange(1, 5)
+        self.footprintColorButton = QPushButton("Change color")
+
+        layout.addRow("Spot size:", self.spotSizeSpin)
+        layout.addRow("Spot color:", self.spotColorButton)
+        layout.addRow(self.groundTrackEnabled)
+        layout.addRow("Track width:", self.groundTrackWidthSpin)
+        layout.addRow("Track color:", self.groundTrackColorButton)
+        layout.addRow(self.footprintEnabled)
+        layout.addRow("Footprint width:", self.footprintWidthSpin)
+        layout.addRow("Footprint color:", self.footprintColorButton)
+
+        self.editorWidget.setEnabled(False)
+        self.setWidget(self.editorWidget)
+        self.spotSizeSpin.valueChanged.connect(self._emitConfig)
+        self.groundTrackEnabled.toggled.connect(self._emitConfig)
+        self.groundTrackWidthSpin.valueChanged.connect(self._emitConfig)
+        self.footprintEnabled.toggled.connect(self._emitConfig)
+        self.footprintWidthSpin.valueChanged.connect(self._emitConfig)
+
+        self.spotColorButton.clicked.connect(lambda: self._pickColor('SPOT'))
+        self.groundTrackColorButton.clicked.connect(lambda: self._pickColor('GROUND_TRACK'))
+        self.footprintColorButton.clicked.connect(lambda: self._pickColor('FOOTPRINT'))
+
+    def setSelectedObject(self, noradIndex: int | None, config: dict):
+        self.noradIndex = noradIndex
+        if noradIndex is None:
+            self.clear()
+            return
+        self.editorWidget.setEnabled(True)
+        self._currentConfig = config[str(noradIndex)]
+        self.blockSignals(True)
+        self.spotSizeSpin.setValue(self._currentConfig['SPOT'].get('SIZE', 10))
+        self.groundTrackEnabled.setChecked(self._currentConfig['GROUND_TRACK']['ENABLED'])
+        self.groundTrackWidthSpin.setValue(self._currentConfig['GROUND_TRACK'].get('WIDTH', 1))
+        self.footprintEnabled.setChecked(self._currentConfig['FOOTPRINT']['ENABLED'])
+        self.footprintWidthSpin.setValue(self._currentConfig['FOOTPRINT'].get('WIDTH', 1))
+        self.blockSignals(False)
+
+    def clear(self):
+        self.noradIndex = None
+        self._currentConfig = None
+        self.editorWidget.setEnabled(False)
+
+    def _pickColor(self, section):
+        if self._currentConfig is None:
+            return
+        color = QColorDialog.getColor()
+        if not color.isValid():
+            return
+        self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())
+        self._emitConfig()
+
+    def _emitConfig(self, *_):
+        if self.noradIndex is None or self._currentConfig is None:
+            return
+        self._currentConfig['SPOT']['SIZE'] = self.spotSizeSpin.value()
+        self._currentConfig['GROUND_TRACK']['ENABLED'] = self.groundTrackEnabled.isChecked()
+        self._currentConfig['GROUND_TRACK']['WIDTH'] = self.groundTrackWidthSpin.value()
+        self._currentConfig['FOOTPRINT']['ENABLED'] = self.footprintEnabled.isChecked()
+        self._currentConfig['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
+        self.configChanged.emit(self.noradIndex, self._currentConfig)
 
 
 class CentralViewWidget(QWidget):
