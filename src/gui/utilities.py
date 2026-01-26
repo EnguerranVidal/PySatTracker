@@ -1,3 +1,4 @@
+import copy
 import os
 import json
 
@@ -7,9 +8,9 @@ import cartopy.feature as cfeature
 
 
 def giveDefaultMapConfig():
-    return {'SPOT': {'SIZE': 10, 'COLOR': (255, 0, 0),},
-            'GROUND_TRACK': {'ENABLED': False,'WIDTH': 1, 'COLOR': (255, 0, 0),},
-            'FOOTPRINT': {'ENABLED': False, 'WIDTH': 1, 'COLOR': (0, 180, 255),}}
+    return copy.deepcopy({'SPOT': {'SIZE': 10, 'COLOR': (255, 0, 0),},
+                          'GROUND_TRACK': {'ENABLED': False,'WIDTH': 1, 'COLOR': (255, 0, 0),},
+                          'FOOTPRINT': {'ENABLED': False, 'WIDTH': 1, 'COLOR': (0, 180, 255),}})
 
 def generateDefaultSettingsJson(path):
     settings = {

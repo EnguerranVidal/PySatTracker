@@ -7,7 +7,7 @@ import imageio
 import pyqtgraph as pg
 from pyqtgraph import GraphicsLayoutWidget
 
-from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread
+from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker
 from PyQt5.QtWidgets import *
 
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
@@ -606,7 +606,6 @@ class ObjectMapConfigDockWidget(QDockWidget):
         self.noradIndex = None
         self._currentConfig = None
         self._setupUi()
-        self.setEnabled(False)
 
     def _setupUi(self):
         self.editorWidget = QWidget()
@@ -647,18 +646,24 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
     def setSelectedObject(self, noradIndex: int | None, config: dict):
         self.noradIndex = noradIndex
+        print(noradIndex, type(noradIndex))
         if noradIndex is None:
             self.clear()
             return
         self.editorWidget.setEnabled(True)
         self._currentConfig = config[str(noradIndex)]
-        self.blockSignals(True)
+        blockers = [
+            QSignalBlocker(self.spotSizeSpin),
+            QSignalBlocker(self.groundTrackEnabled),
+            QSignalBlocker(self.groundTrackWidthSpin),
+            QSignalBlocker(self.footprintEnabled),
+            QSignalBlocker(self.footprintWidthSpin),
+        ]
         self.spotSizeSpin.setValue(self._currentConfig['SPOT'].get('SIZE', 10))
         self.groundTrackEnabled.setChecked(self._currentConfig['GROUND_TRACK']['ENABLED'])
         self.groundTrackWidthSpin.setValue(self._currentConfig['GROUND_TRACK'].get('WIDTH', 1))
         self.footprintEnabled.setChecked(self._currentConfig['FOOTPRINT']['ENABLED'])
         self.footprintWidthSpin.setValue(self._currentConfig['FOOTPRINT'].get('WIDTH', 1))
-        self.blockSignals(False)
 
     def clear(self):
         self.noradIndex = None
@@ -675,6 +680,8 @@ class ObjectMapConfigDockWidget(QDockWidget):
         self._emitConfig()
 
     def _emitConfig(self, *_):
+        if not self.editorWidget.isEnabled():
+            return
         if self.noradIndex is None or self._currentConfig is None:
             return
         self._currentConfig['SPOT']['SIZE'] = self.spotSizeSpin.value()
