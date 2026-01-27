@@ -1,5 +1,4 @@
 import copy
-import os
 import json
 
 import matplotlib.pyplot as plt
@@ -9,15 +8,15 @@ import cartopy.feature as cfeature
 
 def giveDefaultMapConfig():
     return copy.deepcopy({'SPOT': {'SIZE': 10, 'COLOR': (255, 0, 0),},
-                          'GROUND_TRACK': {'ENABLED': False,'WIDTH': 1, 'COLOR': (255, 0, 0),},
-                          'FOOTPRINT': {'ENABLED': False, 'WIDTH': 1, 'COLOR': (0, 180, 255),}})
+                          'GROUND_TRACK': {'MODE': 'WHEN_SELECTED','WIDTH': 1, 'COLOR': (255, 0, 0),},
+                          'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 1, 'COLOR': (0, 180, 255),}})
 
 def generateDefaultSettingsJson(path):
     settings = {
         'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True},
         'VISUALIZATION': {'ACTIVE_OBJECTS': [25544], 'CURRENT_TAB': 'Map'},
-        'MAP': {'CONFIG': {'25544': giveDefaultMapConfig()}},
+        'MAP': {'CONFIG': {'DEFAULT': giveDefaultMapConfig(), '25544': giveDefaultMapConfig()}},
     }
     with open(path, 'w') as f:
         json.dump(settings, f)

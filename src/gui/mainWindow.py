@@ -260,6 +260,14 @@ class MapWidget(QWidget):
             latitudeSegments[k + 1] = np.insert(latitudeSegments[k + 1], 0, latitudeBorder)
         return list(zip(longitudeSegments, latitudeSegments))
 
+    @staticmethod
+    def _shouldRender(mode: str, isSelected: bool):
+        if mode == "ALWAYS":
+            return True
+        if mode == "WHEN_SELECTED":
+            return isSelected
+        return False  # NEVER
+
     def _updateSunAndNight(self, mapData):
         subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
         longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
@@ -302,7 +310,7 @@ class MapWidget(QWidget):
         noradObjectConfiguration = self.displayConfiguration[str(noradIndex)]
         # GROUND TRACKS
         groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
-        if noradObjectConfiguration['GROUND_TRACK']['ENABLED'] is True or isSelected:
+        if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected):
             groundLongitudes, groundLatitudes = noradPosition['GROUND_TRACK']['LONGITUDE'], noradPosition['GROUND_TRACK']['LATITUDE']
             groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
             for item in self.objectGroundTracks.get(noradIndex, []):
@@ -320,7 +328,7 @@ class MapWidget(QWidget):
             length = np.hypot(x1 - x0, y1 - y0)
             angle = self._arrowAngle(x0, y0, x1, y1)
             if noradIndex not in self.objectArrows:
-                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(255, 0, 0), brush=pg.mkBrush(255, 0, 0), pxMode=False)
+                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(groundTrackColor), brush=pg.mkBrush(groundTrackColor), pxMode=False)
                 self.objectArrows[noradIndex] = arrow
                 self.plot.addItem(self.objectArrows[noradIndex])
             self.objectArrows[noradIndex].setStyle(angle=angle)
@@ -332,7 +340,7 @@ class MapWidget(QWidget):
             self.objectArrows.pop(noradIndex, None)
         # VISIBILITY FOOTPRINT
         footColor, footWidth = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
-        if noradObjectConfiguration['FOOTPRINT']['ENABLED'] is True or isSelected:
+        if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected):
             footLongitudes, footLatitudes = noradPosition['VISIBILITY']['LONGITUDE'], noradPosition['VISIBILITY']['LATITUDE']
             footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
             for item in self.objectFootprints.get(noradIndex, []):
@@ -597,6 +605,7 @@ class ObjectInfoDockWidget(QDockWidget):
 
 class ObjectMapConfigDockWidget(QDockWidget):
     configChanged = pyqtSignal(int, dict)
+    MODES = {'Always': "ALWAYS", 'When Selected': "WHEN_SELECTED", 'Never': "NEVER"}
 
     def __init__(self, parent=None):
         super().__init__("Map Configuration", parent)
@@ -609,40 +618,72 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
     def _setupUi(self):
         self.editorWidget = QWidget()
-        layout = QFormLayout(self.editorWidget)
+        layout = QVBoxLayout(self.editorWidget)
 
+        layout.addWidget(self._sectionLabel("Spot"))
         self.spotSizeSpin = QSpinBox()
         self.spotSizeSpin.setRange(4, 30)
-        self.spotColorButton = QPushButton("Change color")
-        self.groundTrackEnabled = QCheckBox("Enable ground track")
+        self.spotSizeSpin.setToolTip("Size")
+        self.spotColorButton = self._colorButton()
+        layout.addWidget(self.spotColorButton)
+        layout.addWidget(self.spotSizeSpin)
+
+        layout.addWidget(self._sectionLabel("Ground Track"))
+        self.groundTrackModeCombo = QComboBox()
+        self.groundTrackModeCombo.addItems(list(self.MODES.keys()))
         self.groundTrackWidthSpin = QSpinBox()
         self.groundTrackWidthSpin.setRange(1, 5)
-        self.groundTrackColorButton = QPushButton("Change color")
-        self.footprintEnabled = QCheckBox("Enable footprint")
+        self.groundTrackWidthSpin.setToolTip("Width")
+        self.groundTrackColorButton = self._colorButton()
+        layout.addWidget(self.groundTrackModeCombo)
+        layout.addWidget(self.groundTrackColorButton)
+        layout.addWidget(self.groundTrackWidthSpin)
+
+        layout.addWidget(self._sectionLabel("Footprint"))
+        self.footprintModeCombo = QComboBox()
+        self.footprintModeCombo.addItems(list(self.MODES.keys()))
         self.footprintWidthSpin = QSpinBox()
         self.footprintWidthSpin.setRange(1, 5)
-        self.footprintColorButton = QPushButton("Change color")
-
-        layout.addRow("Spot size:", self.spotSizeSpin)
-        layout.addRow("Spot color:", self.spotColorButton)
-        layout.addRow(self.groundTrackEnabled)
-        layout.addRow("Track width:", self.groundTrackWidthSpin)
-        layout.addRow("Track color:", self.groundTrackColorButton)
-        layout.addRow(self.footprintEnabled)
-        layout.addRow("Footprint width:", self.footprintWidthSpin)
-        layout.addRow("Footprint color:", self.footprintColorButton)
+        self.footprintWidthSpin.setToolTip("Width")
+        self.footprintColorButton = self._colorButton()
+        layout.addWidget(self.footprintModeCombo)
+        layout.addWidget(self.footprintColorButton)
+        layout.addWidget(self.footprintWidthSpin)
 
         self.editorWidget.setEnabled(False)
         self.setWidget(self.editorWidget)
         self.spotSizeSpin.valueChanged.connect(self._emitConfig)
-        self.groundTrackEnabled.toggled.connect(self._emitConfig)
+        self.groundTrackModeCombo.currentIndexChanged.connect(self._emitConfig)
         self.groundTrackWidthSpin.valueChanged.connect(self._emitConfig)
-        self.footprintEnabled.toggled.connect(self._emitConfig)
+        self.footprintModeCombo.currentIndexChanged.connect(self._emitConfig)
         self.footprintWidthSpin.valueChanged.connect(self._emitConfig)
 
         self.spotColorButton.clicked.connect(lambda: self._pickColor('SPOT'))
         self.groundTrackColorButton.clicked.connect(lambda: self._pickColor('GROUND_TRACK'))
         self.footprintColorButton.clicked.connect(lambda: self._pickColor('FOOTPRINT'))
+
+    @staticmethod
+    def _colorButton():
+        btn = QPushButton()
+        btn.setFixedSize(24, 24)
+        btn.setStyleSheet("border: 1px solid #666;")
+        return btn
+
+    @staticmethod
+    def _sectionLabel(text):
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: bold;")
+        return label
+
+    @staticmethod
+    def _setButtonColor(btn, color):
+        btn.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
+
+    def _modeToLabel(self, mode):
+        for label, value in self.MODES.items():
+            if value == mode:
+                return label
+        return "Never"
 
     def setSelectedObject(self, noradIndex: int | None, config: dict):
         self.noradIndex = noradIndex
@@ -654,16 +695,20 @@ class ObjectMapConfigDockWidget(QDockWidget):
         self._currentConfig = config[str(noradIndex)]
         blockers = [
             QSignalBlocker(self.spotSizeSpin),
-            QSignalBlocker(self.groundTrackEnabled),
+            QSignalBlocker(self.groundTrackModeCombo),
             QSignalBlocker(self.groundTrackWidthSpin),
-            QSignalBlocker(self.footprintEnabled),
+            QSignalBlocker(self.footprintModeCombo),
             QSignalBlocker(self.footprintWidthSpin),
         ]
         self.spotSizeSpin.setValue(self._currentConfig['SPOT'].get('SIZE', 10))
-        self.groundTrackEnabled.setChecked(self._currentConfig['GROUND_TRACK']['ENABLED'])
+        self.groundTrackModeCombo.setCurrentText(self._modeToLabel(self._currentConfig['GROUND_TRACK']['MODE']))
         self.groundTrackWidthSpin.setValue(self._currentConfig['GROUND_TRACK'].get('WIDTH', 1))
-        self.footprintEnabled.setChecked(self._currentConfig['FOOTPRINT']['ENABLED'])
+        self.footprintModeCombo.setCurrentText(self._modeToLabel(self._currentConfig['FOOTPRINT']['MODE']))
         self.footprintWidthSpin.setValue(self._currentConfig['FOOTPRINT'].get('WIDTH', 1))
+        self._setButtonColor(self.spotColorButton, self._currentConfig['SPOT']['COLOR'])
+        self._setButtonColor(self.groundTrackColorButton, self._currentConfig['GROUND_TRACK']['COLOR'])
+        self._setButtonColor(self.footprintColorButton, self._currentConfig['FOOTPRINT']['COLOR'])
+        del blockers
 
     def clear(self):
         self.noradIndex = None
@@ -676,7 +721,9 @@ class ObjectMapConfigDockWidget(QDockWidget):
         color = QColorDialog.getColor()
         if not color.isValid():
             return
+        button = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
         self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())
+        self._setButtonColor(button, self._currentConfig[section]['COLOR'])
         self._emitConfig()
 
     def _emitConfig(self, *_):
@@ -685,9 +732,9 @@ class ObjectMapConfigDockWidget(QDockWidget):
         if self.noradIndex is None or self._currentConfig is None:
             return
         self._currentConfig['SPOT']['SIZE'] = self.spotSizeSpin.value()
-        self._currentConfig['GROUND_TRACK']['ENABLED'] = self.groundTrackEnabled.isChecked()
+        self._currentConfig['GROUND_TRACK']['MODE'] = self.MODES[self.groundTrackModeCombo.currentText()]
         self._currentConfig['GROUND_TRACK']['WIDTH'] = self.groundTrackWidthSpin.value()
-        self._currentConfig['FOOTPRINT']['ENABLED'] = self.footprintEnabled.isChecked()
+        self._currentConfig['FOOTPRINT']['MODE'] = self.MODES[self.footprintModeCombo.currentText()]
         self._currentConfig['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
         self.configChanged.emit(self.noradIndex, self._currentConfig)
 
