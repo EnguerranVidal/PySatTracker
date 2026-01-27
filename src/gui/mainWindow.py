@@ -48,7 +48,6 @@ class MainWindow(QMainWindow):
         self.objectMapConfigDock.configChanged.connect(self._onMapConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
-        self.tabifyDockWidget(self.objectInfoDock, self.objectMapConfigDock)
 
         self.tleDatabase = None
         self._setupStatusBar()
@@ -185,6 +184,7 @@ class MainWindow(QMainWindow):
 
 class MapWidget(QWidget):
     objectSelected = pyqtSignal(list)
+    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5}
 
     def __init__(self, parent=None, mapImagePath='src/assets/world_map.png'):
         super().__init__(parent)
@@ -276,12 +276,14 @@ class MapWidget(QWidget):
         fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
         if self.nightLayer is None:
             self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
+            self.nightLayer.setZValue(self.ELEMENTS_Z_VALUES['NIGHT'])
             self.plot.addItem(self.nightLayer)
         else:
             self.nightLayer.setData(x, y)
             self.nightLayer.setFillLevel(fillLevel)
         if self.sunIndicator is None:
             self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
+            self.sunIndicator.setZValue(self.ELEMENTS_Z_VALUES['SUN'])
             self.plot.addItem(self.sunIndicator)
         self.sunIndicator.setData([xSun], [ySun])
 
@@ -319,6 +321,7 @@ class MapWidget(QWidget):
             for segmentLongitudes, segmentLatitudes in groundSegments:
                 gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
                 curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen(groundTrackColor, width=groundTrackWidth))
+                curve.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
                 self.objectGroundTracks[noradIndex].append(curve)
                 self.plot.addItem(self.objectGroundTracks[noradIndex][-1])
             # GROUND TRACK ARROW
@@ -329,6 +332,7 @@ class MapWidget(QWidget):
             angle = self._arrowAngle(x0, y0, x1, y1)
             if noradIndex not in self.objectArrows:
                 arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(groundTrackColor), brush=pg.mkBrush(groundTrackColor), pxMode=False)
+                arrow.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
                 self.objectArrows[noradIndex] = arrow
                 self.plot.addItem(self.objectArrows[noradIndex])
             self.objectArrows[noradIndex].setStyle(angle=angle)
@@ -349,6 +353,7 @@ class MapWidget(QWidget):
             for segmentLongitudes, segmentLatitudes in footSegments:
                 fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
                 curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen(footColor, width=footWidth))
+                curve.setZValue(self.ELEMENTS_Z_VALUES['FOOTPRINT'])
                 self.objectFootprints[noradIndex].append(curve)
                 self.plot.addItem(self.objectFootprints[noradIndex][-1])
         else:
@@ -360,13 +365,14 @@ class MapWidget(QWidget):
         if noradIndex not in self.objectSpots:
             spot = pg.ScatterPlotItem(size=noradObjectConfiguration['SPOT']['SIZE'], brush=pg.mkBrush(*spotColor))
             spot.sigClicked.connect(self._onObjectClicked)
+            spot.setZValue(self.ELEMENTS_Z_VALUES['SPOT'])
             self.objectSpots[noradIndex] = spot
             self.plot.addItem(self.objectSpots[noradIndex])
         self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*spotColor), pen=None)
         self.objectSpots[noradIndex].setSize(noradObjectConfiguration['SPOT']['SIZE'])
         if noradIndex not in self.objectLabels:
             label = pg.TextItem(text=noradPosition['NAME'], anchor=(0.5, 1.2), color=(255, 255, 255))
-            label.setZValue(10)
+            label.setZValue(self.ELEMENTS_Z_VALUES['LABEL'])
             label.hide()
             self.objectLabels[noradIndex] = label
             self.plot.addItem(label)
@@ -415,8 +421,6 @@ class MapWidget(QWidget):
             self.hoveredObject = closestNorad
             if closestNorad in self.objectLabels:
                 self.objectLabels[closestNorad].show()
-
-
 
     def _removeItems(self, items):
         if not items:
@@ -618,37 +622,49 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
     def _setupUi(self):
         self.editorWidget = QWidget()
-        layout = QVBoxLayout(self.editorWidget)
+        self.editorWidget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        mainLayout = QVBoxLayout(self.editorWidget)
+        mainLayout.setSpacing(10)
+        mainLayout.setContentsMargins(6, 6, 6, 6)
 
-        layout.addWidget(self._sectionLabel("Spot"))
+        # SPOT CONFIGURATION
+        self.spotGroup = self._groupBox("Spot")
+        self.spotColorButton = self._colorButton()
         self.spotSizeSpin = QSpinBox()
         self.spotSizeSpin.setRange(4, 30)
         self.spotSizeSpin.setToolTip("Size")
-        self.spotColorButton = self._colorButton()
-        layout.addWidget(self.spotColorButton)
-        layout.addWidget(self.spotSizeSpin)
 
-        layout.addWidget(self._sectionLabel("Ground Track"))
+        self.spotGroup.layout().addWidget(self.spotColorButton, 0, 0)
+        self.spotGroup.layout().addWidget(self.spotSizeSpin, 0, 1)
+        mainLayout.addWidget(self.spotGroup)
+
+        # GROUND TRACK CONFIGURATION
+        self.groundTrackGroup = self._groupBox("Ground Track")
         self.groundTrackModeCombo = QComboBox()
         self.groundTrackModeCombo.addItems(list(self.MODES.keys()))
+        self.groundTrackColorButton = self._colorButton()
         self.groundTrackWidthSpin = QSpinBox()
         self.groundTrackWidthSpin.setRange(1, 5)
         self.groundTrackWidthSpin.setToolTip("Width")
-        self.groundTrackColorButton = self._colorButton()
-        layout.addWidget(self.groundTrackModeCombo)
-        layout.addWidget(self.groundTrackColorButton)
-        layout.addWidget(self.groundTrackWidthSpin)
 
-        layout.addWidget(self._sectionLabel("Footprint"))
+        self.groundTrackGroup.layout().addWidget(self.groundTrackModeCombo, 0, 0)
+        self.groundTrackGroup.layout().addWidget(self.groundTrackColorButton, 0, 1)
+        self.groundTrackGroup.layout().addWidget(self.groundTrackWidthSpin, 0, 2)
+        mainLayout.addWidget(self.groundTrackGroup)
+
+        # VISIBILITY CONFIGURATION
+        self.footprintGroup = self._groupBox("Visibility Footprint")
         self.footprintModeCombo = QComboBox()
         self.footprintModeCombo.addItems(list(self.MODES.keys()))
+        self.footprintColorButton = self._colorButton()
         self.footprintWidthSpin = QSpinBox()
         self.footprintWidthSpin.setRange(1, 5)
         self.footprintWidthSpin.setToolTip("Width")
-        self.footprintColorButton = self._colorButton()
-        layout.addWidget(self.footprintModeCombo)
-        layout.addWidget(self.footprintColorButton)
-        layout.addWidget(self.footprintWidthSpin)
+
+        self.footprintGroup.layout().addWidget(self.footprintModeCombo, 0, 0)
+        self.footprintGroup.layout().addWidget(self.footprintColorButton, 0, 1)
+        self.footprintGroup.layout().addWidget(self.footprintWidthSpin, 0, 2)
+        mainLayout.addWidget(self.footprintGroup)
 
         self.editorWidget.setEnabled(False)
         self.setWidget(self.editorWidget)
@@ -670,10 +686,14 @@ class ObjectMapConfigDockWidget(QDockWidget):
         return btn
 
     @staticmethod
-    def _sectionLabel(text):
-        label = QLabel(text)
-        label.setStyleSheet("font-weight: bold;")
-        return label
+    def _groupBox(title: str):
+        box = QGroupBox(title)
+        box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
+        layout.setContentsMargins(8, 12, 8, 8)
+        return box
 
     @staticmethod
     def _setButtonColor(btn, color):
