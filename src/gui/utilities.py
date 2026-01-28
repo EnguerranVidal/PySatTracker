@@ -6,7 +6,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 
-def giveDefaultMapConfig():
+def giveDefaultObjectMapConfig():
     return copy.deepcopy({'SPOT': {'SIZE': 10, 'COLOR': (255, 0, 0),},
                           'GROUND_TRACK': {'MODE': 'WHEN_SELECTED','WIDTH': 1, 'COLOR': (255, 0, 0),},
                           'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 1, 'COLOR': (0, 180, 255),}})
@@ -16,7 +16,7 @@ def generateDefaultSettingsJson(path):
         'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True},
         'VISUALIZATION': {'ACTIVE_OBJECTS': [25544], 'CURRENT_TAB': 'Map'},
-        'MAP': {'CONFIG': {'DEFAULT': giveDefaultMapConfig(), '25544': giveDefaultMapConfig()}},
+        'MAP': {'DEFAULT_CONFIG': giveDefaultObjectMapConfig(), 'OBJECTS': {'25544': giveDefaultObjectMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True},
     }
     with open(path, 'w') as f:
         json.dump(settings, f)

@@ -11,7 +11,7 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSi
 from PyQt5.QtWidgets import *
 
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
-from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, giveDefaultMapConfig
+from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, giveDefaultObjectMapConfig
 
 
 class MainWindow(QMainWindow):
@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
         self.objectMapConfigDock = ObjectMapConfigDockWidget(self)
-        self.objectMapConfigDock.configChanged.connect(self._onMapConfigChanged)
+        self.objectMapConfigDock.configChanged.connect(self._onMapObjectConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
 
@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
     def setDatabase(self, database):
         self.tleDatabase = database
         self.centralViewWidget.setDatabase(database)
-        self.centralViewWidget.setDisplayConfiguration(self.settings['MAP']['CONFIG'])
+        self.centralViewWidget.setMapConfiguration(self.settings['MAP'])
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
@@ -120,7 +120,7 @@ class MainWindow(QMainWindow):
                 continue
             self.activeObjects.append(noradIndex)
             if str(noradIndex) not in self.settings['MAP']['CONFIG']:
-                self.settings['MAP']['CONFIG'][str(noradIndex)] = giveDefaultMapConfig()
+                self.settings['MAP']['CONFIG'][str(noradIndex)] = giveDefaultObjectMapConfig()
         self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
@@ -162,13 +162,13 @@ class MainWindow(QMainWindow):
         else:
             self.objectInfoDock.clear()
         self.centralViewWidget.setSelectedObject(self.selectedObject)
-        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['CONFIG'])
+        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['OBJECTS'])
 
 
-    def _onMapConfigChanged(self, noradIndex, newConfiguration):
-        self.settings['MAP']['CONFIG'][str(noradIndex)] = newConfiguration
+    def _onMapObjectConfigChanged(self, noradIndex, newConfiguration):
+        self.settings['MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(self.settings['MAP']['CONFIG'])
+        self.centralViewWidget.setMapConfiguration(self.settings['MAP'])
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -268,24 +268,36 @@ class MapWidget(QWidget):
             return isSelected
         return False  # NEVER
 
-    def _updateSunAndNight(self, mapData):
-        subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
-        longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
-        x, y = self._lonlatToCartesian(longitudes, latitudes)
-        xSun, ySun = self._lonlatToCartesian(subPointLongitude, subPointLatitude)
-        fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
-        if self.nightLayer is None:
-            self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
-            self.nightLayer.setZValue(self.ELEMENTS_Z_VALUES['NIGHT'])
-            self.plot.addItem(self.nightLayer)
+    def _updateSunAndNight(self, mapData, showSun=True, showNight=True):
+        if showNight:
+            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
+            longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
+            x, y = self._lonlatToCartesian(longitudes, latitudes)
+            fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
+            if self.nightLayer is None:
+                self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
+                self.nightLayer.setZValue(self.ELEMENTS_Z_VALUES['NIGHT'])
+                self.plot.addItem(self.nightLayer)
+            else:
+                self.nightLayer.setData(x, y)
+                self.nightLayer.setFillLevel(fillLevel)
+
         else:
-            self.nightLayer.setData(x, y)
-            self.nightLayer.setFillLevel(fillLevel)
-        if self.sunIndicator is None:
-            self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
-            self.sunIndicator.setZValue(self.ELEMENTS_Z_VALUES['SUN'])
-            self.plot.addItem(self.sunIndicator)
-        self.sunIndicator.setData([xSun], [ySun])
+            if self.nightLayer is not None:
+                self.plot.removeItem(self.nightLayer)
+                self.nightLayer = None
+        if showSun:
+            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
+            xSun, ySun = self._lonlatToCartesian(subPointLongitude, subPointLatitude)
+            if self.sunIndicator is None:
+                self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
+                self.sunIndicator.setZValue(self.ELEMENTS_Z_VALUES['SUN'])
+                self.plot.addItem(self.sunIndicator)
+            self.sunIndicator.setData([xSun], [ySun])
+        else:
+            if self.sunIndicator is not None:
+                self.plot.removeItem(self.sunIndicator)
+                self.sunIndicator = None
 
     def updateMap(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
         self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
@@ -298,7 +310,7 @@ class MapWidget(QWidget):
                 self._removeItems(self.objectArrows.pop(noradIndex, None))
                 self._removeItems(self.objectLabels.pop(noradIndex, None))
         # NIGHT LAYER AND SUN POSITION
-        self._updateSunAndNight(positions['MAP'])
+        self._updateSunAndNight(positions['MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
         # DRAW VISIBLE NORAD OBJECTS
         for noradIndex in visibleNorads:
             if noradIndex not in positions:
@@ -309,7 +321,7 @@ class MapWidget(QWidget):
         isSelected = (noradIndex == self.selectedObject)
         isHovered = (noradIndex == self.hoveredObject)
         isActive = isSelected or isHovered
-        noradObjectConfiguration = self.displayConfiguration[str(noradIndex)]
+        noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
         # GROUND TRACKS
         groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
         if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected):
@@ -612,7 +624,7 @@ class ObjectMapConfigDockWidget(QDockWidget):
     MODES = {'Always': "ALWAYS", 'When Selected': "WHEN_SELECTED", 'Never': "NEVER"}
 
     def __init__(self, parent=None):
-        super().__init__("Map Configuration", parent)
+        super().__init__("Object Map Configuration", parent)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
@@ -707,7 +719,6 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
     def setSelectedObject(self, noradIndex: int | None, config: dict):
         self.noradIndex = noradIndex
-        print(noradIndex, type(noradIndex))
         if noradIndex is None:
             self.clear()
             return
@@ -810,7 +821,7 @@ class CentralViewWidget(QWidget):
         self.orbitWorker.noradIndices = list(self.activeObjects)
         self._refreshMap()
 
-    def setDisplayConfiguration(self, displayConfiguration):
+    def setMapConfiguration(self, displayConfiguration):
         self.displayConfiguration = displayConfiguration
         self._refreshMap()
 
