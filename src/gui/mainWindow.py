@@ -1,3 +1,4 @@
+import copy
 import os
 
 import numpy as np
@@ -50,9 +51,36 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
 
         self.tleDatabase = None
+        self._setupMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
 
+    def _setupMenuBar(self):
+        menuBar = self.menuBar()
+
+        # VIEW MENU
+        viewMenu = menuBar.addMenu('View')
+        mapViewMenu = viewMenu.addMenu('2D Map')
+        resetMapConfigAction = QAction('Reset Configuration', self)
+        setMapConfigAsDefaultAction = QAction('Set as Default', self)
+        nightLayerAction = QAction('Show Night Layer', self, checkable=True)
+        sunIndicatorAction = QAction('Show Sun Indicator', self, checkable=True)
+        nightLayerAction.setChecked(self.settings['MAP']['SHOW_NIGHT'])
+        sunIndicatorAction.setChecked(self.settings['MAP']['SHOW_SUN'])
+
+        resetMapConfigAction.triggered.connect(self._resetObjectMapConfig)
+        setMapConfigAsDefaultAction.triggered.connect(self._setObjectMapConfigAsDefault)
+        nightLayerAction.toggled.connect(self._checkNightLayer)
+        sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+
+        mapViewMenu.addAction(resetMapConfigAction)
+        mapViewMenu.addAction(setMapConfigAsDefaultAction)
+        mapViewMenu.addSeparator()
+        mapViewMenu.addAction(nightLayerAction)
+        mapViewMenu.addAction(sunIndicatorAction)
+
+        # HELP MENU
+        helpMenu = menuBar.addMenu('Help')
 
     def _center(self):
         frameGeometry = self.frameGeometry()
@@ -103,7 +131,7 @@ class MainWindow(QMainWindow):
     def setDatabase(self, database):
         self.tleDatabase = database
         self.centralViewWidget.setDatabase(database)
-        self.centralViewWidget.setMapConfiguration(self.settings['MAP'])
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
@@ -119,8 +147,8 @@ class MainWindow(QMainWindow):
             if noradIndex in self.activeObjects:
                 continue
             self.activeObjects.append(noradIndex)
-            if str(noradIndex) not in self.settings['MAP']['CONFIG']:
-                self.settings['MAP']['CONFIG'][str(noradIndex)] = giveDefaultObjectMapConfig()
+            if str(noradIndex) not in self.settings['MAP']['OBJECTS']:
+                self.settings['MAP']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['MAP']['DEFAULT_CONFIG'])
         self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
@@ -168,7 +196,31 @@ class MainWindow(QMainWindow):
     def _onMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(self.settings['MAP'])
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+
+    def _resetObjectMapConfig(self):
+        if self.selectedObject is None:
+            return
+        self.settings['MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['MAP']['DEFAULT_CONFIG'])
+        self.saveSettings()
+        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['OBJECTS'])
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+
+    def _setObjectMapConfigAsDefault(self):
+        if self.selectedObject is None:
+            return
+        self.settings['MAP']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['MAP']['OBJECTS'][str(self.selectedObject)])
+        self.saveSettings()
+
+    def _checkNightLayer(self, checked):
+        self.settings['MAP']['SHOW_NIGHT'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+
+    def _checkSunIndicator(self, checked):
+        self.settings['MAP']['SHOW_SUN'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -790,7 +842,7 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.mapWidget = MapWidget()
         self.tabWidget = QTabWidget()
-        self.tabWidget.addTab(self.mapWidget, 'Map')
+        self.tabWidget.addTab(self.mapWidget, '2D Map')
 
         # MAP LINKING
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
