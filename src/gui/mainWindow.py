@@ -67,8 +67,13 @@ class MainWindow(QMainWindow):
         setMapConfigAsDefaultAction = QAction('Set as Default', self)
         nightLayerAction = QAction('Show Night Layer', self, checkable=True)
         sunIndicatorAction = QAction('Show Sun Indicator', self, checkable=True)
+        showGroundTracksAction = QAction('Show Ground Tracks', self, checkable=True)
+        showFootprintsAction = QAction('Show Footprints', self, checkable=True)
+
         nightLayerAction.setChecked(self.settings['MAP']['SHOW_NIGHT'])
         sunIndicatorAction.setChecked(self.settings['MAP']['SHOW_SUN'])
+        showGroundTracksAction.setChecked(self.settings['MAP']['SHOW_GROUND_TRACK'])
+        showFootprintsAction.setChecked(self.settings['MAP']['SHOW_FOOTPRINT'])
 
         resetMapConfigAction.triggered.connect(self._resetObjectMapConfig)
         setMapConfigAsDefaultAction.triggered.connect(self._setObjectMapConfigAsDefault)
@@ -76,15 +81,32 @@ class MainWindow(QMainWindow):
         self._selectionDependentActions.append(setMapConfigAsDefaultAction)
         nightLayerAction.toggled.connect(self._checkNightLayer)
         sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        showGroundTracksAction.toggled.connect(self._checkGroundTracks)
+        showFootprintsAction.toggled.connect(self._checkFootprints)
 
         mapViewMenu.addAction(resetMapConfigAction)
         mapViewMenu.addAction(setMapConfigAsDefaultAction)
         mapViewMenu.addSeparator()
         mapViewMenu.addAction(nightLayerAction)
         mapViewMenu.addAction(sunIndicatorAction)
+        mapViewMenu.addSeparator()
+        mapViewMenu.addAction(showGroundTracksAction)
+        mapViewMenu.addAction(showFootprintsAction)
 
         # HELP MENU
         helpMenu = menuBar.addMenu('Help')
+
+    def _checkGroundTracks(self, checked):
+        self.settings['MAP']['SHOW_GROUND_TRACK'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.objectMapConfigDock.enableGroundTrackConfig(self.settings['MAP']['SHOW_GROUND_TRACK'])
+
+    def _checkFootprints(self, checked):
+        self.settings['MAP']['SHOW_FOOTPRINT'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.objectMapConfigDock.enableFootprintConfig(self.settings['MAP']['SHOW_FOOTPRINT'])
 
     def _center(self):
         frameGeometry = self.frameGeometry()
@@ -328,7 +350,9 @@ class MapWidget(QWidget):
         return list(zip(longitudeSegments, latitudeSegments))
 
     @staticmethod
-    def _shouldRender(mode: str, isSelected: bool):
+    def _shouldRender(mode: str, isSelected: bool, isToggled: bool = True):
+        if not isToggled:
+            return False
         if mode == "ALWAYS":
             return True
         if mode == "WHEN_SELECTED":
@@ -391,7 +415,7 @@ class MapWidget(QWidget):
         noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
         # GROUND TRACKS
         groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected):
+        if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected, self.displayConfiguration['SHOW_GROUND_TRACK']):
             groundLongitudes, groundLatitudes = noradPosition['GROUND_TRACK']['LONGITUDE'], noradPosition['GROUND_TRACK']['LATITUDE']
             groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
             for item in self.objectGroundTracks.get(noradIndex, []):
@@ -423,7 +447,7 @@ class MapWidget(QWidget):
             self.objectArrows.pop(noradIndex, None)
         # VISIBILITY FOOTPRINT
         footColor, footWidth = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected):
+        if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected, self.displayConfiguration['SHOW_FOOTPRINT']):
             footLongitudes, footLatitudes = noradPosition['VISIBILITY']['LONGITUDE'], noradPosition['VISIBILITY']['LATITUDE']
             footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
             for item in self.objectFootprints.get(noradIndex, []):
@@ -807,6 +831,12 @@ class ObjectMapConfigDockWidget(QDockWidget):
         self._setButtonColor(self.groundTrackColorButton, self._currentConfig['GROUND_TRACK']['COLOR'])
         self._setButtonColor(self.footprintColorButton, self._currentConfig['FOOTPRINT']['COLOR'])
         del blockers
+
+    def enableFootprintConfig(self, enabled: bool):
+        self.footprintGroup.setEnabled(enabled)
+
+    def enableGroundTrackConfig(self, enabled: bool):
+        self.groundTrackGroup.setEnabled(enabled)
 
     def clear(self):
         self.noradIndex = None
