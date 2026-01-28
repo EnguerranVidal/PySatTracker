@@ -54,9 +54,11 @@ class MainWindow(QMainWindow):
         self._setupMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
+        self._updateActionStates()
 
     def _setupMenuBar(self):
         menuBar = self.menuBar()
+        self._selectionDependentActions = []
 
         # VIEW MENU
         viewMenu = menuBar.addMenu('View')
@@ -70,6 +72,8 @@ class MainWindow(QMainWindow):
 
         resetMapConfigAction.triggered.connect(self._resetObjectMapConfig)
         setMapConfigAsDefaultAction.triggered.connect(self._setObjectMapConfigAsDefault)
+        self._selectionDependentActions.append(resetMapConfigAction)
+        self._selectionDependentActions.append(setMapConfigAsDefaultAction)
         nightLayerAction.toggled.connect(self._checkNightLayer)
         sunIndicatorAction.toggled.connect(self._checkSunIndicator)
 
@@ -103,6 +107,11 @@ class MainWindow(QMainWindow):
         self.statusDateTimer.timeout.connect(self._updateStatus)
         self.statusDateTimer.start(1000)
 
+    def _updateActionStates(self):
+        hasSelection = self.selectedObject is not None
+        for action in self._selectionDependentActions:
+            action.setEnabled(hasSelection)
+
     def _restoreWindow(self):
         self.setWindowTitle('Satellite Tracker')
         if self.settings['WINDOW']['MAXIMIZED']:
@@ -135,6 +144,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
+        self._updateActionStates()
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -153,6 +163,7 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
+        self._updateActionStates()
 
     def removeSelectedObjects(self, noradIndices: list[int]):
         for noradIndex in noradIndices:
@@ -166,6 +177,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.setSelectedObject(self.selectedObject)
+        self._updateActionStates()
 
     def onObjectSelected(self, noradIndex):
         if noradIndex is None:
@@ -175,6 +187,7 @@ class MainWindow(QMainWindow):
                 self.selectedObject = None
                 self.objectInfoDock.clear()
                 self.centralViewWidget.setSelectedObject(None)
+                self._updateActionStates()
                 return
             noradIndex = noradIndex[0]
         try:
@@ -183,6 +196,7 @@ class MainWindow(QMainWindow):
             self.selectedObject = None
             self.objectInfoDock.clear()
             self.centralViewWidget.setSelectedObject(None)
+            self._updateActionStates()
             return
         row = self.tleDatabase.dataFrame.loc[self.tleDatabase.dataFrame['NORAD_CAT_ID'].astype(int) == self.selectedObject]
         if not row.empty:
@@ -191,6 +205,7 @@ class MainWindow(QMainWindow):
             self.objectInfoDock.clear()
         self.centralViewWidget.setSelectedObject(self.selectedObject)
         self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['OBJECTS'])
+        self._updateActionStates()
 
 
     def _onMapObjectConfigChanged(self, noradIndex, newConfiguration):
