@@ -1,8 +1,7 @@
 import time
-
+from datetime import datetime, timedelta
 import numpy as np
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
-from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 
@@ -79,7 +78,7 @@ class OrbitWorker(QObject):
         for noradIndex in self.noradIndices:
             try:
                 # MAP CALCULATIONS
-                mapResults = {}
+                mapResults = {'NAME': self.database.getObjectName(noradIndex)}
                 satellite = self.database.getSatrec(noradIndex)
                 state = self.engine.satelliteState(satellite, simulationTime)
                 groundLongitudes, groundLatitudes, groundElevations = self.engine.satelliteGroundTrack(satellite, simulationTime)

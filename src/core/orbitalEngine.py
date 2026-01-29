@@ -15,6 +15,14 @@ class OrbitalMechanicsEngine:
     def datetimeToJd(dt: datetime):
         return jday(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second + dt.microsecond / 1e6)
 
+    @staticmethod
+    def datetimeToJulianCenturies(dt: datetime):
+        return (dt - datetime(2000, 1, 1, 12, 0)) / timedelta(days=1) / 36525.0
+
+    @staticmethod
+    def arcsecToDegrees(arcsec):
+        return arcsec / 3600.0
+
     def propagateSgp4(self, sat: Satrec, dt: datetime):
         jd, fr = self.datetimeToJd(dt)
         error, r, v = sat.sgp4(jd, fr)
@@ -136,19 +144,18 @@ class OrbitalMechanicsEngine:
             return 0.0
         return np.arcsin(np.dot(rVec, vVec) / (rNorm * vNorm))
 
-    @staticmethod
-    def subSolarPoint(dt: datetime, radians=True):
-        julianCenturies = (dt - datetime(2000, 1, 1, 12, 0)) / timedelta(days=1) / 36525.0
+    def subSolarPoint(self, dt: datetime, radians=True):
+        T = self.datetimeToJulianCenturies(dt)
         # ECLIPTICAL COORDINATES
-        meanSunLongitude = (280.460 + 36000.771 * julianCenturies) % 360
-        meanAnomaly = (357.5277233 + 35999.05034 * julianCenturies) % 360
+        meanSunLongitude = (280.460 + 36000.771 * T) % 360
+        meanAnomaly = (357.5277233 + 35999.05034 * T) % 360
         eclipticLongitude = meanSunLongitude + 1.914666471 * np.sin(np.deg2rad(meanAnomaly)) + 0.019994643 * np.sin(np.deg2rad(2 * meanAnomaly))
-        obliquity = 23.439291 - 0.0130042 * julianCenturies
+        obliquity = 23.439291 - 0.0130042 * T
         # EQUATORIAL COORDINATES
         sunEarthDistance = (1.00014 - 0.01671 * np.cos(np.deg2rad(meanAnomaly)) - 0.00014 * np.cos(np.deg2rad(2 * meanAnomaly)))
         sunLatitude = np.rad2deg(np.arcsin(np.sin(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude))))
         rightAscension = np.rad2deg(np.arctan2(np.cos(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude)), np.cos(np.deg2rad(eclipticLongitude))))
-        gmstTheta = ((67310.54841 + (876600 * 3600 + 8640184.812866) * julianCenturies + 0.093104 * julianCenturies ** 2 - 6.2e-6 * julianCenturies ** 3) % 86400) / 240
+        gmstTheta = ((67310.54841 + (876600 * 3600 + 8640184.812866) * T + 0.093104 * T ** 2 - 6.2e-6 * T ** 3) % 86400) / 240
         sunLongitude = -(gmstTheta - rightAscension)
         sunLongitude = (sunLongitude + 180) % 360 - 180
         if radians:
