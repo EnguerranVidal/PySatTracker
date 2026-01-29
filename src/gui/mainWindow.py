@@ -6,13 +6,14 @@ import qdarktheme
 import time
 import imageio
 import pyqtgraph as pg
+from PyQt5.QtGui import QDesktopServices
 from pyqtgraph import GraphicsLayoutWidget
 
-from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker
+from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
 from PyQt5.QtWidgets import *
 
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
-from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, giveDefaultObjectMapConfig
+from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
 
 class MainWindow(QMainWindow):
@@ -61,14 +62,14 @@ class MainWindow(QMainWindow):
         self._selectionDependentActions = []
 
         # VIEW MENU
-        viewMenu = menuBar.addMenu('View')
-        mapViewMenu = viewMenu.addMenu('2D Map')
-        resetMapConfigAction = QAction('Reset Configuration', self)
-        setMapConfigAsDefaultAction = QAction('Set as Default', self)
-        nightLayerAction = QAction('Show Night Layer', self, checkable=True)
-        sunIndicatorAction = QAction('Show Sun Indicator', self, checkable=True)
-        showGroundTracksAction = QAction('Show Ground Tracks', self, checkable=True)
-        showFootprintsAction = QAction('Show Footprints', self, checkable=True)
+        viewMenu = menuBar.addMenu('&View')
+        mapViewMenu = viewMenu.addMenu('&2D Map')
+        resetMapConfigAction = QAction('&Reset Configuration', self)
+        setMapConfigAsDefaultAction = QAction('&Set as Default', self)
+        nightLayerAction = QAction('&Show Night Layer', self, checkable=True)
+        sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
+        showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
+        showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
 
         nightLayerAction.setChecked(self.settings['MAP']['SHOW_NIGHT'])
         sunIndicatorAction.setChecked(self.settings['MAP']['SHOW_SUN'])
@@ -94,7 +95,13 @@ class MainWindow(QMainWindow):
         mapViewMenu.addAction(showFootprintsAction)
 
         # HELP MENU
-        helpMenu = menuBar.addMenu('Help')
+        helpMenu = menuBar.addMenu('&Help')
+        githubAct = QAction('&Visit GitHub', self)
+        reportIssueAct = QAction('&Report Issue', self)
+        githubAct.triggered.connect(self._openGithub)
+        reportIssueAct.triggered.connect(self._reportIssue)
+        helpMenu.addAction(githubAct)
+        helpMenu.addAction(reportIssueAct)
 
     def _checkGroundTracks(self, checked):
         self.settings['MAP']['SHOW_GROUND_TRACK'] = checked
@@ -107,6 +114,14 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
         self.objectMapConfigDock.enableFootprintConfig(self.settings['MAP']['SHOW_FOOTPRINT'])
+
+    @staticmethod
+    def _openGithub():
+        QDesktopServices.openUrl(QUrl("https://github.com/EnguerranVidal/PySatTracker"))
+
+    @staticmethod
+    def _reportIssue():
+        QDesktopServices.openUrl(QUrl("https://github.com/EnguerranVidal/PySatTracker/issues/new"))
 
     def _center(self):
         frameGeometry = self.frameGeometry()

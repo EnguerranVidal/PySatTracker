@@ -1,8 +1,7 @@
 import time
-
+from datetime import datetime, timedelta
 import numpy as np
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
-from datetime import datetime, timedelta
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 
