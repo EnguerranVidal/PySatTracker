@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtWidgets import *
@@ -96,6 +96,23 @@ class OrbitWorker(QObject):
         map2dResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
         map2dResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}
         results['2D_MAP'] = map2dResults
+        # 3D EARTH VIEW CALCULATIONS
+        earth3dResults = {'OBJECTS': {noradIndex: {'NAME': self.database.getObjectName(noradIndex)} for noradIndex in self.noradIndices}}
+        for noradIndex in self.noradIndices:
+            try:
+                satellite = self.database.getSatrec(noradIndex)
+                state = self.engine.satelliteState(satellite, simulationTime)
+                # INSTANT POSITION
+                rEci, vEci = state['rECI'], state['vECI']
+                earth3dResults['OBJECTS'][noradIndex]['POSITION'] = {'R_ECI': rEci, 'V_ECI': vEci, 'ALTITUDE': state['altitude'], 'LATITUDE': np.rad2deg(state['latitude']), 'LONGITUDE': np.rad2deg(state['longitude'])}
+                # ORBIT PATH
+                positionsEci = self.engine.satelliteOrbitPath(satellite, simulationTime, nbPoints=361, nbPast=0.5, nbFuture=0.5)
+                earth3dResults['OBJECTS'][noradIndex]['ORBIT_PATH'] = positionsEci
+            except Exception as e:
+                print(f"Worker error {noradIndex}: {e}")
+        # GMST FOR 3D VIEW
+        earth3dResults['GMST'] = self.engine.greenwichMeridianSiderealTime(simulationTime)
+        results['3D_VIEW'] = earth3dResults
         # RESULTS EMISSION
         self.positionsReady.emit(results)
 

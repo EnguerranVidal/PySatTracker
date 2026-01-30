@@ -112,6 +112,16 @@ class OrbitalMechanicsEngine:
         circleLongitude = (circleLongitude + np.pi) % (2 * np.pi) - np.pi
         return circleLongitude, circleLatitude
 
+    def satelliteOrbitPath(self, sat: Satrec, dt: datetime, nbPoints=361, nbPast=0.5, nbFuture=0.5):
+        orbitalPeriod = self.orbitalPeriod(sat)
+        times = np.linspace( - nbPast * orbitalPeriod, nbFuture * orbitalPeriod, nbPoints)
+        positionsEci = np.empty((nbPoints, 3))
+        for i, offset in enumerate(times):
+            t =  dt + timedelta(seconds=float(offset))
+            rEci, _ = self.propagateSgp4(sat, t)
+            positionsEci[i, :] = rEci
+        return positionsEci
+
     def satelliteGroundTrack(self, sat: Satrec, dt: datetime, nbPoints=361, nbPast=0.5, nbFuture=0.5):
         orbitalPeriod = self.orbitalPeriod(sat)
         times = np.linspace( - nbPast * orbitalPeriod, nbFuture * orbitalPeriod, nbPoints)

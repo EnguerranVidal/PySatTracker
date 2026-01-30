@@ -12,6 +12,7 @@ from pyqtgraph import GraphicsLayoutWidget
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
 from PyQt5.QtWidgets import *
 
+from gui.earth3D import Earth3DWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.objectSelected.connect(self.onObjectSelected)
         self.objectListDock.addObject.connect(self.addObjects)
         self.objectListDock.removeObject.connect(self.removeSelectedObjects)
-        self.centralViewWidget.mapWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
+        self.centralViewWidget.map2dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
 
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
@@ -71,10 +72,10 @@ class MainWindow(QMainWindow):
         showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
         showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
 
-        nightLayerAction.setChecked(self.settings['MAP']['SHOW_NIGHT'])
-        sunIndicatorAction.setChecked(self.settings['MAP']['SHOW_SUN'])
-        showGroundTracksAction.setChecked(self.settings['MAP']['SHOW_GROUND_TRACK'])
-        showFootprintsAction.setChecked(self.settings['MAP']['SHOW_FOOTPRINT'])
+        nightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
+        sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
+        showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
+        showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
         resetMapConfigAction.triggered.connect(self._resetObjectMapConfig)
         setMapConfigAsDefaultAction.triggered.connect(self._setObjectMapConfigAsDefault)
@@ -104,16 +105,16 @@ class MainWindow(QMainWindow):
         helpMenu.addAction(reportIssueAct)
 
     def _checkGroundTracks(self, checked):
-        self.settings['MAP']['SHOW_GROUND_TRACK'] = checked
+        self.settings['2D_MAP']['SHOW_GROUND_TRACK'] = checked
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
-        self.objectMapConfigDock.enableGroundTrackConfig(self.settings['MAP']['SHOW_GROUND_TRACK'])
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.objectMapConfigDock.enableGroundTrackConfig(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
 
     def _checkFootprints(self, checked):
-        self.settings['MAP']['SHOW_FOOTPRINT'] = checked
+        self.settings['2D_MAP']['SHOW_FOOTPRINT'] = checked
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
-        self.objectMapConfigDock.enableFootprintConfig(self.settings['MAP']['SHOW_FOOTPRINT'])
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.objectMapConfigDock.enableFootprintConfig(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
     @staticmethod
     def _openGithub():
@@ -177,7 +178,8 @@ class MainWindow(QMainWindow):
     def setDatabase(self, database):
         self.tleDatabase = database
         self.centralViewWidget.setDatabase(database)
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
@@ -194,8 +196,10 @@ class MainWindow(QMainWindow):
             if noradIndex in self.activeObjects:
                 continue
             self.activeObjects.append(noradIndex)
-            if str(noradIndex) not in self.settings['MAP']['OBJECTS']:
-                self.settings['MAP']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['MAP']['DEFAULT_CONFIG'])
+            if str(noradIndex) not in self.settings['2D_MAP']['OBJECTS']:
+                self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
+            if str(noradIndex) not in self.settings['3D_VIEW']['OBJECTS']:
+                self.settings['3D_VIEW']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['3D_VIEW']['DEFAULT_CONFIG'])
         self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
@@ -241,38 +245,38 @@ class MainWindow(QMainWindow):
         else:
             self.objectInfoDock.clear()
         self.centralViewWidget.setSelectedObject(self.selectedObject)
-        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['OBJECTS'])
+        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
         self._updateActionStates()
 
 
     def _onMapObjectConfigChanged(self, noradIndex, newConfiguration):
-        self.settings['MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
+        self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
     def _resetObjectMapConfig(self):
         if self.selectedObject is None:
             return
-        self.settings['MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['MAP']['DEFAULT_CONFIG'])
+        self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
         self.saveSettings()
-        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['MAP']['OBJECTS'])
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
     def _setObjectMapConfigAsDefault(self):
         if self.selectedObject is None:
             return
-        self.settings['MAP']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['MAP']['OBJECTS'][str(self.selectedObject)])
+        self.settings['2D_MAP']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)])
         self.saveSettings()
 
     def _checkNightLayer(self, checked):
-        self.settings['MAP']['SHOW_NIGHT'] = checked
+        self.settings['2D_MAP']['SHOW_NIGHT'] = checked
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
     def _checkSunIndicator(self, checked):
-        self.settings['MAP']['SHOW_SUN'] = checked
+        self.settings['2D_MAP']['SHOW_SUN'] = checked
         self.saveSettings()
-        self.centralViewWidget.setMapConfiguration(copy.deepcopy(self.settings['MAP']))
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
@@ -286,7 +290,7 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-class MapWidget(QWidget):
+class Map2dWidget(QWidget):
     objectSelected = pyqtSignal(list)
     ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5}
 
@@ -407,7 +411,7 @@ class MapWidget(QWidget):
 
     def updateMap(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
         self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
-        # REMOVING EVERYTHING
+        # REMOVING EVERYTHING NOT VISIBLE
         for noradIndex in list(self.objectSpots.keys()):
             if noradIndex not in visibleNorads:
                 self._removeItems(self.objectSpots.pop(noradIndex))
@@ -416,9 +420,8 @@ class MapWidget(QWidget):
                 self._removeItems(self.objectArrows.pop(noradIndex, None))
                 self._removeItems(self.objectLabels.pop(noradIndex, None))
         # NIGHT LAYER AND SUN POSITION
-        self._updateSunAndNight(positions['MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
         self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
-        # DRAW VISIBLE NORAD OBJECTS
+        # UPDATING/ADDING VISIBLE OBJECTS
         for noradIndex in visibleNorads:
             if noradIndex not in positions['2D_MAP']['OBJECTS']:
                 continue
@@ -884,7 +887,8 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
 
 class CentralViewWidget(QWidget):
-    def __init__(self, parent=None):
+    tabChanged = pyqtSignal(int)
+    def __init__(self, parent=None, currentTab='2D_MAP'):
         super().__init__(parent)
         # CLOCK & ORBITS CALCULATIONS WORKER
         self.clock = SimulationClock()
@@ -897,18 +901,21 @@ class CentralViewWidget(QWidget):
         # VISUALIZATION CONFIGURATION
         self.activeObjects = set()
         self.selectedObject = None
-        self.displayConfiguration = {}
+        self.display2dMapConfiguration, self.display3dViewConfiguration = {}, {}
         self.lastPositions = {}
 
         # MAIN TABS
-        self.mapWidget = MapWidget()
+        self.map2dWidget = Map2dWidget()
+        self.view3dWidget = Earth3DWidget()
         self.tabWidget = QTabWidget()
-        self.tabWidget.addTab(self.mapWidget, '2D Map')
+        self.tabWidget.addTab(self.map2dWidget, '2D MAP')
+        self.tabWidget.addTab(self.view3dWidget, '3D VIEW')
+        self.tabWidget.setCurrentWidget(self.map2dWidget if currentTab == '2D_MAP' else self.view3dWidget)
 
-        # MAP LINKING
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
         self.tabWidget.currentChanged.connect(self._onTabChanged)
-        self.mapVisible = True
+        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
+        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
 
         # MAIN LAYOUT
         layout = QVBoxLayout(self)
@@ -916,11 +923,20 @@ class CentralViewWidget(QWidget):
         layout.addWidget(self.tabWidget)
 
     def _onTabChanged(self, index):
-        self.mapVisible = (self.tabWidget.widget(index) is self.mapWidget)
+        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
+        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
+        if self.map2dVisible:
+            self._refresh2dMap()
+        if self.view3dVisible:
+            self._refresh3dView()
+        self.tabChanged.emit(index)
 
     def _onPositionsReady(self, positions: dict):
         self.lastPositions = positions
-        self._refresh2dMap()
+        if self.map2dVisible:
+            self._refresh2dMap()
+        if self.view3dVisible:
+            self._refresh3dView()
 
     def setDatabase(self, database):
         self.orbitWorker.database = database
@@ -932,16 +948,23 @@ class CentralViewWidget(QWidget):
     def setActiveObjects(self, noradIndices):
         self.activeObjects = set(noradIndices)
         self.orbitWorker.noradIndices = list(self.activeObjects)
-        self._refreshMap()
         self._refresh2dMap()
 
-    def setMapConfiguration(self, displayConfiguration):
-        self.displayConfiguration = displayConfiguration
+    def set2dMapConfiguration(self, displayConfiguration):
+        self.display2dMapConfiguration = displayConfiguration
         self._refresh2dMap()
+
+    def set3dViewConfiguration(self, displayConfiguration):
+        self.display3dViewConfiguration = displayConfiguration
+        self._refresh3dView()
 
     def _refresh2dMap(self):
-        if self.mapVisible and self.lastPositions:
-            self.mapWidget.updateMap(self.lastPositions, self.activeObjects, self.selectedObject, self.displayConfiguration)
+        if self.map2dVisible and self.lastPositions:
+            self.map2dWidget.updateMap(self.lastPositions, self.activeObjects, self.selectedObject, self.display2dMapConfiguration)
+
+    def _refresh3dView(self):
+        if self.view3dVisible and self.lastPositions:
+            self.view3dWidget.updateView(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
 
     def start(self):
         self.clock.play()
