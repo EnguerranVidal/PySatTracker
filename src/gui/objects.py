@@ -74,30 +74,28 @@ class OrbitWorker(QObject):
             return
         results = {}
         # FLAT 2D MAP CALCULATIONS
-        mapResults = {noradIndex: {} for noradIndex in self.noradIndices}
+        map2dResults = {'OBJECTS' : {noradIndex: {'NAME': self.database.getObjectName(noradIndex)} for noradIndex in self.noradIndices}}
         for noradIndex in self.noradIndices:
             try:
                 # MAP CALCULATIONS
-                mapResults = {'NAME': self.database.getObjectName(noradIndex)}
                 satellite = self.database.getSatrec(noradIndex)
                 state = self.engine.satelliteState(satellite, simulationTime)
                 groundLongitudes, groundLatitudes, groundElevations = self.engine.satelliteGroundTrack(satellite, simulationTime)
-                visibilityLongitudes, visibilityLatitudes = self.engine.satelliteVisibilityFootPrint(state, nbPoints=360)
+                visibilityLongitudes, visibilityLatitudes = self.engine.satelliteVisibilityFootPrint(state, nbPoints=361)
                 longitude, latitude = np.rad2deg(state['longitude']), np.rad2deg(state['latitude'])
                 groundLongitudes, groundLatitudes = np.rad2deg(groundLongitudes), np.rad2deg(groundLatitudes)
                 visibilityLongitudes, visibilityLatitudes = np.rad2deg(visibilityLongitudes), np.rad2deg(visibilityLatitudes)
-                mapResults['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
-                mapResults['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
-                mapResults['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
-                results[noradIndex] = mapResults
+                map2dResults['OBJECTS'][noradIndex]['POSITION'] =  {'LONGITUDE': longitude, 'LATITUDE': latitude}
+                map2dResults['OBJECTS'][noradIndex]['GROUND_TRACK'] = {'LONGITUDE': groundLongitudes, 'LATITUDE': groundLatitudes}
+                map2dResults['OBJECTS'][noradIndex]['VISIBILITY'] = {'LONGITUDE': visibilityLongitudes, 'LATITUDE': visibilityLatitudes}
             except Exception as e:
                 print(f"Worker error {noradIndex}: {e}")
         # SUN POSITION AND TERMINATOR CALCULATION
         sunLongitude, sunLatitude, sunDistance = self.engine.subSolarPoint(simulationTime, radians=False)
         terminatorLongitudes, terminatorLatitudes = self.engine.terminatorCurve(simulationTime, nbPoints=361, radians=False)
-        mapResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
-        mapResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}
-        results['MAP'] = mapResults
+        map2dResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
+        map2dResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}
+        results['2D_MAP'] = map2dResults
         # RESULTS EMISSION
         self.positionsReady.emit(results)
 

@@ -417,11 +417,12 @@ class MapWidget(QWidget):
                 self._removeItems(self.objectLabels.pop(noradIndex, None))
         # NIGHT LAYER AND SUN POSITION
         self._updateSunAndNight(positions['MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
+        self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
         # DRAW VISIBLE NORAD OBJECTS
         for noradIndex in visibleNorads:
-            if noradIndex not in positions:
+            if noradIndex not in positions['2D_MAP']['OBJECTS']:
                 continue
-            self._updateObjectDisplay(noradIndex, positions[noradIndex])
+            self._updateObjectDisplay(noradIndex, positions['2D_MAP']['OBJECTS'][noradIndex])
 
     def _updateObjectDisplay(self, noradIndex, noradPosition):
         isSelected = (noradIndex == self.selectedObject)
@@ -919,25 +920,26 @@ class CentralViewWidget(QWidget):
 
     def _onPositionsReady(self, positions: dict):
         self.lastPositions = positions
-        self._refreshMap()
+        self._refresh2dMap()
 
     def setDatabase(self, database):
         self.orbitWorker.database = database
 
     def setSelectedObject(self, noradIndex):
         self.selectedObject = noradIndex
-        self._refreshMap()
+        self._refresh2dMap()
 
     def setActiveObjects(self, noradIndices):
         self.activeObjects = set(noradIndices)
         self.orbitWorker.noradIndices = list(self.activeObjects)
         self._refreshMap()
+        self._refresh2dMap()
 
     def setMapConfiguration(self, displayConfiguration):
         self.displayConfiguration = displayConfiguration
-        self._refreshMap()
+        self._refresh2dMap()
 
-    def _refreshMap(self):
+    def _refresh2dMap(self):
         if self.mapVisible and self.lastPositions:
             self.mapWidget.updateMap(self.lastPositions, self.activeObjects, self.selectedObject, self.displayConfiguration)
 
