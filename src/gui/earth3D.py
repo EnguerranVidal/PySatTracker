@@ -23,6 +23,7 @@ class Earth3DWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.view = gl.GLViewWidget()
+        self.view.opts['distance'] = 18
         self.view.opts['elevation'] = 20
         self.view.opts['azimuth'] = 45
         self.view.opts['depth'] = True
