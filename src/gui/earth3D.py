@@ -1,4 +1,9 @@
+import imageio
 import pyqtgraph.opengl as gl
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from PIL import Image
+
 import pyqtgraph as pg
 import numpy as np
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
@@ -12,27 +17,20 @@ class Earth3DWidget(QWidget):
         self.objectSpots, self.objectOrbits = {}, {}
         self.selectedObject, self.displayConfiguration = None, {}
         self._setupUi()
-        self._setupScene()
+        self._addEarth()
 
     def _setupUi(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-
         self.view = gl.GLViewWidget()
-        self.view.setBackgroundColor('#202124')
-
-        # Camera setup
         self.view.opts['distance'] = 15
         self.view.opts['elevation'] = 20
         self.view.opts['azimuth'] = 45
-
-        layout.addWidget(self.view)
-
-    def _setupScene(self):
+        self.view.opts['depth'] = True
         self.axes = gl.GLAxisItem()
         self.axes.setSize(2, 2, 2)
         self.view.addItem(self.axes)
-        self._addEarth()
+        layout.addWidget(self.view)
 
     def _addEarth(self):
         meshData = gl.MeshData.sphere(rows=64, cols=128, radius=1.0)
@@ -66,15 +64,6 @@ class Earth3DWidget(QWidget):
 
     def _updateObjectDisplay(self, noradIndex, noradPosition):
         noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
-        # OBJECT SPOT
-        spotColor, spotSize = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
-        if noradIndex in self.objectSpots:
-            spot = self.objectSpots[noradIndex]
-            spot.setData(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS , size=spotSize, color=spotColor)
-        else:
-            spot = gl.GLScatterPlotItem(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize, color=spotColor, pxMode=True)
-            self.view.addItem(spot)
-            self.objectSpots[noradIndex] = spot
         # ORBIT PATH
         if self.displayConfiguration['SHOW_ORBITS']:
             orbitColor, orbitWidth = noradObjectConfiguration['ORBIT']['COLOR'], noradObjectConfiguration['ORBIT']['WIDTH']
@@ -84,15 +73,24 @@ class Earth3DWidget(QWidget):
                 orbit.setData(pos=orbitPositions, color=orbitColor, width=orbitWidth)
             else:
                 orbit = gl.GLLinePlotItem(pos=orbitPositions, color=orbitColor, width=orbitWidth, antialias=True)
+                orbit.setGLOptions('translucent')
                 self.view.addItem(orbit)
                 self.objectOrbits[noradIndex] = orbit
         else:
             if noradIndex in self.objectOrbits:
                 self._removeItems(self.objectOrbits.pop(noradIndex))
-
+        # OBJECT SPOT
+        spotColor, spotSize = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
+        if noradIndex in self.objectSpots:
+            spot = self.objectSpots[noradIndex]
+            spot.setData(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize,
+                         color=spotColor)
+        else:
+            spot = gl.GLScatterPlotItem(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize, color=spotColor, pxMode=True)
+            spot.setGLOptions('translucent')
+            self.view.addItem(spot)
+            self.objectSpots[noradIndex] = spot
 
     def _updateEarthDisplay(self, gmst):
         self.earthItem.resetTransform()
         self.earthItem.rotate(np.rad2deg(gmst), 0, 0, 1)
-
-

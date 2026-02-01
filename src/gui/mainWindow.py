@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
         self.objectMapConfigDock = ObjectMapConfigDockWidget(self)
-        self.objectMapConfigDock.configChanged.connect(self._onMapObjectConfigChanged)
+        self.objectMapConfigDock.configChanged.connect(self._on2dMapObjectConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
 
@@ -77,8 +77,8 @@ class MainWindow(QMainWindow):
         showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
         showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
-        resetMapConfigAction.triggered.connect(self._resetObjectMapConfig)
-        setMapConfigAsDefaultAction.triggered.connect(self._setObjectMapConfigAsDefault)
+        resetMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
+        setMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
         self._selectionDependentActions.append(resetMapConfigAction)
         self._selectionDependentActions.append(setMapConfigAsDefaultAction)
         nightLayerAction.toggled.connect(self._checkNightLayer)
@@ -204,6 +204,8 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
         self._updateActionStates()
 
     def removeSelectedObjects(self, noradIndices: list[int]):
@@ -248,13 +250,12 @@ class MainWindow(QMainWindow):
         self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
         self._updateActionStates()
 
-
-    def _onMapObjectConfigChanged(self, noradIndex, newConfiguration):
+    def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
-    def _resetObjectMapConfig(self):
+    def _resetObject2dMapConfig(self):
         if self.selectedObject is None:
             return
         self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
@@ -262,7 +263,7 @@ class MainWindow(QMainWindow):
         self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
-    def _setObjectMapConfigAsDefault(self):
+    def _setObject2dMapConfigAsDefault(self):
         if self.selectedObject is None:
             return
         self.settings['2D_MAP']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)])
@@ -949,6 +950,7 @@ class CentralViewWidget(QWidget):
         self.activeObjects = set(noradIndices)
         self.orbitWorker.noradIndices = list(self.activeObjects)
         self._refresh2dMap()
+        self._refresh3dView()
 
     def set2dMapConfiguration(self, displayConfiguration):
         self.display2dMapConfiguration = displayConfiguration

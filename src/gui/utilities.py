@@ -6,20 +6,20 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 
-def giveDefaultObjectMapConfig():
+def giveDefaultObject2DMapConfig():
     return {'SPOT': {'SIZE': 10, 'COLOR': (255, 85, 0),},
             'GROUND_TRACK': {'MODE': 'WHEN_SELECTED','WIDTH': 1, 'COLOR': (255, 85, 0),},
             'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 1, 'COLOR': (0, 180, 255),}}
 
 def giveDefaultObject3DViewConfig():
-    return {'SPOT': {'SIZE': 10, 'COLOR': (1, 1, 0, 1),}, 'ORBIT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 1, 'COLOR': (0.5, 0.5, 0.5, 1),}}
+    return {'SPOT': {'SIZE': 10, 'COLOR': (1, 1, 0, 1),}, 'ORBIT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (0.5, 0.5, 0.5, 1),}}
 
 def generateDefaultSettingsJson(path):
     settings = {
         'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True},
         'VISUALIZATION': {'ACTIVE_OBJECTS': [25544], 'CURRENT_TAB': '2D_MAP'},
-        '2D_MAP': {'DEFAULT_CONFIG': giveDefaultObjectMapConfig(), 'OBJECTS': {'25544': giveDefaultObjectMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_FOOTPRINT': True, 'SHOW_GROUND_TRACK': True},
+        '2D_MAP': {'DEFAULT_CONFIG': giveDefaultObject2DMapConfig(), 'OBJECTS': {'25544': giveDefaultObject2DMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_FOOTPRINT': True, 'SHOW_GROUND_TRACK': True},
         '3D_VIEW': {'DEFAULT_CONFIG': giveDefaultObject3DViewConfig(), 'OBJECTS': {'25544': giveDefaultObject3DViewConfig()}, 'SHOW_ORBITS': True},
     }
     with open(path, 'w') as f:
