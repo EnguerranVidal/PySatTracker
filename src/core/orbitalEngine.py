@@ -42,6 +42,11 @@ class OrbitalMechanicsEngine:
         rot = np.array([[np.cos(gmstAngle), np.sin(gmstAngle), 0], [-np.sin(gmstAngle), np.cos(gmstAngle), 0], [0, 0, 1]])
         return rot @ rEci
 
+    def ecefToEci(self, rEcef, dt: datetime):
+        gmstAngle = self.greenwichMeridianSiderealTime(dt)
+        rot = np.array([[np.cos(gmstAngle), -np.sin(gmstAngle), 0], [np.sin(gmstAngle), np.cos(gmstAngle), 0], [0, 0, 1]])
+        return rot @ rEcef
+
     def ecefToLongitudeLatitude(self, rEcef):
         x, y, z = rEcef
         longitude = np.arctan2(y, x)
@@ -171,6 +176,12 @@ class OrbitalMechanicsEngine:
         if radians:
             return np.deg2rad(sunLongitude), np.deg2rad(sunLatitude), sunEarthDistance
         return sunLongitude, sunLatitude, sunEarthDistance
+
+    def solarDirectionEci(self, dt: datetime):
+        sunLongitude, sunLatitude, sunDistance = self.subSolarPoint(dt, radians=True)
+        ecef = self.longitudeLatitudeToEcef(sunLongitude, sunLatitude, sunDistance, radians=True)
+        eci = self.ecefToEci(ecef, dt)
+        return eci / np.linalg.norm(eci)
 
     def terminatorCurve(self, dt: datetime, nbPoints=361, radians=True):
         sunLongitude, sunLatitude, _ = self.subSolarPoint(dt, radians=True)

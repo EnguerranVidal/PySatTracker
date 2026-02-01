@@ -112,6 +112,7 @@ class OrbitWorker(QObject):
                 print(f"Worker error {noradIndex}: {e}")
         # GMST FOR 3D VIEW
         earth3dResults['GMST'] = self.engine.greenwichMeridianSiderealTime(simulationTime)
+        earth3dResults['SUN_DIRECTION_ECI'] = self.engine.solarDirectionEci(simulationTime)
         results['3D_VIEW'] = earth3dResults
         # RESULTS EMISSION
         self.positionsReady.emit(results)

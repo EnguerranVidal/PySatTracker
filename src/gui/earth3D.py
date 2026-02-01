@@ -23,20 +23,21 @@ class Earth3DWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.view = gl.GLViewWidget()
-        self.view.opts['distance'] = 15
         self.view.opts['elevation'] = 20
         self.view.opts['azimuth'] = 45
         self.view.opts['depth'] = True
+        self.view.opts['useDevicePixelRatio'] = True
         self.axes = gl.GLAxisItem()
         self.axes.setSize(2, 2, 2)
         self.view.addItem(self.axes)
         layout.addWidget(self.view)
 
     def _addEarth(self):
-        meshData = gl.MeshData.sphere(rows=64, cols=128, radius=1.0)
-        earth = gl.GLMeshItem(meshdata=meshData, smooth=True, drawFaces=True, drawEdges=False, color=(0.2, 0.4, 0.8, 1.0), shader='shaded')
-        self.view.addItem(earth)
-        self.earthItem = earth
+        meshData = gl.MeshData.sphere(rows=128, cols=256, radius=1.0)
+        self.earthItem = gl.GLMeshItem(meshdata=meshData, smooth=True, drawFaces=True, drawEdges=False, shader=None)
+        self.earthItem.setGLOptions('opaque')
+        self.view.addItem(self.earthItem)
+
 
     def _removeItems(self, items):
         if not items:
@@ -55,7 +56,7 @@ class Earth3DWidget(QWidget):
                 self._removeItems(self.objectSpots.pop(noradIndex))
                 self._removeItems(self.objectOrbits.pop(noradIndex, None))
         # UPDATE EARTH DISPLAY
-        self._updateEarthDisplay(positions['3D_VIEW']['GMST'])
+        self._updateEarthDisplay(positions['3D_VIEW']['GMST'], positions['3D_VIEW']['SUN_DIRECTION_ECI'])
         # UPDATING/ADDING VISIBLE OBJECTS
         for noradIndex in visibleNorads:
             if noradIndex not in positions['3D_VIEW']['OBJECTS']:
@@ -83,14 +84,13 @@ class Earth3DWidget(QWidget):
         spotColor, spotSize = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
         if noradIndex in self.objectSpots:
             spot = self.objectSpots[noradIndex]
-            spot.setData(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize,
-                         color=spotColor)
+            spot.setData(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize, color=spotColor)
         else:
             spot = gl.GLScatterPlotItem(pos=np.array([noradPosition['POSITION']['R_ECI']]) / self.EARTH_RADIUS, size=spotSize, color=spotColor, pxMode=True)
             spot.setGLOptions('translucent')
             self.view.addItem(spot)
             self.objectSpots[noradIndex] = spot
 
-    def _updateEarthDisplay(self, gmst):
+    def _updateEarthDisplay(self, gmst, sunDirectionEci):
         self.earthItem.resetTransform()
         self.earthItem.rotate(np.rad2deg(gmst), 0, 0, 1)
