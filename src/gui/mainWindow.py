@@ -220,6 +220,8 @@ class MainWindow(QMainWindow):
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.setSelectedObject(self.selectedObject)
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
         self._updateActionStates()
 
     def onObjectSelected(self, noradIndex):
