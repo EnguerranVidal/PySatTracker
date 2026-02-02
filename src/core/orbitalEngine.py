@@ -160,28 +160,33 @@ class OrbitalMechanicsEngine:
         return np.arcsin(np.dot(rVec, vVec) / (rNorm * vNorm))
 
     def subSolarPoint(self, dt: datetime, radians=True):
-        T = self.datetimeToJulianCenturies(dt)
-        # ECLIPTICAL COORDINATES
-        meanSunLongitude = (280.460 + 36000.771 * T) % 360
-        meanAnomaly = (357.5277233 + 35999.05034 * T) % 360
-        eclipticLongitude = meanSunLongitude + 1.914666471 * np.sin(np.deg2rad(meanAnomaly)) + 0.019994643 * np.sin(np.deg2rad(2 * meanAnomaly))
-        obliquity = 23.439291 - 0.0130042 * T
-        # EQUATORIAL COORDINATES
-        sunEarthDistance = (1.00014 - 0.01671 * np.cos(np.deg2rad(meanAnomaly)) - 0.00014 * np.cos(np.deg2rad(2 * meanAnomaly)))
-        sunLatitude = np.rad2deg(np.arcsin(np.sin(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude))))
-        rightAscension = np.rad2deg(np.arctan2(np.cos(np.deg2rad(obliquity)) * np.sin(np.deg2rad(eclipticLongitude)), np.cos(np.deg2rad(eclipticLongitude))))
-        gmstTheta = ((67310.54841 + (876600 * 3600 + 8640184.812866) * T + 0.093104 * T ** 2 - 6.2e-6 * T ** 3) % 86400) / 240
-        sunLongitude = -(gmstTheta - rightAscension)
-        sunLongitude = (sunLongitude + 180) % 360 - 180
-        if radians:
-            return np.deg2rad(sunLongitude), np.deg2rad(sunLatitude), sunEarthDistance
-        return sunLongitude, sunLatitude, sunEarthDistance
+        sunEciPosition = self.solarDirectionEci(dt)
+        sunDeclination, sunRightAscension = np.arcsin(sunEciPosition[2]), np.arctan2(sunEciPosition[1], sunEciPosition[0])
+        gmstAngle = self.greenwichMeridianSiderealTime(dt)
+        subSolarLongitude = sunRightAscension - gmstAngle
+        subSolarLongitude = (subSolarLongitude + np.pi) % (2 * np.pi) - np.pi
+        if not radians:
+            return np.rad2deg(subSolarLongitude), np.rad2deg(sunDeclination), 1
+        return subSolarLongitude, sunDeclination, 1
 
     def solarDirectionEci(self, dt: datetime):
-        sunLongitude, sunLatitude, sunDistance = self.subSolarPoint(dt, radians=True)
-        ecef = self.longitudeLatitudeToEcef(sunLongitude, sunLatitude, sunDistance, radians=True)
-        eci = self.ecefToEci(ecef, dt)
-        return eci / np.linalg.norm(eci)
+        T = self.datetimeToJulianCenturies(dt)
+        meanLongitude = 280.46646 + T * (36000.76983 + T * 0.0003032)
+        meanAnomaly = np.deg2rad(357.52911 + T * (35999.05029 - T * 0.0001537))
+        earthOrbitEccentricity = 0.016708634 - T * (0.000042037 + T * 0.0000001267)
+        centerEquation = np.deg2rad((1.914602 - T * (0.004817 + T * 0.000014)) * np.sin(meanAnomaly) + (0.019993 - T * 0.000101) * np.sin(2 * meanAnomaly) + 0.000289 * np.sin(3 * meanAnomaly))
+        trueLongitude = meanLongitude + np.rad2deg(centerEquation)
+        trueAnomaly = meanAnomaly + centerEquation
+        sunDistance = 1.000001018 * (1 - earthOrbitEccentricity ** 2) / (1 + earthOrbitEccentricity * np.cos(trueAnomaly))
+        moonOrbitAscendingNode = np.deg2rad(125.04 - 1934.136 * T)
+        eclipticLongitude = np.deg2rad(trueLongitude - 0.00569 - 0.00478 * np.sin(moonOrbitAscendingNode))
+        eclipticObliquity = np.deg2rad(23 + (26 + (21.448 - T * (46.8150 + T * (0.00059 - T * 0.001813))) / 60) / 60 + 0.00256 * np.cos(moonOrbitAscendingNode))
+        # ECI POSITION VECTOR
+        x = sunDistance * np.cos(eclipticLongitude)
+        y = sunDistance * np.sin(eclipticLongitude) * np.cos(eclipticObliquity)
+        z = sunDistance * np.sin(eclipticLongitude) * np.sin(eclipticObliquity)
+        r = np.array([x, y, z])
+        return r / np.linalg.norm(r)
 
     def terminatorCurve(self, dt: datetime, nbPoints=361, radians=True):
         sunLongitude, sunLatitude, _ = self.subSolarPoint(dt, radians=True)

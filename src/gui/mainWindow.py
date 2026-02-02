@@ -12,7 +12,7 @@ from pyqtgraph import GraphicsLayoutWidget
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
 from PyQt5.QtWidgets import *
 
-from gui.earth3D import Earth3DWidget
+from gui.earth3D import View3dWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
 
@@ -909,7 +909,7 @@ class CentralViewWidget(QWidget):
 
         # MAIN TABS
         self.map2dWidget = Map2dWidget()
-        self.view3dWidget = Earth3DWidget()
+        self.view3dWidget = View3dWidget()
         self.tabWidget = QTabWidget()
         self.tabWidget.addTab(self.map2dWidget, '2D MAP')
         self.tabWidget.addTab(self.view3dWidget, '3D VIEW')
