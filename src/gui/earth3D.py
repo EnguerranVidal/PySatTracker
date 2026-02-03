@@ -1,16 +1,10 @@
-import imageio
-import sys
 from OpenGL.GLU import *
 from PIL import Image
-from typing import Optional
-
-import pyqtgraph as pg
 import numpy as np
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QMouseEvent, QWheelEvent, QSurfaceFormat
+from PyQt5.QtGui import QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QOpenGLWidget
 from OpenGL.GL import *
-from OpenGL.GL.shaders import compileProgram, compileShader
 
 
 
@@ -31,8 +25,6 @@ class View3dWidget(QWidget):
 
     def updateView(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
         self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
-
-        # GMST in degrees
         self.view.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
         self.view.sunDirection = positions['3D_VIEW']['SUN_DIRECTION_ECI']
         self.view.update()
@@ -41,52 +33,48 @@ class View3dWidget(QWidget):
 class GLViewWidget(QOpenGLWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-
-        self.lastPosX = 0
-        self.lastPosY = 0
-        self.zoom = 5.0
+        self.lastPosX, self.lastPosY = 0, 0
+        self.zoom = 5
         self.texture_id = 0
-
-        self.rotX = 0.0
-        self.rotY = 0.0
-        self.gmstAngle = 0.0
-
-        self.sunDirection = np.array([1.0, 0.0, 0.0], dtype=float)
-
+        self.rotX, self.rotY = 0, 0
+        self.gmstAngle = 0
+        self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
 
     def initializeGL(self):
-        glClearColor(0.1, 0.1, 0.1, 1.0)
+        glClearColor(0, 0, 0, 1.0)
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_LIGHTING)
         glEnable(GL_LIGHT0)
         glEnable(GL_COLOR_MATERIAL)
 
-        # Lighting: low ambient → strong day/night contrast
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, (1.0, 0.95, 0.8, 1.0))
-        glLightfv(GL_LIGHT0, GL_SPECULAR, (0.4, 0.4, 0.4, 1.0))
-        glLightfv(GL_LIGHT0, GL_AMBIENT, (0.03, 0.03, 0.05, 1.0))  # dim ambient
+        # LIGHTING
+        glLightfv(GL_LIGHT0, GL_AMBIENT, (0.2, 0.2, 0.2, 1))
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
+        glLightfv(GL_LIGHT0, GL_SPECULAR, (1, 1, 1, 1))
 
+        # EARTH MODEL
+        glEnable(GL_TEXTURE_2D)
+        glShadeModel(GL_SMOOTH)
+        glClearColor(0, 0, 0, 0)
+        glClearDepth(1)
+        glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_LEQUAL)
+        glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
-
-        # Load Earth texture
         try:
             img = Image.open("src/assets/earth.jpg")
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
             img_data = np.array(img.convert("RGB"), dtype=np.uint8)
             width, height = img.size
-
             self.texture_id = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.texture_id)
-
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
-
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-
             glGenerateMipmap(GL_TEXTURE_2D)
             print("Earth texture loaded successfully")
         except Exception as e:
@@ -97,53 +85,55 @@ class GLViewWidget(QOpenGLWidget):
         glViewport(0, 0, w, h)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45.0, w / max(h, 1.0), 0.1, 1000.0)
+        gluPerspective(45, w / max(h, 1), 0.1, 1000)
         glMatrixMode(GL_MODELVIEW)
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
 
-        glTranslatef(0.0, 0.0, -self.zoom)
-
-        # User camera orbit
+        # CAMERA
+        glTranslatef(0, 0, -self.zoom)
         glRotatef(self.rotX, 1, 0, 0)
         glRotatef(self.rotY, 0, 1, 0)
 
-        # Draw fixed ECI axes BEFORE any Earth rotation
-        self.draw_axes()
+        # SUN DIRECTION
+        light_dir = self.sunDirection / np.linalg.norm(self.sunDirection)
+        glLightfv(GL_LIGHT0, GL_POSITION, (light_dir[0], light_dir[2], -light_dir[1], 0))
+        self.drawAxes()
+        glPushMatrix()
 
-        # Earth GMST rotation around its polar axis (Y after alignment)
-        glRotatef(self.gmstAngle, 0, 1, 0)
+        # EARTH GMST ROTATION
+        glRotatef(-90, 1, 0, 0)
+        glRotatef(self.gmstAngle, 0, 0, 1)
+        glRotatef(90, 0, 0, 1)
 
-        # Align texture so north pole points along +Y (green axis)
-        glRotatef(-90.0, 1.0, 0.0, 0.0)
-
-        # Set directional light from Sun (incoming = opposite to sunDirection)
-        light_dir = self.sunDirection
-        glLightfv(GL_LIGHT0, GL_POSITION, (light_dir[0], light_dir[1], light_dir[2], 0.0))
-
-        # Draw textured Earth
+        # DRAW EARTH
         glEnable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, self.texture_id)
         gluQuadricTexture(self.sphere, GL_TRUE)
-        glColor3f(1.0, 1.0, 1.0)
+        glColor3f(1, 1.0, 1.0)
         gluSphere(self.sphere, 1.0, 96, 64)
         glDisable(GL_TEXTURE_2D)
+        glPopMatrix()
 
-    def draw_axes(self):
-        AXIS_LENGTH = 2.5
-        glLineWidth(3.0)
+    @staticmethod
+    def drawAxes():
+        L = 2.5
+        glLineWidth(3)
         glBegin(GL_LINES)
-        glColor3f(1, 0, 0);
-        glVertex3f(0, 0, 0);
-        glVertex3f(AXIS_LENGTH, 0, 0)  # X - vernal equinox
-        glColor3f(0, 1, 0);
-        glVertex3f(0, 0, 0);
-        glVertex3f(0, AXIS_LENGTH, 0)  # Y - north pole
-        glColor3f(0, 0, 1);
-        glVertex3f(0, 0, 0);
-        glVertex3f(0, 0, AXIS_LENGTH)  # Z
+        # X – VERNAL EQUINOX
+        glColor3f(1, 0, 0)
+        glVertex3f(0, 0, 0)
+        glVertex3f(L, 0, 0)
+        # Y – NORTH POLE
+        glColor3f(0, 1, 0)
+        glVertex3f(0, 0, 0)
+        glVertex3f(0, L, 0)
+        # Z – EAST
+        glColor3f(0, 0, 1)
+        glVertex3f(0, 0, 0)
+        glVertex3f(0, 0, L)
         glEnd()
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -154,16 +144,11 @@ class GLViewWidget(QOpenGLWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         if not (event.buttons() & Qt.LeftButton):
             return
-
-        dx = event.x() - self.lastPosX
-        dy = event.y() - self.lastPosY
-
+        dx, dy = event.x() - self.lastPosX, event.y() - self.lastPosY
         self.rotY += dx * 0.5
         self.rotX += dy * 0.5
         self.rotX = max(-89.0, min(89.0, self.rotX))
-
-        self.lastPosX = event.x()
-        self.lastPosY = event.y()
+        self.lastPosX, self.lastPosY = event.x(), event.y()
         self.update()
 
     def wheelEvent(self, event: QWheelEvent):
@@ -173,7 +158,6 @@ class GLViewWidget(QOpenGLWidget):
         self.update()
 
     def __del__(self):
-        # Safe cleanup – avoid RuntimeError if context already gone
         try:
             if self.isValid():
                 self.makeCurrent()
@@ -183,4 +167,4 @@ class GLViewWidget(QOpenGLWidget):
                     gluDeleteQuadric(self.sphere)
                 self.doneCurrent()
         except RuntimeError:
-            pass  # context already destroyed – safe to ignore
+            pass
