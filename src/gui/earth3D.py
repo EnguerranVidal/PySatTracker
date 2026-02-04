@@ -41,6 +41,10 @@ class GLViewWidget(QOpenGLWidget):
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
 
+        # NEW: Set initial rotations for camera view from (0.5, 0.5, 0.5) direction
+        self.rotX = 45
+        self.rotY = 225
+
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
         glEnable(GL_DEPTH_TEST)
@@ -49,7 +53,7 @@ class GLViewWidget(QOpenGLWidget):
         glEnable(GL_COLOR_MATERIAL)
 
         # LIGHTING
-        glLightfv(GL_LIGHT0, GL_AMBIENT, (0.2, 0.2, 0.2, 1))
+        glLightfv(GL_LIGHT0, GL_AMBIENT, (0.05, 0.05, 0.05, 1))
         glLightfv(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
         glLightfv(GL_LIGHT0, GL_SPECULAR, (1, 1, 1, 1))
 
@@ -100,11 +104,12 @@ class GLViewWidget(QOpenGLWidget):
         # SUN DIRECTION
         light_dir = self.sunDirection / np.linalg.norm(self.sunDirection)
         glLightfv(GL_LIGHT0, GL_POSITION, (light_dir[0], light_dir[2], -light_dir[1], 0))
-        self.drawAxes()
+
         glPushMatrix()
 
         # EARTH GMST ROTATION
         glRotatef(-90, 1, 0, 0)
+        self.drawAxes()
         glRotatef(self.gmstAngle, 0, 0, 1)
         glRotatef(90, 0, 0, 1)
 

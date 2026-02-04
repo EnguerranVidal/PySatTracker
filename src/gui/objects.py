@@ -93,8 +93,10 @@ class OrbitWorker(QObject):
         # SUN POSITION AND TERMINATOR CALCULATION
         sunLongitude, sunLatitude, sunDistance = self.engine.subSolarPoint(simulationTime, radians=False)
         terminatorLongitudes, terminatorLatitudes = self.engine.terminatorCurve(simulationTime, nbPoints=361, radians=False)
+        vernalLongitude, vernalLatitude = self.engine.getVernalSubPoint(simulationTime, radians=False)
         map2dResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
         map2dResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}
+        map2dResults['VERNAL'] = {'LONGITUDE': vernalLongitude, 'LATITUDE': vernalLatitude}
         results['2D_MAP'] = map2dResults
         # 3D EARTH VIEW CALCULATIONS
         earth3dResults = {'OBJECTS': {noradIndex: {'NAME': self.database.getObjectName(noradIndex)} for noradIndex in self.noradIndices}}

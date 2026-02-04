@@ -69,11 +69,13 @@ class MainWindow(QMainWindow):
         setMapConfigAsDefaultAction = QAction('&Set as Default', self)
         nightLayerAction = QAction('&Show Night Layer', self, checkable=True)
         sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
+        vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
         showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
         showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
 
         nightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
         sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
+        vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
         showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
         showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
@@ -83,6 +85,7 @@ class MainWindow(QMainWindow):
         self._selectionDependentActions.append(setMapConfigAsDefaultAction)
         nightLayerAction.toggled.connect(self._checkNightLayer)
         sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        vernalPointAction.toggled.connect(self._checkVernalPoint)
         showGroundTracksAction.toggled.connect(self._checkGroundTracks)
         showFootprintsAction.toggled.connect(self._checkFootprints)
 
@@ -91,6 +94,7 @@ class MainWindow(QMainWindow):
         mapViewMenu.addSeparator()
         mapViewMenu.addAction(nightLayerAction)
         mapViewMenu.addAction(sunIndicatorAction)
+        mapViewMenu.addAction(vernalPointAction)
         mapViewMenu.addSeparator()
         mapViewMenu.addAction(showGroundTracksAction)
         mapViewMenu.addAction(showFootprintsAction)
@@ -281,6 +285,11 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
+    def _checkVernalPoint(self, checked):
+        self.settings['2D_MAP']['SHOW_VERNAL'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+
     def closeEvent(self, event):
         self.centralViewWidget.close()
         # SAVING SETTINGS
@@ -295,7 +304,7 @@ class MainWindow(QMainWindow):
 
 class Map2dWidget(QWidget):
     objectSelected = pyqtSignal(list)
-    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5}
+    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
     def __init__(self, parent=None, mapImagePath='src/assets/world_map.png'):
         super().__init__(parent)
@@ -304,7 +313,7 @@ class Map2dWidget(QWidget):
         self.objectLabels = {}
         self._lastMouseScenePos = None
         self.selectedObject, self.hoveredObject, self.hoverRadius, self.displayConfiguration = None, None, 15, {}
-        self.sunIndicator, self.nightLayer = None, None
+        self.sunIndicator, self.nightLayer, self.vernalIndicator = None, None, None
         self._setupMap()
 
     def _setupMap(self):
@@ -381,7 +390,7 @@ class Map2dWidget(QWidget):
             return isSelected
         return False  # NEVER
 
-    def _updateSunAndNight(self, mapData, showSun=True, showNight=True):
+    def _updateSunAndNight(self, mapData, showSun=True, showNight=True, showVernal=True):
         if showNight:
             subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
             longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
@@ -411,6 +420,18 @@ class Map2dWidget(QWidget):
             if self.sunIndicator is not None:
                 self.plot.removeItem(self.sunIndicator)
                 self.sunIndicator = None
+        if showVernal:
+            vernalLongitude, vernalLatitude = mapData['VERNAL']['LONGITUDE'], mapData['VERNAL']['LATITUDE']
+            xVernal, yVernal = self._lonlatToCartesian(vernalLongitude, vernalLatitude)
+            if self.vernalIndicator is None:
+                self.vernalIndicator = pg.ScatterPlotItem(size=15, brush=pg.mkBrush(0, 255, 0), pen=pg.mkPen(0, 200, 0, width=2), symbol="+",)
+                self.vernalIndicator.setZValue(self.ELEMENTS_Z_VALUES['VERNAL'])
+                self.plot.addItem(self.vernalIndicator)
+            self.vernalIndicator.setData([xVernal], [yVernal])
+        else:
+            if self.vernalIndicator is not None:
+                self.plot.removeItem(self.vernalIndicator)
+                self.vernalIndicator = None
 
     def updateMap(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
         self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
@@ -423,7 +444,7 @@ class Map2dWidget(QWidget):
                 self._removeItems(self.objectArrows.pop(noradIndex, None))
                 self._removeItems(self.objectLabels.pop(noradIndex, None))
         # NIGHT LAYER AND SUN POSITION
-        self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'])
+        self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'], self.displayConfiguration['SHOW_VERNAL'])
         # UPDATING/ADDING VISIBLE OBJECTS
         for noradIndex in visibleNorads:
             if noradIndex not in positions['2D_MAP']['OBJECTS']:

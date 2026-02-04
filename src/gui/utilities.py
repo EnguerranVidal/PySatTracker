@@ -19,7 +19,7 @@ def generateDefaultSettingsJson(path):
         'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True},
         'VISUALIZATION': {'ACTIVE_OBJECTS': [25544], 'CURRENT_TAB': '2D_MAP'},
-        '2D_MAP': {'DEFAULT_CONFIG': giveDefaultObject2DMapConfig(), 'OBJECTS': {'25544': giveDefaultObject2DMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_FOOTPRINT': True, 'SHOW_GROUND_TRACK': True},
+        '2D_MAP': {'DEFAULT_CONFIG': giveDefaultObject2DMapConfig(), 'OBJECTS': {'25544': giveDefaultObject2DMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_FOOTPRINT': True, 'SHOW_GROUND_TRACK': True, 'SHOW_VERNAL': False},
         '3D_VIEW': {'DEFAULT_CONFIG': giveDefaultObject3DViewConfig(), 'OBJECTS': {'25544': giveDefaultObject3DViewConfig()}, 'SHOW_ORBITS': True},
     }
     with open(path, 'w') as f:

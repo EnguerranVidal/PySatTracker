@@ -47,7 +47,7 @@ class OrbitalMechanicsEngine:
         rot = np.array([[np.cos(gmstAngle), -np.sin(gmstAngle), 0], [np.sin(gmstAngle), np.cos(gmstAngle), 0], [0, 0, 1]])
         return rot @ rEcef
 
-    def ecefToLongitudeLatitude(self, rEcef):
+    def ecefToLongitudeLatitude(self, rEcef, radians=True):
         x, y, z = rEcef
         longitude = np.arctan2(y, x)
         ep2 = (self.equatorialRadius ** 2 - self.polarRadius ** 2) / self.polarRadius ** 2
@@ -58,6 +58,8 @@ class OrbitalMechanicsEngine:
         cosLatitude, sinLatitude = np.cos(latitude), np.sin(latitude)
         primeVerticalRadius = self.equatorialRadius / np.sqrt(1 - self.e2Ellipsoid * sinLatitude ** 2)
         altitude = p / np.cos(latitude) - primeVerticalRadius
+        if not radians:
+            return np.rad2deg(longitude), np.rad2deg(latitude), altitude
         return longitude, latitude, altitude
 
     def longitudeLatitudeToEcef(self, longitude, latitude, altitude, radians=True):
@@ -195,4 +197,14 @@ class OrbitalMechanicsEngine:
         if not radians:
             return np.rad2deg(longitudes), np.rad2deg(latitudes)
         return longitudes, latitudes
+
+    def getVernalSubPoint(self, dt: datetime, radians=True):
+        vernalUnitVectorEci = np.array([1, 0, 0])
+        sunEciPosition = self.solarDirectionEci(dt)
+        vernalLongitude = np.arctan2(vernalUnitVectorEci[1], vernalUnitVectorEci[0]) - self.greenwichMeridianSiderealTime(dt)
+        if not radians:
+            return np.rad2deg(vernalLongitude), np.rad2deg(0)
+        return vernalLongitude, 0
+
+
 
