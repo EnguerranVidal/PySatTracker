@@ -424,7 +424,7 @@ class Map2dWidget(QWidget):
             vernalLongitude, vernalLatitude = mapData['VERNAL']['LONGITUDE'], mapData['VERNAL']['LATITUDE']
             xVernal, yVernal = self._lonlatToCartesian(vernalLongitude, vernalLatitude)
             if self.vernalIndicator is None:
-                self.vernalIndicator = pg.ScatterPlotItem(size=15, brush=pg.mkBrush(0, 255, 0), pen=pg.mkPen(0, 200, 0, width=2), symbol="+",)
+                self.vernalIndicator = pg.ScatterPlotItem(size=15, brush=pg.mkBrush(0, 200, 0), pen=pg.mkPen(0, 255, 0, width=2), symbol="+",)
                 self.vernalIndicator.setZValue(self.ELEMENTS_Z_VALUES['VERNAL'])
                 self.plot.addItem(self.vernalIndicator)
             self.vernalIndicator.setData([xVernal], [yVernal])
@@ -989,7 +989,7 @@ class CentralViewWidget(QWidget):
 
     def _refresh3dView(self):
         if self.view3dVisible and self.lastPositions:
-            self.view3dWidget.updateView(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
+            self.view3dWidget.updateData(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
 
     def start(self):
         self.clock.play()

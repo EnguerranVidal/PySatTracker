@@ -1,4 +1,3 @@
-import copy
 import json
 
 import matplotlib.pyplot as plt
@@ -12,7 +11,7 @@ def giveDefaultObject2DMapConfig():
             'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 1, 'COLOR': (0, 180, 255),}}
 
 def giveDefaultObject3DViewConfig():
-    return {'SPOT': {'SIZE': 10, 'COLOR': (1, 1, 0, 1),}, 'ORBIT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (0.5, 0.5, 0.5, 1),}}
+    return {'SPOT': {'SIZE': 10, 'COLOR': (1, 0.33, 0, 1),}, 'ORBIT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (1, 0.33, 0, 1),}}
 
 def generateDefaultSettingsJson(path):
     settings = {

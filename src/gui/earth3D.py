@@ -8,42 +8,19 @@ from OpenGL.GL import *
 
 
 
-class View3dWidget(QWidget):
+class View3dWidget(QOpenGLWidget):
     EARTH_RADIUS = 6371
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.objectSpots, self.objectOrbits = {}, {}
-        self.selectedObject, self.displayConfiguration = None, {}
-        self._setupUi()
-
-    def _setupUi(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.view = GLViewWidget(self)
-        layout.addWidget(self.view)
-
-    def updateView(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
-        self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
-        self.view.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
-        self.view.sunDirection = positions['3D_VIEW']['SUN_DIRECTION_ECI']
-        self.view.update()
-
-
-class GLViewWidget(QOpenGLWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+        self.objectSpotData, self.objectOrbitData = {}, {}
+        self.selectedObject, self.visibleNorads, self.displayConfiguration = None, [], {}
         self.lastPosX, self.lastPosY = 0, 0
-        self.zoom = 5
+        self.zoom, self.rotX, self.rotY = 5, 45, 225
         self.texture_id = 0
-        self.rotX, self.rotY = 0, 0
         self.gmstAngle = 0
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
-
-        # NEW: Set initial rotations for camera view from (0.5, 0.5, 0.5) direction
-        self.rotX = 45
-        self.rotY = 225
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
@@ -102,25 +79,27 @@ class GLViewWidget(QOpenGLWidget):
         glRotatef(self.rotY, 0, 1, 0)
 
         # SUN DIRECTION
-        light_dir = self.sunDirection / np.linalg.norm(self.sunDirection)
-        glLightfv(GL_LIGHT0, GL_POSITION, (light_dir[0], light_dir[2], -light_dir[1], 0))
-
+        lightDirection = self.sunDirection / np.linalg.norm(self.sunDirection)
+        glLightfv(GL_LIGHT0, GL_POSITION, (lightDirection[0], lightDirection[2], -lightDirection[1], 0))
         glPushMatrix()
-
-        # EARTH GMST ROTATION
         glRotatef(-90, 1, 0, 0)
-        self.drawAxes()
-        glRotatef(self.gmstAngle, 0, 0, 1)
-        glRotatef(90, 0, 0, 1)
+        try:
+            # DRAWING OBJECTS AND AXES
+            for noradIndex in self.visibleNorads:
+                self._drawObject(noradIndex)
+            self.drawAxes()
+            glRotatef(self.gmstAngle, 0, 0, 1)
+            glRotatef(90, 0, 0, 1)
 
-        # DRAW EARTH
-        glEnable(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, self.texture_id)
-        gluQuadricTexture(self.sphere, GL_TRUE)
-        glColor3f(1, 1.0, 1.0)
-        gluSphere(self.sphere, 1.0, 96, 64)
-        glDisable(GL_TEXTURE_2D)
-        glPopMatrix()
+        finally:
+            # DRAW EARTH
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.texture_id)
+            gluQuadricTexture(self.sphere, GL_TRUE)
+            glColor3f(1, 1, 1)
+            gluSphere(self.sphere, 1.0, 96, 64)
+            glDisable(GL_TEXTURE_2D)
+            glPopMatrix()
 
     @staticmethod
     def drawAxes():
@@ -140,6 +119,45 @@ class GLViewWidget(QOpenGLWidget):
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, L)
         glEnd()
+
+    def _drawObject(self, noradIndex):
+        isSelected = (noradIndex == self.selectedObject)
+        isActive = isSelected
+        noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+        # ORBITAL PATH
+        orbitColor, orbitWidth = noradObjectConfiguration['ORBIT']['COLOR'] if isActive else (1, 1, 1, 1), noradObjectConfiguration['ORBIT']['WIDTH']
+        if self._shouldRender(noradObjectConfiguration['ORBIT']['MODE'], isSelected):
+            glLineWidth(orbitWidth)
+            glColor4f(*orbitColor)
+            glBegin(GL_LINE_STRIP)
+            for point in self.objectOrbitData[str(noradIndex)]:
+                point = point / self.EARTH_RADIUS
+                glVertex3f(point[0], point[1], point[2])
+            glEnd()
+        # OBJECT SPOT
+        spotColor = tuple(noradObjectConfiguration['SPOT']['COLOR']) if isActive else (1, 1, 1, 1)
+        glPointSize(noradObjectConfiguration['SPOT']['SIZE'])
+        glColor4f(*spotColor)
+        glBegin(GL_POINTS)
+        position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
+        glVertex3f(position[0], position[1], position[2])
+        glEnd()
+
+    @staticmethod
+    def _shouldRender(mode: str, isSelected: bool):
+        if mode == "ALWAYS":
+            return True
+        if mode == "WHEN_SELECTED":
+            return isSelected
+        return False  # NEVER
+
+    def updateData(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
+        self.selectedObject, self.displayConfiguration, self.visibleNorads = selectedNorad, displayConfiguration, visibleNorads
+        self.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
+        self.sunDirection = positions['3D_VIEW']['SUN_DIRECTION_ECI']
+        self.objectSpotData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['POSITION']['R_ECI'] for noradIndex in visibleNorads}
+        self.objectOrbitData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['ORBIT_PATH'] for noradIndex in visibleNorads}
+        self.update()
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:

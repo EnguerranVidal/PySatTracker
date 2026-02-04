@@ -200,8 +200,9 @@ class OrbitalMechanicsEngine:
 
     def getVernalSubPoint(self, dt: datetime, radians=True):
         vernalUnitVectorEci = np.array([1, 0, 0])
-        sunEciPosition = self.solarDirectionEci(dt)
-        vernalLongitude = np.arctan2(vernalUnitVectorEci[1], vernalUnitVectorEci[0]) - self.greenwichMeridianSiderealTime(dt)
+        vernalLongitude = (np.arctan2(vernalUnitVectorEci[1], vernalUnitVectorEci[0]) - self.greenwichMeridianSiderealTime(dt)) % (2 * np.pi)
+        if vernalLongitude > np.pi:
+            vernalLongitude -= 2 * np.pi
         if not radians:
             return np.rad2deg(vernalLongitude), np.rad2deg(0)
         return vernalLongitude, 0
