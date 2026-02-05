@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.addObject.connect(self.addObjects)
         self.objectListDock.removeObject.connect(self.removeSelectedObjects)
         self.centralViewWidget.map2dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
+        self.centralViewWidget.view3dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
 
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
@@ -523,7 +524,7 @@ class Map2dWidget(QWidget):
             self.objectLabels[noradIndex] = label
             self.plot.addItem(label)
         self.objectLabels[noradIndex].setPos(x, y)
-        if isSelected or isHovered:
+        if isActive:
             self.objectLabels[noradIndex].show()
         else:
             self.objectLabels[noradIndex].hide()
