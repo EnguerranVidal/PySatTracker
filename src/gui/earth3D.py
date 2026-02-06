@@ -14,6 +14,7 @@ class View3dWidget(QOpenGLWidget):
     EARTH_RADIUS = 6371
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMouseTracking(True)
         glutInit()
         self.objectSpotData, self.objectOrbitData, self.objectNameData = {}, {}, {}
         self.selectedObject, self.hoveredObject, self.visibleNorads, self.displayConfiguration = None, None, [], {}
@@ -167,10 +168,12 @@ class View3dWidget(QOpenGLWidget):
                 glMatrixMode(GL_MODELVIEW)
                 glPushMatrix()
                 glLoadIdentity()
+                glDisable(GL_LIGHTING)
                 glColor4f(1, 1, 1, 1)
                 glRasterPos2f(xWindow + 5, yWindow + 5)
                 for char in objectName:
                     glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+                glEnable(GL_LIGHTING)
             finally:
                 glMatrixMode(GL_PROJECTION)
                 glPopMatrix()
@@ -198,7 +201,7 @@ class View3dWidget(QOpenGLWidget):
 
     def _detectHover(self, event):
         xMouse = event.x()
-        yMouse = event.y()
+        yMouse = self.height() - event.y()
         self.makeCurrent()
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -218,12 +221,12 @@ class View3dWidget(QOpenGLWidget):
         glGetIntegerv(GL_VIEWPORT, viewPort)
         minimumDistance = float('inf')
         hovered = None
-        threshold = 15.0
+        threshold = 20.0
         for noradIndex in self.visibleNorads:
             position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
             xWindow, yWindow, _ = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
-            distance = np.hypot(xWindow - xMouse, yWindow - yMouse)
-            if distance < threshold and distance < minimumDistance:
+            distance = np.sqrt((xWindow - xMouse) ** 2 + (yWindow - yMouse) ** 2)
+            if distance < minimumDistance and distance < threshold:
                 minimumDistance = distance
                 hovered = noradIndex
         return hovered
@@ -232,6 +235,7 @@ class View3dWidget(QOpenGLWidget):
         if event.button() == Qt.LeftButton:
             self.lastPosX = event.x()
             self.lastPosY = event.y()
+            xMouse, yMouse = event.x(), self.height() - event.y()
             self.makeCurrent()
             glMatrixMode(GL_PROJECTION)
             glLoadIdentity()
@@ -243,7 +247,6 @@ class View3dWidget(QOpenGLWidget):
             glRotatef(self.rotY, 0, 1, 0)
             glRotatef(-90, 1, 0, 0)
 
-            xMouse, yMouse = event.x(), self.height() - event.y()
             viewModel = (GLdouble * 16)()
             viewProjection = (GLdouble * 16)()
             viewPort = (GLint * 4)()
@@ -256,9 +259,9 @@ class View3dWidget(QOpenGLWidget):
             for noradIndex in self.visibleNorads:
                 position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
                 xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
-                dist = np.sqrt((xWindow - xMouse) ** 2 + (yWindow - yMouse) ** 2)
-                if dist < minimumDistance and dist < threshold:
-                    minimumDistance = dist
+                distance = np.sqrt((xWindow - xMouse) ** 2 + (yWindow - yMouse) ** 2)
+                if distance < minimumDistance and distance < threshold:
+                    minimumDistance = distance
                     selectedObject = noradIndex
             if selectedObject is not None:
                 self.selectedObject = selectedObject
@@ -276,11 +279,8 @@ class View3dWidget(QOpenGLWidget):
             return
         # HOVER DETECTION
         hovered = self._detectHover(event)
-        if hovered != self.hoveredObject:
-            self.hoveredObject = hovered
-            if hovered is not None:
-                print(f"Hovering NORAD: {hovered}")
-            self.update()
+        self.hoveredObject = hovered
+        self.update()
 
     def wheelEvent(self, event: QWheelEvent):
         delta = event.angleDelta().y() / 120.0

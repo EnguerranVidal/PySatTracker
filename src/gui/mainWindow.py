@@ -239,9 +239,9 @@ class MainWindow(QMainWindow):
         self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
-        self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
         self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+        self.centralViewWidget.setActiveObjects(self.activeObjects)
         self._updateActionStates()
 
     def removeSelectedObjects(self, noradIndices: list[int]):
