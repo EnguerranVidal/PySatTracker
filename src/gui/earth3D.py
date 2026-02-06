@@ -92,18 +92,19 @@ class View3dWidget(QOpenGLWidget):
             # DRAWING OBJECTS AND AXES
             for noradIndex in self.visibleNorads:
                 self._drawObject(noradIndex)
-            self.drawAxes()
+            if self.displayConfiguration['SHOW_AXES']:
+                self.drawAxes()
             glRotatef(self.gmstAngle, 0, 0, 1)
             glRotatef(90, 0, 0, 1)
 
         finally:
-            # DRAW EARTH
-            glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, self.texture_id)
-            gluQuadricTexture(self.sphere, GL_TRUE)
-            glColor3f(1, 1, 1)
-            gluSphere(self.sphere, 1.0, 96, 64)
-            glDisable(GL_TEXTURE_2D)
+            if self.displayConfiguration['SHOW_EARTH']:
+                glEnable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, self.texture_id)
+                gluQuadricTexture(self.sphere, GL_TRUE)
+                glColor3f(1, 1, 1)
+                gluSphere(self.sphere, 1.0, 96, 64)
+                glDisable(GL_TEXTURE_2D)
             glPopMatrix()
 
     @staticmethod
@@ -132,7 +133,7 @@ class View3dWidget(QOpenGLWidget):
         noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
         # ORBITAL PATH
         orbitColor, orbitWidth = noradObjectConfiguration['ORBIT']['COLOR'] if isActive else (1, 1, 1, 1), noradObjectConfiguration['ORBIT']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['ORBIT']['MODE'], isSelected):
+        if self._shouldRender(noradObjectConfiguration['ORBIT']['MODE'], isSelected, self.displayConfiguration['SHOW_ORBITS']):
             glLineWidth(orbitWidth)
             glColor4f(*orbitColor)
             glBegin(GL_LINE_STRIP)
@@ -177,7 +178,9 @@ class View3dWidget(QOpenGLWidget):
                 glPopMatrix()
 
     @staticmethod
-    def _shouldRender(mode: str, isSelected: bool):
+    def _shouldRender(mode: str, isSelected: bool, isToggled: bool = True):
+        if not isToggled:
+            return False
         if mode == "ALWAYS":
             return True
         if mode == "WHEN_SELECTED":

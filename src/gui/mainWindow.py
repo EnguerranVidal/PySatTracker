@@ -65,40 +65,56 @@ class MainWindow(QMainWindow):
 
         # VIEW MENU
         viewMenu = menuBar.addMenu('&View')
-        mapViewMenu = viewMenu.addMenu('&2D Map')
+        map2dMenu = viewMenu.addMenu('&2D Map')
         resetMapConfigAction = QAction('&Reset Configuration', self)
         setMapConfigAsDefaultAction = QAction('&Set as Default', self)
-        nightLayerAction = QAction('&Show Night Layer', self, checkable=True)
+        showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
         sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
         vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
         showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
         showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
+        view3dMenu = viewMenu.addMenu('&3D View')
+        showEarthAction = QAction('&Show Earth', self, checkable=True)
+        showAxesAction = QAction('&Show Axes', self, checkable=True)
+        showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
 
-        nightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
+        showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
         sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
         vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
         showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
         showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
+        showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
+        showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
+
         resetMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
         setMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
         self._selectionDependentActions.append(resetMapConfigAction)
         self._selectionDependentActions.append(setMapConfigAsDefaultAction)
-        nightLayerAction.toggled.connect(self._checkNightLayer)
+        showNightLayerAction.toggled.connect(self._checkNightLayer)
         sunIndicatorAction.toggled.connect(self._checkSunIndicator)
         vernalPointAction.toggled.connect(self._checkVernalPoint)
         showGroundTracksAction.toggled.connect(self._checkGroundTracks)
         showFootprintsAction.toggled.connect(self._checkFootprints)
+        showEarthAction.toggled.connect(self._checkEarth)
+        showAxesAction.toggled.connect(self._checkAxes)
+        showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
 
-        mapViewMenu.addAction(resetMapConfigAction)
-        mapViewMenu.addAction(setMapConfigAsDefaultAction)
-        mapViewMenu.addSeparator()
-        mapViewMenu.addAction(nightLayerAction)
-        mapViewMenu.addAction(sunIndicatorAction)
-        mapViewMenu.addAction(vernalPointAction)
-        mapViewMenu.addSeparator()
-        mapViewMenu.addAction(showGroundTracksAction)
-        mapViewMenu.addAction(showFootprintsAction)
+        map2dMenu.addAction(resetMapConfigAction)
+        map2dMenu.addAction(setMapConfigAsDefaultAction)
+        map2dMenu.addSeparator()
+        map2dMenu.addAction(showNightLayerAction)
+        map2dMenu.addAction(sunIndicatorAction)
+        map2dMenu.addAction(vernalPointAction)
+        map2dMenu.addSeparator()
+        map2dMenu.addAction(showGroundTracksAction)
+        map2dMenu.addAction(showFootprintsAction)
+
+        view3dMenu.addAction(showEarthAction)
+        view3dMenu.addAction(showAxesAction)
+        view3dMenu.addSeparator()
+        view3dMenu.addAction(showOrbitalPathsAction)
 
         # HELP MENU
         helpMenu = menuBar.addMenu('&Help')
@@ -108,6 +124,21 @@ class MainWindow(QMainWindow):
         reportIssueAct.triggered.connect(self._reportIssue)
         helpMenu.addAction(githubAct)
         helpMenu.addAction(reportIssueAct)
+
+    def _checkEarth(self, checked):
+        self.settings['3D_VIEW']['SHOW_EARTH'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _checkAxes(self, checked):
+        self.settings['3D_VIEW']['SHOW_AXES'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _checkOrbitalPaths(self, checked):
+        self.settings['3D_VIEW']['SHOW_ORBITS'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
 
     def _checkGroundTracks(self, checked):
         self.settings['2D_MAP']['SHOW_GROUND_TRACK'] = checked
