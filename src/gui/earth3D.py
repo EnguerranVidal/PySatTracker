@@ -14,11 +14,13 @@ from OpenGL.GL import *
 class View3dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
     EARTH_RADIUS = 6371
+    EARTH_MOON_DISTANCE = 384400
 
     def __init__(self, parent=None):
         super().__init__(parent)
         glutInit()
         self.setMouseTracking(True)
+        self.minZoom, self.maxZoom = 1.15, self.EARTH_MOON_DISTANCE / self.EARTH_RADIUS * 1.15
         self.objectSpotData, self.objectOrbitData, self.objectNameData = {}, {}, {}
         self.selectedObject, self.hoveredObject, self.visibleNorads, self.displayConfiguration = None, None, [], {}
         self.lastPosX, self.lastPosY = 0, 0
@@ -224,6 +226,8 @@ class View3dWidget(QOpenGLWidget):
             glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
             glGetIntegerv(GL_VIEWPORT, viewPort)
             xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
+            if zWindow <= 0.0 or zWindow >= 1.0:
+                return
             try:
                 glMatrixMode(GL_PROJECTION)
                 glPushMatrix()
@@ -261,7 +265,7 @@ class View3dWidget(QOpenGLWidget):
     def updateData(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
         self.selectedObject, self.displayConfiguration, self.visibleNorads = selectedNorad, displayConfiguration, visibleNorads
         self.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
-        self.sunDirection = positions['3D_VIEW']['SUN_DIRECTION_ECI']
+        self.sunDirection = positions['3D_VIEW']['SUN_DIRECTION_ECEF']
         self.objectSpotData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['POSITION']['R_ECI'] for noradIndex in visibleNorads}
         self.objectOrbitData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['ORBIT_PATH'] for noradIndex in visibleNorads}
         self.objectNameData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in visibleNorads}
@@ -353,7 +357,7 @@ class View3dWidget(QOpenGLWidget):
     def wheelEvent(self, event: QWheelEvent):
         delta = event.angleDelta().y() / 120.0
         self.zoom *= (0.9 if delta > 0 else 1.1)
-        self.zoom = max(0.5, min(30.0, self.zoom))
+        self.zoom = max(float(self.minZoom), min(float(self.maxZoom), self.zoom))
         self.update()
 
     def __del__(self):
