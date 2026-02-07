@@ -338,7 +338,7 @@ class Map2dWidget(QWidget):
     objectSelected = pyqtSignal(list)
     ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
-    def __init__(self, parent=None, mapImagePath='src/assets/world_map.png'):
+    def __init__(self, parent=None, mapImagePath='src/assets/earth/world_map.png'):
         super().__init__(parent)
         self.mapImagePath = mapImagePath
         self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}

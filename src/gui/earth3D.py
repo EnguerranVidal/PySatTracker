@@ -1,5 +1,7 @@
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
+from OpenGL.GL.shaders import compileProgram, compileShader
+
 from PIL import Image
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -12,15 +14,17 @@ from OpenGL.GL import *
 class View3dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
     EARTH_RADIUS = 6371
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMouseTracking(True)
         glutInit()
+        self.setMouseTracking(True)
         self.objectSpotData, self.objectOrbitData, self.objectNameData = {}, {}, {}
         self.selectedObject, self.hoveredObject, self.visibleNorads, self.displayConfiguration = None, None, [], {}
         self.lastPosX, self.lastPosY = 0, 0
         self.zoom, self.rotX, self.rotY = 5, 45, 225
-        self.texture_id = 0
+        self.earthShader = None
+        self.earthTextureIndex, self.lightsTextureIndex = 0, 0
         self.gmstAngle = 0
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
@@ -28,22 +32,12 @@ class View3dWidget(QOpenGLWidget):
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
         glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-        glEnable(GL_LIGHT0)
-        glEnable(GL_COLOR_MATERIAL)
         glEnable(GL_POINT_SMOOTH)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        # LIGHTING
-        glLightfv(GL_LIGHT0, GL_AMBIENT, (0.05, 0.05, 0.05, 1))
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
-        glLightfv(GL_LIGHT0, GL_SPECULAR, (1, 1, 1, 1))
-
         # EARTH MODEL
-        glEnable(GL_TEXTURE_2D)
         glShadeModel(GL_SMOOTH)
-        glClearColor(0, 0, 0, 0)
         glClearDepth(1)
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LEQUAL)
@@ -51,22 +45,45 @@ class View3dWidget(QOpenGLWidget):
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         try:
-            img = Image.open("src/assets/earth.jpg")
+            img = Image.open("src/assets/earth/earth.jpg")
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
             img_data = np.array(img.convert("RGB"), dtype=np.uint8)
             width, height = img.size
-            self.texture_id = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, self.texture_id)
+            self.earthTextureIndex = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, self.earthTextureIndex)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
             glGenerateMipmap(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
             print("Earth texture loaded successfully")
         except Exception as e:
             print("Failed to load earth.jpg:", e)
-            self.texture_id = 0
+            self.earthTextureIndex = 0
+        try:
+            img = Image.open("src/assets/earth/earth_lights.jpg")
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            img_data = np.array(img.convert("RGB"), dtype=np.uint8)
+            width, height = img.size
+            self.lightsTextureIndex = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, self.lightsTextureIndex)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glGenerateMipmap(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            print("Earth lights texture loaded successfully")
+        except Exception as e:
+            print("Failed to load earth_lights.jpg:", e)
+            self.lightsTextureIndex = 0
+        try:
+            with open("src/assets/earth/earth.vert") as f:
+                vertSource = f.read()
+            with open("src/assets/earth/earth.frag") as f:
+                fragSource = f.read()
+            self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER),)
+        except Exception as e:
+            raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
 
     def resizeGL(self, w, h):
         glViewport(0, 0, w, h)
@@ -77,6 +94,9 @@ class View3dWidget(QOpenGLWidget):
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glUseProgram(0)
+        glDisable(GL_LIGHTING)
+        glDisable(GL_TEXTURE_2D)
         glLoadIdentity()
 
         # CAMERA
@@ -84,29 +104,73 @@ class View3dWidget(QOpenGLWidget):
         glRotatef(self.rotX, 1, 0, 0)
         glRotatef(self.rotY, 0, 1, 0)
 
-        # SUN DIRECTION
-        lightDirection = self.sunDirection / np.linalg.norm(self.sunDirection)
-        glLightfv(GL_LIGHT0, GL_POSITION, (lightDirection[0], lightDirection[2], -lightDirection[1], 0))
-        glPushMatrix()
         glRotatef(-90, 1, 0, 0)
+        glActiveTexture(GL_TEXTURE1)
+        glDisable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glActiveTexture(GL_TEXTURE0)
+        glDisable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, 0)
         try:
+            glUseProgram(0)
+            glDisable(GL_LIGHTING)
+            glDisable(GL_TEXTURE_2D)
+            glColor4f(1, 1, 1, 1)
             # DRAWING OBJECTS AND AXES
             for noradIndex in self.visibleNorads:
-                self._drawObject(noradIndex)
-            if self.displayConfiguration['SHOW_AXES']:
+                if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
+                    self._drawObject(noradIndex)
+            if self.displayConfiguration.get('SHOW_AXES', False):
                 self.drawAxes()
-            glRotatef(self.gmstAngle, 0, 0, 1)
-            glRotatef(90, 0, 0, 1)
 
         finally:
-            if self.displayConfiguration['SHOW_EARTH']:
+            if self.displayConfiguration.get('SHOW_EARTH', False):
+                glPushMatrix()
+
+                glRotatef(self.gmstAngle, 0, 0, 1)
+                glRotatef(90, 0, 0, 1)
+
                 glEnable(GL_TEXTURE_2D)
-                glBindTexture(GL_TEXTURE_2D, self.texture_id)
+
+                if not self.earthShader:
+                    glPopMatrix()
+                    return
+
+                glUseProgram(self.earthShader)
+
+                glActiveTexture(GL_TEXTURE0)
+                glBindTexture(GL_TEXTURE_2D, self.earthTextureIndex)
+                glUniform1i(glGetUniformLocation(self.earthShader, "earthDay"), 0)
+
+                glActiveTexture(GL_TEXTURE1)
+                glBindTexture(GL_TEXTURE_2D, self.lightsTextureIndex)
+                glUniform1i(glGetUniformLocation(self.earthShader, "earthNight"), 1)
+
+                sun_eci = self.sunDirection / np.linalg.norm(self.sunDirection)
+
+                glUniform3f(
+                    glGetUniformLocation(self.earthShader, "sunDirection"),
+                    sun_eci[1],
+                    -sun_eci[0],
+                    sun_eci[2]
+                )
+
+                glUniform1f(glGetUniformLocation(self.earthShader, "twilightWidth"), 0.15)
+                glUniform1f(glGetUniformLocation(self.earthShader, "nightIntensity"), 1.0)
+
                 gluQuadricTexture(self.sphere, GL_TRUE)
-                glColor3f(1, 1, 1)
                 gluSphere(self.sphere, 1.0, 96, 64)
+                glUseProgram(0)
+
+                glDisable(GL_LIGHTING)
+                glActiveTexture(GL_TEXTURE1)
                 glDisable(GL_TEXTURE_2D)
-            glPopMatrix()
+                glBindTexture(GL_TEXTURE_2D, 0)
+                glActiveTexture(GL_TEXTURE0)
+                glDisable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, 0)
+
+                glPopMatrix()
 
     @staticmethod
     def drawAxes():
@@ -168,12 +232,16 @@ class View3dWidget(QOpenGLWidget):
                 glMatrixMode(GL_MODELVIEW)
                 glPushMatrix()
                 glLoadIdentity()
-                glDisable(GL_LIGHTING)
+                glActiveTexture(GL_TEXTURE1)
+                glDisable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, 0)
+                glActiveTexture(GL_TEXTURE0)
+                glDisable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, 0)
                 glColor4f(1, 1, 1, 1)
                 glRasterPos2f(xWindow + 5, yWindow + 5)
                 for char in objectName:
                     glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
-                glEnable(GL_LIGHTING)
             finally:
                 glMatrixMode(GL_PROJECTION)
                 glPopMatrix()
@@ -292,8 +360,10 @@ class View3dWidget(QOpenGLWidget):
         try:
             if self.isValid():
                 self.makeCurrent()
-                if self.texture_id:
-                    glDeleteTextures([self.texture_id])
+                if self.earthTextureIndex:
+                    glDeleteTextures([self.earthTextureIndex])
+                if self.lightsTextureIndex:
+                    glDeleteTextures([self.lightsTextureIndex])
                 if self.sphere:
                     gluDeleteQuadric(self.sphere)
                 self.doneCurrent()

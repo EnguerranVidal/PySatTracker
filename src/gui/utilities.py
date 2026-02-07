@@ -50,4 +50,4 @@ def generateWorldMap(filename='world_map.png', width=8192, height=4096, dpi=300)
 
 
 if __name__ == '__main__':
-    generateWorldMap(filename='../assets/world_map.png')
+    generateWorldMap(filename='../assets/earth/world_map.png')
