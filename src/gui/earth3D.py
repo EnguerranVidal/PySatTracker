@@ -287,7 +287,6 @@ class View3dWidget(QOpenGLWidget):
         minimumDistance = float('inf')
         hovered = None
         threshold = 20.0
-        cameraPos = self._getCameraPosition()
         for noradIndex in self.visibleNorads:
             position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
             xWindow, yWindow, _ = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
@@ -322,7 +321,6 @@ class View3dWidget(QOpenGLWidget):
             minimumDistance = float('inf')
             selectedObject = None
             threshold = 20.0
-            cameraPos = self._getCameraPosition()
             for noradIndex in self.visibleNorads:
                 position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
                 xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
