@@ -26,7 +26,7 @@ class View3dWidget(QOpenGLWidget):
         self.lastPosX, self.lastPosY = 0, 0
         self.zoom, self.rotX, self.rotY = 5, 45, 225
         self.earthShader = None
-        self.earthTextureIndex, self.lightsTextureIndex = 0, 0
+        self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTexture = 0, 0, None
         self.gmstAngle = 0
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
@@ -86,6 +86,14 @@ class View3dWidget(QOpenGLWidget):
             self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER),)
         except Exception as e:
             raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
+        self.skyboxTexture = self._loadCubeMap([
+            "src/assets/skybox/posx.png",
+            "src/assets/skybox/negx.png",
+            "src/assets/skybox/posy.png",
+            "src/assets/skybox/negy.png",
+            "src/assets/skybox/posz.png",
+            "src/assets/skybox/negz.png",
+        ])
 
     def resizeGL(self, w, h):
         glViewport(0, 0, w, h)
@@ -113,6 +121,7 @@ class View3dWidget(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE0)
         glDisable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, 0)
+        self.drawSkybox(size=500)
         try:
             glUseProgram(0)
             glDisable(GL_LIGHTING)
@@ -124,42 +133,27 @@ class View3dWidget(QOpenGLWidget):
                     self._drawObject(noradIndex)
             if self.displayConfiguration.get('SHOW_AXES', False):
                 self.drawAxes()
-
         finally:
             if self.displayConfiguration.get('SHOW_EARTH', False):
                 glPushMatrix()
-
                 glRotatef(self.gmstAngle, 0, 0, 1)
                 glRotatef(90, 0, 0, 1)
-
                 glEnable(GL_TEXTURE_2D)
-
                 if not self.earthShader:
                     glPopMatrix()
                     return
-
                 glUseProgram(self.earthShader)
 
                 glActiveTexture(GL_TEXTURE0)
                 glBindTexture(GL_TEXTURE_2D, self.earthTextureIndex)
                 glUniform1i(glGetUniformLocation(self.earthShader, "earthDay"), 0)
-
                 glActiveTexture(GL_TEXTURE1)
                 glBindTexture(GL_TEXTURE_2D, self.lightsTextureIndex)
                 glUniform1i(glGetUniformLocation(self.earthShader, "earthNight"), 1)
-
-                sun_eci = self.sunDirection / np.linalg.norm(self.sunDirection)
-
-                glUniform3f(
-                    glGetUniformLocation(self.earthShader, "sunDirection"),
-                    sun_eci[1],
-                    -sun_eci[0],
-                    sun_eci[2]
-                )
-
+                sunEcef = self.sunDirection / np.linalg.norm(self.sunDirection)
+                glUniform3f(glGetUniformLocation(self.earthShader, "sunDirection"), sunEcef[1], -sunEcef[0], sunEcef[2])
                 glUniform1f(glGetUniformLocation(self.earthShader, "twilightWidth"), 0.15)
                 glUniform1f(glGetUniformLocation(self.earthShader, "nightIntensity"), 1.0)
-
                 gluQuadricTexture(self.sphere, GL_TRUE)
                 gluSphere(self.sphere, 1.0, 96, 64)
                 glUseProgram(0)
@@ -171,7 +165,6 @@ class View3dWidget(QOpenGLWidget):
                 glActiveTexture(GL_TEXTURE0)
                 glDisable(GL_TEXTURE_2D)
                 glBindTexture(GL_TEXTURE_2D, 0)
-
                 glPopMatrix()
 
     @staticmethod
@@ -294,6 +287,7 @@ class View3dWidget(QOpenGLWidget):
         minimumDistance = float('inf')
         hovered = None
         threshold = 20.0
+        cameraPos = self._getCameraPosition()
         for noradIndex in self.visibleNorads:
             position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
             xWindow, yWindow, _ = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
@@ -328,6 +322,7 @@ class View3dWidget(QOpenGLWidget):
             minimumDistance = float('inf')
             selectedObject = None
             threshold = 20.0
+            cameraPos = self._getCameraPosition()
             for noradIndex in self.visibleNorads:
                 position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
                 xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
@@ -359,6 +354,100 @@ class View3dWidget(QOpenGLWidget):
         self.zoom *= (0.9 if delta > 0 else 1.1)
         self.zoom = max(float(self.minZoom), min(float(self.maxZoom), self.zoom))
         self.update()
+
+    @staticmethod
+    def _loadCubeMap(faces):
+        textIndex = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textIndex)
+        for i, face in enumerate(faces):
+            img = Image.open(face).convert("RGB")
+            img_data = np.array(img, dtype=np.uint8)
+            width, height = img.size
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
+        return textIndex
+
+    def drawSkybox(self, size=50.0):
+        glDepthMask(GL_FALSE)
+        glDisable(GL_LIGHTING)
+        glDisable(GL_CULL_FACE)
+
+        glUseProgram(0)
+        glEnable(GL_TEXTURE_CUBE_MAP)
+        glBindTexture(GL_TEXTURE_CUBE_MAP, self.skyboxTexture)
+        glColor4f(1, 1, 1, 0.2)
+        glBegin(GL_QUADS)
+
+        # +X
+        glTexCoord3f(1, -1, -1)
+        glVertex3f(size, -size, -size)
+        glTexCoord3f(1, -1, 1)
+        glVertex3f(size, -size, size)
+        glTexCoord3f(1, 1, 1)
+        glVertex3f(size, size, size)
+        glTexCoord3f(1, 1, -1)
+        glVertex3f(size, size, -size)
+
+        # -X
+        glTexCoord3f(-1, -1, 1)
+        glVertex3f(-size, -size, size)
+        glTexCoord3f(-1, -1, -1)
+        glVertex3f(-size, -size, -size)
+        glTexCoord3f(-1, 1, -1)
+        glVertex3f(-size, size, -size)
+        glTexCoord3f(-1, 1, 1)
+        glVertex3f(-size, size, size)
+
+        # +Y
+        glTexCoord3f(-1, 1, -1)
+        glVertex3f(-size, size, -size)
+        glTexCoord3f(1, 1, -1)
+        glVertex3f(size, size, -size)
+        glTexCoord3f(1, 1, 1)
+        glVertex3f(size, size, size)
+        glTexCoord3f(-1, 1, 1)
+        glVertex3f(-size, size, size)
+
+        # -Y
+        glTexCoord3f(-1, -1, 1)
+        glVertex3f(-size, -size, size)
+        glTexCoord3f(1, -1, 1)
+        glVertex3f(size, -size, size)
+        glTexCoord3f(1, -1, -1)
+        glVertex3f(size, -size, -size)
+        glTexCoord3f(-1, -1, -1)
+        glVertex3f(-size, -size, -size)
+
+        # +Z
+        glTexCoord3f(-1, -1, 1)
+        glVertex3f(-size, -size, size)
+        glTexCoord3f(1, -1, 1)
+        glVertex3f(size, -size, size)
+        glTexCoord3f(1, 1, 1)
+        glVertex3f(size, size, size)
+        glTexCoord3f(-1, 1, 1)
+        glVertex3f(-size, size, size)
+
+        # -Z
+        glTexCoord3f(1, -1, -1)
+        glVertex3f(size, -size, -size)
+        glTexCoord3f(-1, -1, -1)
+        glVertex3f(-size, -size, -size)
+        glTexCoord3f(-1, 1, -1)
+        glVertex3f(-size, size, -size)
+        glTexCoord3f(1, 1, -1)
+        glVertex3f(size, size, -size)
+
+        glEnd()
+
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
+        glDisable(GL_TEXTURE_CUBE_MAP)
+        glDepthMask(GL_TRUE)
 
     def __del__(self):
         try:
