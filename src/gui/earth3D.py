@@ -26,7 +26,7 @@ class View3dWidget(QOpenGLWidget):
         self.lastPosX, self.lastPosY = 0, 0
         self.zoom, self.rotX, self.rotY = 5, 45, 225
         self.earthShader = None
-        self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTexture = 0, 0, None
+        self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTexture = 0, 0, 0
         self.gmstAngle = 0
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
@@ -392,8 +392,8 @@ class View3dWidget(QOpenGLWidget):
 
     @staticmethod
     def _loadCubeMap(faces):
-        textIndex = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_CUBE_MAP, textIndex)
+        textureIndex = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureIndex)
         for i, face in enumerate(faces):
             img = Image.open(face).convert("RGB")
             img_data = np.array(img, dtype=np.uint8)
@@ -405,7 +405,7 @@ class View3dWidget(QOpenGLWidget):
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
         glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
-        return textIndex
+        return textureIndex
 
     def drawSkybox(self, size=50.0):
         glDepthMask(GL_FALSE)
@@ -494,6 +494,10 @@ class View3dWidget(QOpenGLWidget):
                     glDeleteTextures([self.lightsTextureIndex])
                 if self.sphere:
                     gluDeleteQuadric(self.sphere)
+                if self.earthShader:
+                    glDeleteProgram(self.earthShader)
+                if self.skyboxTexture:
+                    glDeleteTextures([self.skyboxTexture])
                 self.doneCurrent()
         except RuntimeError:
             pass
