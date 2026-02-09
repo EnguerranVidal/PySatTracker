@@ -6,7 +6,7 @@ from PIL import Image
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QOpenGLWidget
+from PyQt5.QtWidgets import QOpenGLWidget
 from OpenGL.GL import *
 
 
@@ -38,7 +38,7 @@ class View3dWidget(QOpenGLWidget):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        # EARTH MODEL
+        # LOADING EARTH MODEL
         glShadeModel(GL_SMOOTH)
         glClearDepth(1)
         glEnable(GL_DEPTH_TEST)
@@ -78,14 +78,16 @@ class View3dWidget(QOpenGLWidget):
         except Exception as e:
             print("Failed to load earth_lights.jpg:", e)
             self.lightsTextureIndex = 0
+        # LOADING EARTH SHADER
         try:
             with open("src/assets/earth/earth.vert") as f:
                 vertSource = f.read()
             with open("src/assets/earth/earth.frag") as f:
                 fragSource = f.read()
-            self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER),)
+            self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
         except Exception as e:
             raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
+        # LOADING SKYBOX TEXTURES
         self.skyboxTexture = self._loadCubeMap([
             "src/assets/skybox/posx.png",
             "src/assets/skybox/negx.png",
@@ -113,6 +115,13 @@ class View3dWidget(QOpenGLWidget):
         glTranslatef(0, 0, -self.zoom)
         glRotatef(self.rotX, 1, 0, 0)
         glRotatef(self.rotY, 0, 1, 0)
+        if self.displayConfiguration.get('SHOW_EARTH_GRID', False):
+            glPushMatrix()
+            glRotatef(-90, 1, 0, 0)
+            glRotatef(self.gmstAngle, 0, 0, 1)
+            glRotatef(90, 1, 0, 0)
+            self._drawEarthGrid()
+            glPopMatrix()
 
         glRotatef(-90, 1, 0, 0)
         glActiveTexture(GL_TEXTURE1)
@@ -132,7 +141,7 @@ class View3dWidget(QOpenGLWidget):
                 if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
                     self._drawObject(noradIndex)
             if self.displayConfiguration.get('SHOW_AXES', False):
-                self.drawAxes()
+                self._drawAxes()
         finally:
             if self.displayConfiguration.get('SHOW_EARTH', False):
                 glPushMatrix()
@@ -168,7 +177,7 @@ class View3dWidget(QOpenGLWidget):
                 glPopMatrix()
 
     @staticmethod
-    def drawAxes():
+    def _drawAxes():
         L = 2.5
         glLineWidth(3)
         glBegin(GL_LINES)
@@ -185,6 +194,34 @@ class View3dWidget(QOpenGLWidget):
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, L)
         glEnd()
+
+    @staticmethod
+    def _drawEarthGrid(radius=1.001):
+        LAT_STEP = 15
+        LON_STEP = 15
+        SEGMENTS = 360
+        glColor3f(0.8, 0.8, 1.0)
+        glLineWidth(1)
+        for lat_deg in range(-90 + LAT_STEP, 90, LAT_STEP):
+            lat_rad = np.radians(lat_deg)
+            glBegin(GL_LINE_LOOP)
+            for i in range(SEGMENTS):
+                lon_rad = 2 * np.pi * i / SEGMENTS
+                xGrid = radius * np.cos(lat_rad) * np.cos(lon_rad)
+                yGrid = radius * np.sin(lat_rad)
+                zGrid = radius * np.cos(lat_rad) * np.sin(lon_rad)
+                glVertex3f(xGrid, yGrid, zGrid)
+            glEnd()
+        for lon_deg in range(0, 360, LON_STEP):
+            lon_rad = np.radians(lon_deg)
+            glBegin(GL_LINE_STRIP)
+            for lat_deg in range(-90, 91, 5):
+                lat_rad = np.radians(lat_deg)
+                xGrid = radius * np.cos(lat_rad) * np.cos(lon_rad)
+                yGrid = radius * np.sin(lat_rad)
+                zGrid = radius * np.cos(lat_rad) * np.sin(lon_rad)
+                glVertex3f(xGrid, yGrid, zGrid)
+            glEnd()
 
     def _drawObject(self, noradIndex):
         isSelected = (noradIndex == self.selectedObject)

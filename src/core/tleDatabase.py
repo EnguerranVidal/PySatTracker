@@ -108,7 +108,6 @@ class TLEDatabase:
         if 'OBJECT_NAME_x' in df.columns:
             df['OBJECT_NAME'] = df['OBJECT_NAME_x']
         df = df.drop(columns=[c for c in ['OBJECT_NAME_x', 'OBJECT_NAME_y'] if c in df.columns])
-        print(df.columns.tolist())
         df = df.sort_values('OBJECT_NAME').reset_index(drop=True)
         self.dataFrame = df
 

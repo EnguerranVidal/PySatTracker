@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import *
 
 from gui.earth3D import View3dWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
-from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson
+from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 
 
 class MainWindow(QMainWindow):
@@ -59,6 +59,10 @@ class MainWindow(QMainWindow):
         self._restoreWindow()
         self._updateActionStates()
 
+    def _updateTabs(self, tabIndex):
+        self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
+        # TODO : Add Object Config widget change to reflect change of tab
+
     def _setupMenuBar(self):
         menuBar = self.menuBar()
         self._selectionDependentActions = []
@@ -75,6 +79,7 @@ class MainWindow(QMainWindow):
         showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
         view3dMenu = viewMenu.addMenu('&3D View')
         showEarthAction = QAction('&Show Earth', self, checkable=True)
+        showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
         showAxesAction = QAction('&Show Axes', self, checkable=True)
         showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
 
@@ -85,6 +90,7 @@ class MainWindow(QMainWindow):
         showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
         showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
         showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
         showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
 
@@ -98,6 +104,7 @@ class MainWindow(QMainWindow):
         showGroundTracksAction.toggled.connect(self._checkGroundTracks)
         showFootprintsAction.toggled.connect(self._checkFootprints)
         showEarthAction.toggled.connect(self._checkEarth)
+        showEarthGridAction.toggled.connect(self._checkEarthGrid)
         showAxesAction.toggled.connect(self._checkAxes)
         showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
 
@@ -112,6 +119,7 @@ class MainWindow(QMainWindow):
         map2dMenu.addAction(showFootprintsAction)
 
         view3dMenu.addAction(showEarthAction)
+        view3dMenu.addAction(showEarthGridAction)
         view3dMenu.addAction(showAxesAction)
         view3dMenu.addSeparator()
         view3dMenu.addAction(showOrbitalPathsAction)
@@ -127,6 +135,11 @@ class MainWindow(QMainWindow):
 
     def _checkEarth(self, checked):
         self.settings['3D_VIEW']['SHOW_EARTH'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _checkEarthGrid(self, checked):
+        self.settings['3D_VIEW']['SHOW_EARTH_GRID'] = checked
         self.saveSettings()
         self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
 
@@ -220,6 +233,8 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
         self._updateActionStates()
+        self.centralViewWidget.tabWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
+        self.centralViewWidget.tabChanged.connect(self._updateTabs)
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -944,6 +959,8 @@ class ObjectMapConfigDockWidget(QDockWidget):
 
 class CentralViewWidget(QWidget):
     tabChanged = pyqtSignal(int)
+    TABS = {0: '2D_MAP', 1: '3D_VIEW'}
+
     def __init__(self, parent=None, currentTab='2D_MAP'):
         super().__init__(parent)
         # CLOCK & ORBITS CALCULATIONS WORKER
