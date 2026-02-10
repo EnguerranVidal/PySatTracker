@@ -2,7 +2,6 @@ import os
 import time
 from datetime import datetime, timedelta
 import numpy as np
-from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QPainter, QPen
 from PyQt5.QtWidgets import *
@@ -175,6 +174,24 @@ class AddObjectDialog(QDialog):
     def acceptSelection(self):
         self.selectedNoradIndices = [item.data(Qt.UserRole) for item in self.listWidget.selectedItems()]
         self.accept()
+
+
+class SquareIconButton(QPushButton):
+    def __init__(self, iconPath: str, parent=None, size=24, flat=False):
+        super(SquareIconButton, self).__init__(parent)
+        self.iconPath = iconPath
+        self.setIcon(QIcon(self.iconPath))
+        self.setIconSize(QSize(size, size))
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        if flat:
+            styleSheet = 'border: none; text-align: center;'
+            self.setFlat(True)
+        else:
+            styleSheet = 'text-align: center;'
+        self.setStyleSheet(styleSheet)
+        self.setAutoFillBackground(False)
+
+    def setIconPath(self, iconPath: str):
         self.iconPath = iconPath
         self.setIcon(QIcon(iconPath))
 
