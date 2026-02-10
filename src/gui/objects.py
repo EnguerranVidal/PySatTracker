@@ -1,9 +1,12 @@
+import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import numpy as np
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QPainter, QPen
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QRect
 
 from src.core.orbitalEngine import OrbitalMechanicsEngine
 
@@ -172,3 +175,124 @@ class AddObjectDialog(QDialog):
     def acceptSelection(self):
         self.selectedNoradIndices = [item.data(Qt.UserRole) for item in self.listWidget.selectedItems()]
         self.accept()
+        self.iconPath = iconPath
+        self.setIcon(QIcon(iconPath))
+
+    def setIconObject(self, icon: QIcon):
+        self.iconPath = None
+        self.setIcon(icon)
+
+    def setIconSize(self, size):
+        super().setIconSize(size)
+        self.setFixedSize(size)
+
+    def sizeHint(self):
+        return self.iconSize()
+
+
+class TimelineWidget(QWidget):
+    playRequested = pyqtSignal()
+    pauseRequested = pyqtSignal()
+    toggleRequested = pyqtSignal()
+    speedRequested = pyqtSignal(float)
+    timeRequested = pyqtSignal(datetime)
+    jumpToNowRequested = pyqtSignal()
+
+    def __init__(self, parent = None, currentDir:str = None):
+        super().__init__(parent)
+        self.referenceTime = datetime.utcnow()
+        self.ignoreSlider = False
+        self.isRunning = False
+
+        # MAIN WIDGETS
+        self.iconPath = os.path.join(currentDir, 'src/assets/icons')
+        self.timeLabel = QLabel("---------- --:--:--.---")
+        self.timeLabel.setMinimumWidth(100)
+        self.slowDownButton = SquareIconButton(os.path.join(self.iconPath, 'slow-down.png'))
+        self.playPauseButton = SquareIconButton(os.path.join(self.iconPath, 'pause.png'))
+        self.fastForwardButton = SquareIconButton(os.path.join(self.iconPath, 'fast-forward.png'))
+        self.jumpToNowButton = SquareIconButton(os.path.join(self.iconPath, 'resume.png'))
+        self.timeSlider = GraduatedTimeSlider()
+
+        # LAYOUT
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+        layout.addWidget(self.timeLabel)
+        layout.addWidget(self.slowDownButton)
+        layout.addWidget(self.playPauseButton)
+        layout.addWidget(self.fastForwardButton)
+        layout.addWidget(self.jumpToNowButton)
+        layout.addWidget(self.timeSlider, stretch=1)
+
+        # CONNECTIONS
+        self.slowDownButton.clicked.connect(self._slow)
+        self.fastForwardButton.clicked.connect(self._fast)
+        self.playPauseButton.clicked.connect(self.toggleRequested)
+        self.jumpToNowButton.clicked.connect(self.jumpToNowRequested)
+        self.timeSlider.slider.valueChanged.connect(self._scrub)
+        self.timeSlider.slider.sliderPressed.connect(self._beginScrub)
+        self.timeSlider.slider.sliderReleased.connect(self._endScrub)
+
+    def _slow(self):
+        self.speedRequested.emit(0.5)
+
+    def _fast(self):
+        self.speedRequested.emit(2.0)
+
+    def _beginScrub(self):
+        if self.isRunning:
+            self.pauseRequested.emit()
+
+    def _scrub(self, value):
+        if self.ignoreSlider:
+            return
+        self.timeRequested.emit(self.referenceTime + timedelta(seconds=value))
+
+    def _endScrub(self):
+        if self.isRunning:
+            self.playRequested.emit()
+
+    def setTime(self, dt: datetime):
+        self.timeLabel.setText(dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+        delta = int((dt - self.referenceTime).total_seconds())
+        if not self.timeSlider.slider.isSliderDown():
+            self.ignoreSlider = True
+            self.timeSlider.slider.setValue(delta)
+            self.ignoreSlider = False
+
+    def setRunning(self, running: bool):
+        self.isRunning = running
+        self.playPauseButton.setIconPath(os.path.join(self.iconPath, 'pause.png') if running else os.path.join(self.iconPath, 'play.png'))
+
+    def resetReferenceTime(self, t: datetime):
+        self.referenceTime = t
+        self.ignoreSlider = True
+        self.timeSlider.slider.setValue(0)
+        self.ignoreSlider = False
+
+
+class GraduatedTimeSlider(QWidget):
+    def __init__(self, parent=None, nbHours=2):
+        super().__init__(parent)
+        self.slider = QSlider(Qt.Horizontal, self)
+        self.slider.setRange(-3600 * nbHours, 3600 * nbHours)
+        self.majorStep, self.minorStep = 600, 60
+        self.topMargin, self.bottomMargin = 14, 4
+
+    def resizeEvent(self, event):
+        self.slider.setGeometry(0, self.topMargin, self.width(), self.height() - self.topMargin - self.bottomMargin)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setPen(QPen(Qt.gray))
+        rectangle = self.slider.geometry()
+        minimumValue, maximumValue = self.slider.minimum(), self.slider.maximum()
+        span = maximumValue - minimumValue
+        for value in range(minimumValue, maximumValue + 1, self.minorStep):
+            x = rectangle.left() + (value - minimumValue) / span * rectangle.width()
+            if value % self.majorStep == 0:
+                painter.drawLine(int(x), rectangle.top() - 8, int(x), rectangle.top())
+            else:
+                painter.drawLine(int(x), rectangle.top() - 4, int(x), rectangle.top())

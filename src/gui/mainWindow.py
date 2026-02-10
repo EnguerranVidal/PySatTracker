@@ -1,19 +1,20 @@
 import copy
 import os
+from datetime import datetime
 
 import numpy as np
 import qdarktheme
 import time
 import imageio
 import pyqtgraph as pg
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QDesktopServices, QIcon
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
 from PyQt5.QtWidgets import *
 
 from gui.earth3D import View3dWidget
-from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
+from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, TimelineWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 
 
@@ -21,6 +22,7 @@ class MainWindow(QMainWindow):
     def __init__(self, currentDIr: str):
         super().__init__()
         self.settings = {}
+        self.icons = {}
         # FOLDER PATHS & SETTINGS
         self.currentDir = currentDIr
         self.settingsPath = os.path.join(self.currentDir, 'settings.json')
@@ -34,7 +36,7 @@ class MainWindow(QMainWindow):
 
         # CENTRAL VISUALIZATION WIDGET
         self.activeObjects, self.selectedObject = list(self.settings['VISUALIZATION']['ACTIVE_OBJECTS']), None
-        self.centralViewWidget = CentralViewWidget(self)
+        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir)
         self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
@@ -54,6 +56,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
 
         self.tleDatabase = None
+        self._createIcons()
         self._setupMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
@@ -64,74 +67,86 @@ class MainWindow(QMainWindow):
         # TODO : Add Object Config widget change to reflect change of tab
 
     def _setupMenuBar(self):
-        menuBar = self.menuBar()
+        self.menuBar = self.menuBar()
         self._selectionDependentActions = []
 
         # VIEW MENU
-        viewMenu = menuBar.addMenu('&View')
-        map2dMenu = viewMenu.addMenu('&2D Map')
-        resetMapConfigAction = QAction('&Reset Configuration', self)
-        setMapConfigAsDefaultAction = QAction('&Set as Default', self)
-        showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
-        sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
-        vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
-        showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
-        showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
-        view3dMenu = viewMenu.addMenu('&3D View')
-        showEarthAction = QAction('&Show Earth', self, checkable=True)
-        showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
-        showAxesAction = QAction('&Show Axes', self, checkable=True)
-        showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
+        self.viewMenu = self.menuBar.addMenu('&View')
+        self.map2dMenu = self.viewMenu.addMenu('&2D Map')
+        self.resetMapConfigAction = QAction('&Reset Configuration', self)
+        self.setMapConfigAsDefaultAction = QAction('&Set as Default', self)
+        self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
+        self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
+        self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
+        self.showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
+        self.showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
+        self.view3dMenu = self.viewMenu.addMenu('&3D View')
+        self.showEarthAction = QAction('&Show Earth', self, checkable=True)
+        self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
+        self.showAxesAction = QAction('&Show Axes', self, checkable=True)
+        self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
 
-        showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
-        sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
-        vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
-        showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
-        showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
+        self.showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
+        self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
+        self.vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
+        self.showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
+        self.showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
-        showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
-        showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
-        showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
-        showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
+        self.showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
+        self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
 
-        resetMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
-        setMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
-        self._selectionDependentActions.append(resetMapConfigAction)
-        self._selectionDependentActions.append(setMapConfigAsDefaultAction)
-        showNightLayerAction.toggled.connect(self._checkNightLayer)
-        sunIndicatorAction.toggled.connect(self._checkSunIndicator)
-        vernalPointAction.toggled.connect(self._checkVernalPoint)
-        showGroundTracksAction.toggled.connect(self._checkGroundTracks)
-        showFootprintsAction.toggled.connect(self._checkFootprints)
-        showEarthAction.toggled.connect(self._checkEarth)
-        showEarthGridAction.toggled.connect(self._checkEarthGrid)
-        showAxesAction.toggled.connect(self._checkAxes)
-        showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
+        self.resetMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
+        self.setMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
+        self._selectionDependentActions.append(self.resetMapConfigAction)
+        self._selectionDependentActions.append(self.setMapConfigAsDefaultAction)
+        self.showNightLayerAction.toggled.connect(self._checkNightLayer)
+        self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        self.vernalPointAction.toggled.connect(self._checkVernalPoint)
+        self.showGroundTracksAction.toggled.connect(self._checkGroundTracks)
+        self.showFootprintsAction.toggled.connect(self._checkFootprints)
+        self.showEarthAction.toggled.connect(self._checkEarth)
+        self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
+        self.showAxesAction.toggled.connect(self._checkAxes)
+        self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
 
-        map2dMenu.addAction(resetMapConfigAction)
-        map2dMenu.addAction(setMapConfigAsDefaultAction)
-        map2dMenu.addSeparator()
-        map2dMenu.addAction(showNightLayerAction)
-        map2dMenu.addAction(sunIndicatorAction)
-        map2dMenu.addAction(vernalPointAction)
-        map2dMenu.addSeparator()
-        map2dMenu.addAction(showGroundTracksAction)
-        map2dMenu.addAction(showFootprintsAction)
+        self.map2dMenu.addAction(self.resetMapConfigAction)
+        self.map2dMenu.addAction(self.setMapConfigAsDefaultAction)
+        self.map2dMenu.addSeparator()
+        self.map2dMenu.addAction(self.showNightLayerAction)
+        self.map2dMenu.addAction(self.sunIndicatorAction)
+        self.map2dMenu.addAction(self.vernalPointAction)
+        self.map2dMenu.addSeparator()
+        self.map2dMenu.addAction(self.showGroundTracksAction)
+        self.map2dMenu.addAction(self.showFootprintsAction)
 
-        view3dMenu.addAction(showEarthAction)
-        view3dMenu.addAction(showEarthGridAction)
-        view3dMenu.addAction(showAxesAction)
-        view3dMenu.addSeparator()
-        view3dMenu.addAction(showOrbitalPathsAction)
+        self.view3dMenu.addAction(self.showEarthAction)
+        self.view3dMenu.addAction(self.showEarthGridAction)
+        self.view3dMenu.addAction(self.showAxesAction)
+        self.view3dMenu.addSeparator()
+        self.view3dMenu.addAction(self.showOrbitalPathsAction)
 
         # HELP MENU
-        helpMenu = menuBar.addMenu('&Help')
-        githubAct = QAction('&Visit GitHub', self)
-        reportIssueAct = QAction('&Report Issue', self)
-        githubAct.triggered.connect(self._openGithub)
-        reportIssueAct.triggered.connect(self._reportIssue)
-        helpMenu.addAction(githubAct)
-        helpMenu.addAction(reportIssueAct)
+        self.helpMenu = self.menuBar.addMenu('&Help')
+        self.githubAct = QAction('&Visit GitHub', self)
+        self.githubAct.setIcon(self.icons['GITHUB'])
+        self.githubAct.triggered.connect(self._openGithub)
+        self.reportIssueAct = QAction('&Report Issue', self)
+        self.reportIssueAct.setIcon(self.icons['BUG'])
+        self.reportIssueAct.triggered.connect(self._reportIssue)
+        self.helpMenu.addAction(self.githubAct)
+        self.helpMenu.addAction(self.reportIssueAct)
+
+    def _createIcons(self):
+        self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
+        self.icons['PLAY'] = QIcon(os.path.join(self.iconPath, 'play.png'))
+        self.icons['PAUSE'] = QIcon(os.path.join(self.iconPath, 'pause.png'))
+        self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
+        self.icons['SLOW_DOWN'] = QIcon(os.path.join(self.iconPath, 'slow-down.png'))
+        self.icons['RESUME'] = QIcon(os.path.join(self.iconPath, 'resume.png'))
+        self.icons['BUG'] = QIcon(os.path.join(self.iconPath, 'bug.png'))
+        self.icons['GITHUB'] = QIcon(os.path.join(self.iconPath, 'github.png'))
 
     def _checkEarth(self, checked):
         self.settings['3D_VIEW']['SHOW_EARTH'] = checked
@@ -961,8 +976,10 @@ class CentralViewWidget(QWidget):
     tabChanged = pyqtSignal(int)
     TABS = {0: '2D_MAP', 1: '3D_VIEW'}
 
-    def __init__(self, parent=None, currentTab='2D_MAP'):
+    def __init__(self, parent=None, icons=None, currentTab='2D_MAP', currentDir=None):
         super().__init__(parent)
+        self.currentDir = currentDir
+        self.icons = icons if icons is not None else {}
         # CLOCK & ORBITS CALCULATIONS WORKER
         self.clock = SimulationClock()
         self.workerThread = QThread(self)
@@ -970,6 +987,17 @@ class CentralViewWidget(QWidget):
         self.orbitWorker.moveToThread(self.workerThread)
         self.clock.timeChanged.connect(self.orbitWorker.compute)
         self.workerThread.start()
+
+        # TIMELINE WIDGET
+        self.timeline = TimelineWidget(self, self.currentDir)
+        self.timeline.playRequested.connect(self.clock.play)
+        self.timeline.pauseRequested.connect(self.clock.pause)
+        self.timeline.toggleRequested.connect(self.clock.toggle)
+        self.timeline.speedRequested.connect(self._onSpeedRequested)
+        self.timeline.timeRequested.connect(self.clock.setTime)
+        self.timeline.jumpToNowRequested.connect(self._jumpToNow)
+        self.clock.timeChanged.connect(self.timeline.setTime)
+        self.clock.stateChanged.connect(self.timeline.setRunning)
 
         # VISUALIZATION CONFIGURATION
         self.activeObjects = set()
@@ -994,6 +1022,7 @@ class CentralViewWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.tabWidget)
+        layout.addWidget(self.timeline)
 
     def _onTabChanged(self, index):
         self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
@@ -1042,6 +1071,14 @@ class CentralViewWidget(QWidget):
 
     def start(self):
         self.clock.play()
+
+    def _onSpeedRequested(self, factor):
+        self.clock.setSpeed(self.clock.speed * factor)
+
+    def _jumpToNow(self):
+        now = datetime.utcnow()
+        self.timeline.resetReferenceTime(now)
+        self.clock.setTime(now)
 
     def closeEvent(self, event):
         self.orbitWorker.stop()
