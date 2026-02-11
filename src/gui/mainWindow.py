@@ -996,7 +996,7 @@ class CentralViewWidget(QWidget):
         self.timeline.speedRequested.connect(self._onSpeedRequested)
         self.timeline.timeRequested.connect(self.clock.setTime)
         self.timeline.jumpToNowRequested.connect(self._jumpToNow)
-        self.clock.timeChanged.connect(self.timeline.setTime)
+        self.clock.timeChanged.connect(self._onClockTimeChanged)
         self.clock.stateChanged.connect(self.timeline.setRunning)
 
         # VISUALIZATION CONFIGURATION
@@ -1072,8 +1072,11 @@ class CentralViewWidget(QWidget):
     def start(self):
         self.clock.play()
 
-    def _onSpeedRequested(self, factor):
-        self.clock.setSpeed(self.clock.speed * factor)
+    def _onClockTimeChanged(self, simTime: datetime):
+        self.timeline.setTime(simTime)
+
+    def _onSpeedRequested(self, speed):
+        self.clock.setSpeed(speed)
 
     def _jumpToNow(self):
         now = datetime.utcnow()
