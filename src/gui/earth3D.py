@@ -4,9 +4,10 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 
 from PIL import Image
 import numpy as np
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
-from PyQt5.QtWidgets import QOpenGLWidget
+from PyQt5.QtWidgets import QOpenGLWidget, QColorDialog, QGroupBox, QGridLayout, QPushButton, QSpinBox, QComboBox, \
+    QVBoxLayout, QWidget, QDockWidget, QSizePolicy
 from OpenGL.GL import *
 
 
@@ -411,14 +412,13 @@ class View3dWidget(QOpenGLWidget):
         glDepthMask(GL_FALSE)
         glDisable(GL_LIGHTING)
         glDisable(GL_CULL_FACE)
-
         glUseProgram(0)
         glEnable(GL_TEXTURE_CUBE_MAP)
         glBindTexture(GL_TEXTURE_CUBE_MAP, self.skyboxTexture)
         glColor4f(1, 1, 1, 0.2)
         glBegin(GL_QUADS)
 
-        # +X
+        # +X FACE
         glTexCoord3f(1, -1, -1)
         glVertex3f(size, -size, -size)
         glTexCoord3f(1, -1, 1)
@@ -428,7 +428,7 @@ class View3dWidget(QOpenGLWidget):
         glTexCoord3f(1, 1, -1)
         glVertex3f(size, size, -size)
 
-        # -X
+        # -X FACE
         glTexCoord3f(-1, -1, 1)
         glVertex3f(-size, -size, size)
         glTexCoord3f(-1, -1, -1)
@@ -438,7 +438,7 @@ class View3dWidget(QOpenGLWidget):
         glTexCoord3f(-1, 1, 1)
         glVertex3f(-size, size, size)
 
-        # +Y
+        # +Y FACE
         glTexCoord3f(-1, 1, -1)
         glVertex3f(-size, size, -size)
         glTexCoord3f(1, 1, -1)
@@ -448,7 +448,7 @@ class View3dWidget(QOpenGLWidget):
         glTexCoord3f(-1, 1, 1)
         glVertex3f(-size, size, size)
 
-        # -Y
+        # -Y FACE
         glTexCoord3f(-1, -1, 1)
         glVertex3f(-size, -size, size)
         glTexCoord3f(1, -1, 1)
@@ -458,7 +458,7 @@ class View3dWidget(QOpenGLWidget):
         glTexCoord3f(-1, -1, -1)
         glVertex3f(-size, -size, -size)
 
-        # +Z
+        # +Z FACE
         glTexCoord3f(-1, -1, 1)
         glVertex3f(-size, -size, size)
         glTexCoord3f(1, -1, 1)
@@ -468,7 +468,7 @@ class View3dWidget(QOpenGLWidget):
         glTexCoord3f(-1, 1, 1)
         glVertex3f(-size, size, size)
 
-        # -Z
+        # -Z FACE
         glTexCoord3f(1, -1, -1)
         glVertex3f(size, -size, -size)
         glTexCoord3f(-1, -1, -1)
@@ -501,3 +501,125 @@ class View3dWidget(QOpenGLWidget):
                 self.doneCurrent()
         except RuntimeError:
             pass
+
+
+class Object3dViewConfigDockWidget(QDockWidget):
+    configChanged = pyqtSignal(int, dict)
+    MODES = {'Always': "ALWAYS", 'When Selected': "WHEN_SELECTED", 'Never': "NEVER"}
+
+    def __init__(self, parent=None):
+        super().__init__("Object 3D Configuration", parent)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
+
+        self.noradIndex = None
+        self._currentConfig = None
+        self._setupUi()
+
+    def _setupUi(self):
+        self.editorWidget = QWidget()
+        mainLayout = QVBoxLayout(self.editorWidget)
+        mainLayout.setSpacing(10)
+        mainLayout.setContentsMargins(6, 6, 6, 6)
+
+        # SPOT CONFIGURATION
+        self.spotGroup = self._groupBox("Spot")
+        self.spotColorButton = self._colorButton()
+        self.spotSizeSpin = QSpinBox()
+        self.spotSizeSpin.setRange(4, 30)
+        self.spotSizeSpin.setToolTip("Spot Size")
+        self.spotGroup.layout().addWidget(self.spotColorButton, 0, 0)
+        self.spotGroup.layout().addWidget(self.spotSizeSpin, 0, 1)
+
+        # ORBITAL PATH CONFIGURATION
+        self.orbitGroup = self._groupBox("Orbital Path")
+        self.orbitModeCombo = QComboBox()
+        self.orbitModeCombo.addItems(list(self.MODES.keys()))
+        self.orbitColorButton = self._colorButton()
+        self.orbitWidthSpin = QSpinBox()
+        self.orbitWidthSpin.setRange(1, 6)
+        self.orbitWidthSpin.setToolTip("Line Width")
+        self.orbitGroup.layout().addWidget(self.orbitModeCombo, 0, 0)
+        self.orbitGroup.layout().addWidget(self.orbitColorButton, 0, 1)
+        self.orbitGroup.layout().addWidget(self.orbitWidthSpin, 0, 2)
+
+        mainLayout.addWidget(self.spotGroup)
+        mainLayout.addWidget(self.orbitGroup)
+        mainLayout.addStretch()
+
+        self.setWidget(self.editorWidget)
+        self.editorWidget.setEnabled(False)
+
+        # Connections
+        self.spotSizeSpin.valueChanged.connect(self._emitConfig)
+        self.orbitModeCombo.currentIndexChanged.connect(self._emitConfig)
+        self.orbitWidthSpin.valueChanged.connect(self._emitConfig)
+        self.spotColorButton.clicked.connect(lambda: self._pickColor('SPOT'))
+        self.orbitColorButton.clicked.connect(lambda: self._pickColor('ORBIT'))
+
+    @staticmethod
+    def _colorButton():
+        btn = QPushButton()
+        btn.setFixedSize(24, 24)
+        btn.setStyleSheet("border: 1px solid #666;")
+        return btn
+
+    @staticmethod
+    def _groupBox(title: str):
+        box = QGroupBox(title)
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
+        layout.setContentsMargins(8, 12, 8, 8)
+        return box
+
+    def setSelectedObject(self, noradIndex: int | None, config: dict):
+        self.noradIndex = noradIndex
+        if noradIndex is None:
+            self.clear()
+            return
+        self.editorWidget.setEnabled(True)
+        self._currentConfig = config[str(noradIndex)]
+        blockers = [QSignalBlocker(self.spotSizeSpin), QSignalBlocker(self.orbitModeCombo), QSignalBlocker(self.orbitWidthSpin)]
+        self.spotSizeSpin.setValue(self._currentConfig['SPOT'].get('SIZE', 8))
+        self.orbitModeCombo.setCurrentText(self._modeToLabel(self._currentConfig['ORBIT']['MODE']))
+        self.orbitWidthSpin.setValue(self._currentConfig['ORBIT'].get('WIDTH', 2))
+        self._setButtonColor(self.spotColorButton, self._currentConfig['SPOT']['COLOR'])
+        self._setButtonColor(self.orbitColorButton, self._currentConfig['ORBIT']['COLOR'])
+
+        del blockers
+
+    def clear(self):
+        self.noradIndex = None
+        self._currentConfig = None
+        self.editorWidget.setEnabled(False)
+
+    def _modeToLabel(self, mode):
+        for label, value in self.MODES.items():
+            if value == mode:
+                return label
+        return "Never"
+
+    @staticmethod
+    def _setButtonColor(btn, color):
+        btn.setStyleSheet(f"background-color: rgb({color[0] * 255},{color[1] * 255},{color[2] * 255}); border: 1px solid #666;")
+
+    def _pickColor(self, section):
+        if self._currentConfig is None:
+            return
+        color = QColorDialog.getColor()
+        if not color.isValid():
+            return
+        button = self.spotColorButton if section == 'SPOT' else self.orbitColorButton
+        self._currentConfig[section]['COLOR'] = (color.red() / 255, color.green() / 255, color.blue() / 255, 1)
+        self._setButtonColor(button, self._currentConfig[section]['COLOR'])
+        self._emitConfig()
+
+    def _emitConfig(self, *_):
+        if not self.editorWidget.isEnabled() or self.noradIndex is None:
+            return
+        self._currentConfig['SPOT']['SIZE'] = self.spotSizeSpin.value()
+        self._currentConfig['ORBIT']['MODE'] = self.MODES[self.orbitModeCombo.currentText()]
+        self._currentConfig['ORBIT']['WIDTH'] = self.orbitWidthSpin.value()
+        self.configChanged.emit(self.noradIndex, self._currentConfig)

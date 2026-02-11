@@ -13,7 +13,7 @@ from pyqtgraph import GraphicsLayoutWidget
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
 from PyQt5.QtWidgets import *
 
-from gui.earth3D import View3dWidget
+from gui.earth3D import View3dWidget, Object3dViewConfigDockWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, TimelineWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 
@@ -50,10 +50,13 @@ class MainWindow(QMainWindow):
 
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
-        self.objectMapConfigDock = ObjectMapConfigDockWidget(self)
-        self.objectMapConfigDock.configChanged.connect(self._on2dMapObjectConfigChanged)
+        self.object2dMapConfigDock = Object2dMapConfigDockWidget(self)
+        self.object3dViewConfigDock = Object3dViewConfigDockWidget(self)
+        self.object2dMapConfigDock.configChanged.connect(self._on2dMapObjectConfigChanged)
+        self.object3dViewConfigDock.configChanged.connect(self._on3dViewObjectConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.objectMapConfigDock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.object2dMapConfigDock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.object3dViewConfigDock)
 
         self.tleDatabase = None
         self._createIcons()
@@ -172,13 +175,13 @@ class MainWindow(QMainWindow):
         self.settings['2D_MAP']['SHOW_GROUND_TRACK'] = checked
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.objectMapConfigDock.enableGroundTrackConfig(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
+        self.object2dMapConfigDock.enableGroundTrackConfig(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
 
     def _checkFootprints(self, checked):
         self.settings['2D_MAP']['SHOW_FOOTPRINT'] = checked
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.objectMapConfigDock.enableFootprintConfig(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
+        self.object2dMapConfigDock.enableFootprintConfig(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
 
     @staticmethod
     def _openGithub():
@@ -250,6 +253,12 @@ class MainWindow(QMainWindow):
         self._updateActionStates()
         self.centralViewWidget.tabWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
         self.centralViewWidget.tabChanged.connect(self._updateTabs)
+        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '2D_MAP':
+            self.object2dMapConfigDock.setVisible(True)
+            self.object3dViewConfigDock.setVisible(False)
+        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '3D_VIEW':
+            self.object2dMapConfigDock.setVisible(False)
+            self.object3dViewConfigDock.setVisible(True)
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -315,7 +324,8 @@ class MainWindow(QMainWindow):
         else:
             self.objectInfoDock.clear()
         self.centralViewWidget.setSelectedObject(self.selectedObject)
-        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
+        self.object2dMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
+        self.object3dViewConfigDock.setSelectedObject(self.selectedObject, self.settings['3D_VIEW']['OBJECTS'])
         self._updateActionStates()
 
     def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
@@ -323,12 +333,17 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
+    def _on3dViewObjectConfigChanged(self, noradIndex, newConfiguration):
+        self.settings['3D_VIEW']['OBJECTS'][str(noradIndex)] = newConfiguration
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
     def _resetObject2dMapConfig(self):
         if self.selectedObject is None:
             return
         self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
         self.saveSettings()
-        self.objectMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
+        self.object2dMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
     def _setObject2dMapConfigAsDefault(self):
@@ -815,7 +830,7 @@ class ObjectInfoDockWidget(QDockWidget):
                 label.setText(str(value))
 
 
-class ObjectMapConfigDockWidget(QDockWidget):
+class Object2dMapConfigDockWidget(QDockWidget):
     configChanged = pyqtSignal(int, dict)
     MODES = {'Always': "ALWAYS", 'When Selected': "WHEN_SELECTED", 'Never': "NEVER"}
 
