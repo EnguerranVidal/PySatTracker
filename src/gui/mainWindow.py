@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
 
     def _updateTabs(self, tabIndex):
         self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
-        # TODO : Add Object Config widget change to reflect change of tab
+        self.setObjectConfigWidgetsVisibility()
 
     def _setupMenuBar(self):
         self.menuBar = self.menuBar()
@@ -253,6 +253,9 @@ class MainWindow(QMainWindow):
         self._updateActionStates()
         self.centralViewWidget.tabWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
         self.centralViewWidget.tabChanged.connect(self._updateTabs)
+        self.setObjectConfigWidgetsVisibility()
+
+    def setObjectConfigWidgetsVisibility(self):
         if self.settings['VISUALIZATION']['CURRENT_TAB'] == '2D_MAP':
             self.object2dMapConfigDock.setVisible(True)
             self.object3dViewConfigDock.setVisible(False)
