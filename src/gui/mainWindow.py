@@ -60,7 +60,8 @@ class MainWindow(QMainWindow):
 
         self.tleDatabase = None
         self._createIcons()
-        self._setupMenuBar()
+        self._createActions()
+        self._createMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
         self._updateActionStates()
@@ -69,53 +70,96 @@ class MainWindow(QMainWindow):
         self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
         self.setObjectConfigWidgetsVisibility()
 
-    def _setupMenuBar(self):
+    def _createActions(self):
+        self._selectionDependentActions = []
+        # RESET 2D MAP CONFIGURATION
+        self.set2dMapConfigAsDefaultAction = QAction('&Set as Default', self)
+        self.set2dMapConfigAsDefaultAction.setStatusTip('Set Current Object\'s 2D Map Configuration as Default')
+        self.set2dMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
+        self._selectionDependentActions.append(self.set2dMapConfigAsDefaultAction)
+        # RESET 2D MAP CONFIGURATION
+        self.reset2dMapConfigAction = QAction('&Reset Configuration', self)
+        self.reset2dMapConfigAction.setStatusTip('Reset Object\'s 2D Map Configuration to Default')
+        self.reset2dMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
+        self._selectionDependentActions.append(self.reset2dMapConfigAction)
+        # SHOW 2D MAP NIGHT LAYER ACTION
+        self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
+        self.showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
+        self.showNightLayerAction.setStatusTip('Show 2D Map Night Layer')
+        self.showNightLayerAction.toggled.connect(self._checkNightLayer)
+        # SHOW 2D MAP SUN INDICATOR
+        self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
+        self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
+        self.sunIndicatorAction.setStatusTip('Show 2D Map Sun Indicator')
+        self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        # SHOW 2D MAP VERNAL POINT
+        self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
+        self.vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
+        self.vernalPointAction.setStatusTip('Show 2D Map Vernal Point')
+        self.vernalPointAction.toggled.connect(self._checkVernalPoint)
+        # SHOW 2D MAP GROUND TRACKS
+        self.showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
+        self.showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
+        self.showGroundTracksAction.setStatusTip('Allow showing 2D Map Ground Tracks')
+        self.showGroundTracksAction.toggled.connect(self._checkGroundTracks)
+        # SHOW 2D MAP VISIBILITY FOOTPRINTS
+        self.showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
+        self.showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
+        self.showFootprintsAction.setStatusTip('Allow showing 2D Map Visibility Footprints')
+        self.showFootprintsAction.toggled.connect(self._checkFootprints)
+
+        # RESET 3D VIEW CONFIGURATION
+        self.set3dViewConfigAsDefaultAction = QAction('&Set as Default', self)
+        self.set3dViewConfigAsDefaultAction.setStatusTip('Set Current Object\'s 3D View Configuration as Default')
+        self.set3dViewConfigAsDefaultAction.triggered.connect(self._setObject3dViewConfigAsDefault)
+        self._selectionDependentActions.append(self.set3dViewConfigAsDefaultAction)
+        # RESET 3D VIEW CONFIGURATION
+        self.reset3dViewConfigAction = QAction('&Reset Configuration', self)
+        self.reset3dViewConfigAction.setStatusTip('Reset Object\'s 3D View Configuration to Default')
+        self.reset3dViewConfigAction.triggered.connect(self._resetObject3dViewConfig)
+        self._selectionDependentActions.append(self.reset3dViewConfigAction)
+        # SHOW 3D VIEW EARTH MODEL
+        self.showEarthAction = QAction('&Show Earth', self, checkable=True)
+        self.showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthAction.setStatusTip('Show 3D View Earth Model')
+        self.showEarthAction.toggled.connect(self._checkEarth)
+        # SHOW 3D VIEW EARTH GRID
+        self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
+        self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
+        self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
+        # SHOW 3D VIEW ECI AXIS
+        self.showAxesAction = QAction('&Show Axes', self, checkable=True)
+        self.showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
+        self.showAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
+        self.showAxesAction.toggled.connect(self._checkAxes)
+        # SHOW 3D VIEW ORBITAL PATHS
+        self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
+        self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
+        self.showOrbitalPathsAction.setStatusTip('Allow showing 3D View Orbital Paths')
+        self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
+
+        # VISIT GITHUB
+        self.githubAction = QAction('&Visit GitHub', self)
+        self.githubAction.setIcon(self.icons['GITHUB'])
+        self.githubAction.setStatusTip('Visit the Project\'s GitHub Repository')
+        self.githubAction.triggered.connect(self._openGithub)
+        # REPORT ISSUE
+        self.reportIssueAction = QAction('&Report Issue', self)
+        self.reportIssueAction.setIcon(self.icons['BUG'])
+        self.reportIssueAction.setStatusTip('Report an Issue')
+        self.reportIssueAction.triggered.connect(self._reportIssue)
+
+    def _createMenuBar(self):
         self.menuBar = self.menuBar()
         self._selectionDependentActions = []
 
-        # VIEW MENU
+        ### VIEW MENU ###
         self.viewMenu = self.menuBar.addMenu('&View')
+        # 2D MAP MENU
         self.map2dMenu = self.viewMenu.addMenu('&2D Map')
-        self.resetMapConfigAction = QAction('&Reset Configuration', self)
-        self.setMapConfigAsDefaultAction = QAction('&Set as Default', self)
-        self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
-        self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
-        self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
-        self.showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
-        self.showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
-        self.view3dMenu = self.viewMenu.addMenu('&3D View')
-        self.showEarthAction = QAction('&Show Earth', self, checkable=True)
-        self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
-        self.showAxesAction = QAction('&Show Axes', self, checkable=True)
-        self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
-
-        self.showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
-        self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
-        self.vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
-        self.showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
-        self.showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
-
-        self.showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
-        self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
-        self.showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
-        self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
-
-        self.resetMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
-        self.setMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
-        self._selectionDependentActions.append(self.resetMapConfigAction)
-        self._selectionDependentActions.append(self.setMapConfigAsDefaultAction)
-        self.showNightLayerAction.toggled.connect(self._checkNightLayer)
-        self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
-        self.vernalPointAction.toggled.connect(self._checkVernalPoint)
-        self.showGroundTracksAction.toggled.connect(self._checkGroundTracks)
-        self.showFootprintsAction.toggled.connect(self._checkFootprints)
-        self.showEarthAction.toggled.connect(self._checkEarth)
-        self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
-        self.showAxesAction.toggled.connect(self._checkAxes)
-        self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
-
-        self.map2dMenu.addAction(self.resetMapConfigAction)
-        self.map2dMenu.addAction(self.setMapConfigAsDefaultAction)
+        self.map2dMenu.addAction(self.reset2dMapConfigAction)
+        self.map2dMenu.addAction(self.set2dMapConfigAsDefaultAction)
         self.map2dMenu.addSeparator()
         self.map2dMenu.addAction(self.showNightLayerAction)
         self.map2dMenu.addAction(self.sunIndicatorAction)
@@ -123,23 +167,21 @@ class MainWindow(QMainWindow):
         self.map2dMenu.addSeparator()
         self.map2dMenu.addAction(self.showGroundTracksAction)
         self.map2dMenu.addAction(self.showFootprintsAction)
-
+        # 3D VIEW MENU
+        self.view3dMenu = self.viewMenu.addMenu('&3D View')
+        self.view3dMenu.addAction(self.reset3dViewConfigAction)
+        self.view3dMenu.addAction(self.set3dViewConfigAsDefaultAction)
+        self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showEarthAction)
         self.view3dMenu.addAction(self.showEarthGridAction)
         self.view3dMenu.addAction(self.showAxesAction)
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showOrbitalPathsAction)
 
-        # HELP MENU
+        ### HELP MENU ###
         self.helpMenu = self.menuBar.addMenu('&Help')
-        self.githubAct = QAction('&Visit GitHub', self)
-        self.githubAct.setIcon(self.icons['GITHUB'])
-        self.githubAct.triggered.connect(self._openGithub)
-        self.reportIssueAct = QAction('&Report Issue', self)
-        self.reportIssueAct.setIcon(self.icons['BUG'])
-        self.reportIssueAct.triggered.connect(self._reportIssue)
-        self.helpMenu.addAction(self.githubAct)
-        self.helpMenu.addAction(self.reportIssueAct)
+        self.helpMenu.addAction(self.githubAction)
+        self.helpMenu.addAction(self.reportIssueAction)
 
     def _createIcons(self):
         self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
@@ -150,6 +192,20 @@ class MainWindow(QMainWindow):
         self.icons['RESUME'] = QIcon(os.path.join(self.iconPath, 'resume.png'))
         self.icons['BUG'] = QIcon(os.path.join(self.iconPath, 'bug.png'))
         self.icons['GITHUB'] = QIcon(os.path.join(self.iconPath, 'github.png'))
+
+    def _resetObject3dViewConfig(self):
+        if self.selectedObject is None:
+            return
+        self.settings['3D_VIEW']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['3D_VIEW']['DEFAULT_CONFIG'])
+        self.saveSettings()
+        self.object3dViewConfigDock.setSelectedObject(self.selectedObject, self.settings['3D_VIEW']['OBJECTS'])
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _setObject3dViewConfigAsDefault(self):
+        if self.selectedObject is None:
+            return
+        self.settings['3D_VIEW']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['3D_VIEW']['OBJECTS'][str(self.selectedObject)])
+        self.saveSettings()
 
     def _checkEarth(self, checked):
         self.settings['3D_VIEW']['SHOW_EARTH'] = checked

@@ -560,10 +560,10 @@ class Object3dViewConfigDockWidget(QDockWidget):
 
     @staticmethod
     def _colorButton():
-        btn = QPushButton()
-        btn.setFixedSize(24, 24)
-        btn.setStyleSheet("border: 1px solid #666;")
-        return btn
+        colorButton = QPushButton()
+        colorButton.setFixedSize(24, 24)
+        colorButton.setStyleSheet("border: 1px solid #666;")
+        return colorButton
 
     @staticmethod
     def _groupBox(title: str):
@@ -587,7 +587,6 @@ class Object3dViewConfigDockWidget(QDockWidget):
         self.orbitWidthSpin.setValue(self._currentConfig['ORBIT'].get('WIDTH', 2))
         self._setButtonColor(self.spotColorButton, self._currentConfig['SPOT']['COLOR'])
         self._setButtonColor(self.orbitColorButton, self._currentConfig['ORBIT']['COLOR'])
-
         del blockers
 
     def clear(self):
