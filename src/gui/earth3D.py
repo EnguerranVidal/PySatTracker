@@ -141,8 +141,15 @@ class View3dWidget(QOpenGLWidget):
             for noradIndex in self.visibleNorads:
                 if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
                     self._drawObject(noradIndex)
-            if self.displayConfiguration.get('SHOW_AXES', False):
-                self._drawAxes()
+            if self.displayConfiguration.get('SHOW_ECI_AXES', False):
+                redColor, greenColor, blueColor = (1, 0, 0), (0, 1, 0), (0, 0, 1)
+                self._drawAxes(redColor, greenColor, blueColor)
+            if self.displayConfiguration.get('SHOW_ECEF_AXES', False):
+                glPushMatrix()
+                glRotatef(self.gmstAngle, 0, 0, 1)
+                redColor, greenColor, blueColor = (1, 0, 1), (1, 1, 0), (0, 1, 1)
+                self._drawAxes(redColor, greenColor, blueColor)
+                glPopMatrix()
         finally:
             if self.displayConfiguration.get('SHOW_EARTH', False):
                 glPushMatrix()
@@ -178,20 +185,20 @@ class View3dWidget(QOpenGLWidget):
                 glPopMatrix()
 
     @staticmethod
-    def _drawAxes():
+    def _drawAxes(redColor, greenColor, blueColor):
         L = 2.5
         glLineWidth(3)
         glBegin(GL_LINES)
         # X – VERNAL EQUINOX
-        glColor3f(1, 0, 0)
+        glColor3f(*redColor)
         glVertex3f(0, 0, 0)
         glVertex3f(L, 0, 0)
         # Y – NORTH POLE
-        glColor3f(0, 1, 0)
+        glColor3f(*greenColor)
         glVertex3f(0, 0, 0)
         glVertex3f(0, L, 0)
         # Z – EAST
-        glColor3f(0, 0, 1)
+        glColor3f(*blueColor)
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, L)
         glEnd()

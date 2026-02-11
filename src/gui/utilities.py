@@ -15,7 +15,7 @@ def generateDefaultSettingsJson(path):
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True},
         'VISUALIZATION': {'ACTIVE_OBJECTS': [25544], 'CURRENT_TAB': '2D_MAP'},
         '2D_MAP': {'DEFAULT_CONFIG': giveDefaultObject2DMapConfig(), 'OBJECTS': {'25544': giveDefaultObject2DMapConfig()}, 'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_FOOTPRINT': True, 'SHOW_GROUND_TRACK': True, 'SHOW_VERNAL': False},
-        '3D_VIEW': {'DEFAULT_CONFIG': giveDefaultObject3DViewConfig(), 'OBJECTS': {'25544': giveDefaultObject3DViewConfig()}, 'SHOW_ORBITS': True, 'SHOW_EARTH': True, 'SHOW_AXES': True, 'SHOW_EARTH_GRID': False},
+        '3D_VIEW': {'DEFAULT_CONFIG': giveDefaultObject3DViewConfig(), 'OBJECTS': {'25544': giveDefaultObject3DViewConfig()}, 'SHOW_ORBITS': True, 'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False},
     }
     with open(path, 'w') as f:
         json.dump(settings, f)

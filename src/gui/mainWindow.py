@@ -129,10 +129,15 @@ class MainWindow(QMainWindow):
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
         # SHOW 3D VIEW ECI AXIS
-        self.showAxesAction = QAction('&Show Axes', self, checkable=True)
-        self.showAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_AXES'])
-        self.showAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
-        self.showAxesAction.toggled.connect(self._checkAxes)
+        self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
+        self.showEciAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECI_AXES'])
+        self.showEciAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
+        self.showEciAxesAction.toggled.connect(self._checkEciAxes)
+        # SHOW 3D VIEW ECEF AXIS
+        self.showEcefAxesAction = QAction('&Show ECEF Reference Frame', self, checkable=True)
+        self.showEcefAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECEF_AXES'])
+        self.showEcefAxesAction.setStatusTip('Show 3D View ECEF Reference Frame Axes')
+        self.showEcefAxesAction.toggled.connect(self._checkEcefAxes)
         # SHOW 3D VIEW ORBITAL PATHS
         self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
         self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
@@ -174,7 +179,8 @@ class MainWindow(QMainWindow):
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showEarthAction)
         self.view3dMenu.addAction(self.showEarthGridAction)
-        self.view3dMenu.addAction(self.showAxesAction)
+        self.view3dMenu.addAction(self.showEciAxesAction)
+        self.view3dMenu.addAction(self.showEcefAxesAction)
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showOrbitalPathsAction)
 
@@ -217,8 +223,13 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
 
-    def _checkAxes(self, checked):
-        self.settings['3D_VIEW']['SHOW_AXES'] = checked
+    def _checkEciAxes(self, checked):
+        self.settings['3D_VIEW']['SHOW_ECI_AXES'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _checkEcefAxes(self, checked):
+        self.settings['3D_VIEW']['SHOW_ECEF_AXES'] = checked
         self.saveSettings()
         self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
 
