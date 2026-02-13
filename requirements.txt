@@ -1,7 +1,6 @@
 numpy~=2.2.6
 pyqt5~=5.15.11
 matplotlib~=3.10.7
-cartopy~=0.24.1
 imageio~=2.37.2
 pyqtgraph~=0.13.7
 pandas~=2.3.3
