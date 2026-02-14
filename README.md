@@ -10,6 +10,7 @@
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-31019/)
 ![GitHub repo size](https://img.shields.io/github/repo-size/EnguerranVidal/PySatTracker)
 
+<img width="937" height="858" alt="PySatTracker" src="https://github.com/user-attachments/assets/8fd88d61-2180-4c93-b83f-378102c3993e" />
 
 ## SUMMARY
 
