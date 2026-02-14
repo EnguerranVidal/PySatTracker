@@ -6,8 +6,7 @@ from PIL import Image
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
-from PyQt5.QtWidgets import QOpenGLWidget, QColorDialog, QGroupBox, QGridLayout, QPushButton, QSpinBox, QComboBox, \
-    QVBoxLayout, QWidget, QDockWidget, QSizePolicy
+from PyQt5.QtWidgets import *
 from OpenGL.GL import *
 
 
