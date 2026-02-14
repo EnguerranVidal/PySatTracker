@@ -8,8 +8,10 @@ from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QUrl
 from PyQt5.QtWidgets import *
 
+from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
+from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
-from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, TimelineWidget
+from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 
 
