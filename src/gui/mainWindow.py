@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
         self.tleDatabase = None
         self._createIcons()
         self._createActions()
-        self._createToolBar()
+        self._createToolBars()
         self._createMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self.open2dMapAction.triggered.connect(self._open2dMap)
         # OPEN 3D VIEW
         self.open3dViewAction = QAction('&Open 3D View', self)
-        self.open3dViewAction.setIcon(self.icons['EARTH'])
+        self.open3dViewAction.setIcon(self.icons['SATELLITE_GLOBE'])
         self.open3dViewAction.setStatusTip('Open 3D View')
         self.open3dViewAction.triggered.connect(self._open3dView)
         # OPEN PLOT VIEW
@@ -137,21 +137,25 @@ class MainWindow(QMainWindow):
         # SHOW 3D VIEW EARTH MODEL
         self.showEarthAction = QAction('&Show Earth', self, checkable=True)
         self.showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthAction.setIcon(self.icons['EARTH'])
         self.showEarthAction.setStatusTip('Show 3D View Earth Model')
         self.showEarthAction.toggled.connect(self._checkEarth)
         # SHOW 3D VIEW EARTH GRID
         self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
         self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showEarthGridAction.setIcon(self.icons['EARTH_GRID'])
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
         # SHOW 3D VIEW ECI AXIS
         self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
         self.showEciAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECI_AXES'])
+        self.showEciAxesAction.setIcon(self.icons['ECI'])
         self.showEciAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
         self.showEciAxesAction.toggled.connect(self._checkEciAxes)
         # SHOW 3D VIEW ECEF AXIS
         self.showEcefAxesAction = QAction('&Show ECEF Reference Frame', self, checkable=True)
         self.showEcefAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECEF_AXES'])
+        self.showEcefAxesAction.setIcon(self.icons['ECEF'])
         self.showEcefAxesAction.setStatusTip('Show 3D View ECEF Reference Frame Axes')
         self.showEcefAxesAction.toggled.connect(self._checkEcefAxes)
         # SHOW 3D VIEW ORBITAL PATHS
@@ -221,13 +225,19 @@ class MainWindow(QMainWindow):
         self.helpMenu.addAction(self.githubAction)
         self.helpMenu.addAction(self.reportIssueAction)
 
-    def _createToolBar(self):
+    def _createToolBars(self):
         # MAIN TOOLBAR
         self.mainToolBar = QToolBar('Main Toolbar', self)
         self.mainToolBar.setMovable(False)
         self.mainToolBar.addAction(self.open3dViewAction)
         self.mainToolBar.addAction(self.open2dMapAction)
         self.mainToolBar.addAction(self.openPlotViewAction)
+        # 3D VIEW TOOLBAR
+        self.view3dToolBar = QToolBar('3D View Toolbar', self)
+        self.view3dToolBar.addAction(self.showEarthAction)
+        self.view3dToolBar.addAction(self.showEarthGridAction)
+        self.view3dToolBar.addAction(self.showEciAxesAction)
+        self.view3dToolBar.addAction(self.showEcefAxesAction)
         # PLOT VIEW TOOLBAR
         self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
         self.plotViewToolBar.addAction(self.addPlotTabAction)
@@ -237,23 +247,32 @@ class MainWindow(QMainWindow):
 
         # ADDING ALL TOOLBARS TO THE MAIN WINDOW
         self.addToolBar(self.mainToolBar)
+        self.addToolBar(self.view3dToolBar)
         self.addToolBar(self.plotViewToolBar)
 
     def _manageToolBarVisibility(self, tabName):
         if tabName == '2D_MAP':
+            self.view3dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(False)
         elif tabName == '3D_VIEW':
+            self.view3dToolBar.setVisible(True)
             self.plotViewToolBar.setVisible(False)
         elif tabName == 'PLOT_VIEW':
+            self.view3dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(True)
         else:
+            self.view3dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(False)
 
     def _createIcons(self):
         self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
-        self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
+        self.icons['SATELLITE_GLOBE'] = QIcon(os.path.join(self.iconPath, 'satellite-globe.png'))
         self.icons['MAP'] = QIcon(os.path.join(self.iconPath, 'map.png'))
         self.icons['PLOT'] = QIcon(os.path.join(self.iconPath, 'plot.png'))
+        self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
+        self.icons['EARTH_GRID'] = QIcon(os.path.join(self.iconPath, 'earth-grid.png'))
+        self.icons['ECI'] = QIcon(os.path.join(self.iconPath, 'eci.png'))
+        self.icons['ECEF'] = QIcon(os.path.join(self.iconPath, 'ecef.png'))
         self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
         self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
         self.icons['CLOSE_ALL_TABS'] = QIcon(os.path.join(self.iconPath, 'close-all-tabs.png'))
@@ -356,8 +375,8 @@ class MainWindow(QMainWindow):
         if self.settings['WINDOW']['MAXIMIZED']:
             self.showMaximized()
         else:
-            g = self.settings['WINDOW']['GEOMETRY']
-            self.setGeometry(g['X'], g['Y'], g['WIDTH'], g['HEIGHT'])
+            windowGeometry = self.settings['WINDOW']['GEOMETRY']
+            self.setGeometry(windowGeometry['X'], windowGeometry['Y'], windowGeometry['WIDTH'], windowGeometry['HEIGHT'])
 
     def _updateStatus(self):
         self.datetime = QDateTime.currentDateTime()
