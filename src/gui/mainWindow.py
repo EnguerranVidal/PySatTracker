@@ -9,6 +9,7 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QUr
 from PyQt5.QtWidgets import *
 
 from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
+from gui.plots import PlotViewTabWidget
 from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
@@ -32,7 +33,7 @@ class MainWindow(QMainWindow):
         qdarktheme.setup_theme('dark', additional_qss='QToolTip {color: black;}')
 
         # CENTRAL VISUALIZATION WIDGET
-        self.activeObjects, self.selectedObject = list(self.settings['VISUALIZATION']['ACTIVE_OBJECTS']), None
+        self.activeObjects, self.selectedObject = list(self.settings['ACTIVE_OBJECTS']), None
         self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir)
         self.setCentralWidget(self.centralViewWidget)
 
@@ -64,9 +65,10 @@ class MainWindow(QMainWindow):
         self._restoreWindow()
         self._updateActionStates()
 
-    def _updateStackedWidget(self, tabIndex):
-        self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
+    def _updateStackedWidget(self, widgetIndex):
+        self.settings['CURRENT_TAB'] = self.centralViewWidget.TABS[widgetIndex]
         self.setObjectConfigWidgetsVisibility()
+        self._manageToolBarVisibility(self.centralViewWidget.TABS[widgetIndex])
 
     def _createActions(self):
         self._selectionDependentActions = []
@@ -80,6 +82,11 @@ class MainWindow(QMainWindow):
         self.open3dViewAction.setIcon(self.icons['EARTH'])
         self.open3dViewAction.setStatusTip('Open 3D View')
         self.open3dViewAction.triggered.connect(self._open3dView)
+        # OPEN PLOT VIEW
+        self.openPlotViewAction = QAction('&Open Plot View', self)
+        self.openPlotViewAction.setIcon(self.icons['PLOT'])
+        self.openPlotViewAction.setStatusTip('Open Plot View')
+        self.openPlotViewAction.triggered.connect(self._openPlotView)
 
         # RESET 2D MAP CONFIGURATION
         self.set2dMapConfigAsDefaultAction = QAction('&Set as Default', self)
@@ -153,6 +160,22 @@ class MainWindow(QMainWindow):
         self.showOrbitalPathsAction.setStatusTip('Allow showing 3D View Orbital Paths')
         self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
 
+        # ADD PLOT TAB
+        self.addPlotTabAction = QAction('&Add Plot Tab', self)
+        self.addPlotTabAction.setIcon(self.icons['ADD_TAB'])
+        self.addPlotTabAction.setStatusTip('Add a new Plot Tab')
+        self.addPlotTabAction.triggered.connect(self._addPlotTab)
+        # REMOVE PLOT TAB
+        self.removePlotTabAction = QAction('&Remove Current Plot Tab', self)
+        self.removePlotTabAction.setIcon(self.icons['CLOSE_TAB'])
+        self.removePlotTabAction.setStatusTip('Remove the Current Plot Tab')
+        self.removePlotTabAction.triggered.connect(self._removePlotTab)
+        # REMOVE ALL PLOT TABS
+        self.removeAllPlotTabsAction = QAction('&Remove All Plot Tabs', self)
+        self.removeAllPlotTabsAction.setIcon(self.icons['CLOSE_ALL_TABS'])
+        self.removeAllPlotTabsAction.setStatusTip('Remove All Plot Tabs')
+        self.removeAllPlotTabsAction.triggered.connect(self._removeAllPlotTabs)
+
         # VISIT GITHUB
         self.githubAction = QAction('&Visit GitHub', self)
         self.githubAction.setIcon(self.icons['GITHUB'])
@@ -199,15 +222,42 @@ class MainWindow(QMainWindow):
         self.helpMenu.addAction(self.reportIssueAction)
 
     def _createToolBar(self):
+        # MAIN TOOLBAR
         self.mainToolBar = QToolBar('Main Toolbar', self)
+        self.mainToolBar.setMovable(False)
         self.mainToolBar.addAction(self.open3dViewAction)
         self.mainToolBar.addAction(self.open2dMapAction)
+        self.mainToolBar.addAction(self.openPlotViewAction)
+        # PLOT VIEW TOOLBAR
+        self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
+        self.plotViewToolBar.addAction(self.addPlotTabAction)
+        self.plotViewToolBar.addAction(self.removePlotTabAction)
+        self.plotViewToolBar.addAction(self.removeAllPlotTabsAction)
+        self.plotViewToolBar.addSeparator()
+
+        # ADDING ALL TOOLBARS TO THE MAIN WINDOW
         self.addToolBar(self.mainToolBar)
+        self.addToolBar(self.plotViewToolBar)
+
+    def _manageToolBarVisibility(self, tabName):
+        if tabName == '2D_MAP':
+            self.plotViewToolBar.setVisible(False)
+        elif tabName == '3D_VIEW':
+            self.plotViewToolBar.setVisible(False)
+        elif tabName == 'PLOT_VIEW':
+            self.plotViewToolBar.setVisible(True)
+        else:
+            self.plotViewToolBar.setVisible(False)
 
     def _createIcons(self):
         self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
         self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
         self.icons['MAP'] = QIcon(os.path.join(self.iconPath, 'map.png'))
+        self.icons['PLOT'] = QIcon(os.path.join(self.iconPath, 'plot.png'))
+        self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
+        self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
+        self.icons['CLOSE_ALL_TABS'] = QIcon(os.path.join(self.iconPath, 'close-all-tabs.png'))
+        self.icons['MULTI_PLOT'] = QIcon(os.path.join(self.iconPath, 'multi-plot.png'))
         self.icons['PLAY'] = QIcon(os.path.join(self.iconPath, 'play.png'))
         self.icons['PAUSE'] = QIcon(os.path.join(self.iconPath, 'pause.png'))
         self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
@@ -335,15 +385,16 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
         self._updateActionStates()
-        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['CURRENT_TAB']))
         self.centralViewWidget.stackedChanged.connect(self._updateStackedWidget)
         self.setObjectConfigWidgetsVisibility()
+        self._manageToolBarVisibility(self.settings['CURRENT_TAB'])
 
     def setObjectConfigWidgetsVisibility(self):
-        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '2D_MAP':
+        if self.settings['CURRENT_TAB'] == '2D_MAP':
             self.object2dMapConfigDock.setVisible(True)
             self.object3dViewConfigDock.setVisible(False)
-        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '3D_VIEW':
+        if self.settings['CURRENT_TAB'] == '3D_VIEW':
             self.object2dMapConfigDock.setVisible(False)
             self.object3dViewConfigDock.setVisible(True)
 
@@ -362,7 +413,7 @@ class MainWindow(QMainWindow):
                 self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
             if str(noradIndex) not in self.settings['3D_VIEW']['OBJECTS']:
                 self.settings['3D_VIEW']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['3D_VIEW']['DEFAULT_CONFIG'])
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+        self.settings['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
@@ -377,7 +428,7 @@ class MainWindow(QMainWindow):
             if self.selectedObject == noradIndex:
                 self.selectedObject = None
                 self.objectInfoDock.clear()
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+        self.settings['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         self.objectListDock.populate(self.tleDatabase, self.activeObjects)
         self.centralViewWidget.setActiveObjects(self.activeObjects)
@@ -420,6 +471,18 @@ class MainWindow(QMainWindow):
 
     def _open3dView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
+
+    def _openPlotView(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, 'PLOT_VIEW'))
+
+    def _addPlotTab(self):
+        self.centralViewWidget.plotViewWidget.addNewTab()
+
+    def _removePlotTab(self):
+        self.centralViewWidget.plotViewWidget.closeCurrentTab()
+
+    def _removeAllPlotTabs(self):
+        self.centralViewWidget.plotViewWidget.closeAllTabs()
 
     def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
@@ -467,12 +530,9 @@ class MainWindow(QMainWindow):
         if not self.isMaximized():
             g = self.geometry()
             self.settings['WINDOW']['GEOMETRY'] = {'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()}
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+        self.settings['ACTIVE_OBJECTS'] = self.activeObjects
         self.saveSettings()
         event.accept()
-
-
-
 
 
 class ObjectListDockWidget(QDockWidget):
@@ -652,9 +712,9 @@ class ObjectInfoDockWidget(QDockWidget):
 
 class CentralViewWidget(QWidget):
     stackedChanged = pyqtSignal(int)
-    TABS = {0: '3D_VIEW', 1: '2D_MAP'}
+    TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW'}
 
-    def __init__(self, parent=None, icons=None, currentTab='2D_MAP', currentDir=None):
+    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None):
         super().__init__(parent)
         self.currentDir = currentDir
         self.icons = icons if icons is not None else {}
@@ -686,16 +746,18 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
+        self.plotViewWidget = PlotViewTabWidget()
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)
-        self.stackedWidget.setCurrentWidget(self.view3dWidget if currentTab == '3D_VIEW' else self.map2dWidget)
+        self.stackedWidget.addWidget(self.plotViewWidget)
+        self.stackedWidget.setCurrentIndex(getKeyFromValue(self.TABS, currentTab))
 
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
         self.stackedWidget.currentChanged.connect(self._onTabChanged)
         self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
         self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
-
+        self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
 
         # MAIN LAYOUT
         layout = QVBoxLayout(self)
@@ -706,6 +768,7 @@ class CentralViewWidget(QWidget):
     def _onTabChanged(self, index):
         self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
         self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
+        self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
         if self.map2dVisible:
             self._refresh2dMap()
         if self.view3dVisible:
@@ -724,13 +787,18 @@ class CentralViewWidget(QWidget):
 
     def setSelectedObject(self, noradIndex):
         self.selectedObject = noradIndex
-        self._refresh2dMap()
+        if self.map2dVisible:
+            self._refresh2dMap()
+        if self.view3dVisible:
+            self._refresh3dView()
 
     def setActiveObjects(self, noradIndices):
         self.activeObjects = set(noradIndices)
         self.orbitWorker.noradIndices = list(self.activeObjects)
-        self._refresh2dMap()
-        self._refresh3dView()
+        if self.map2dVisible:
+            self._refresh2dMap()
+        if self.view3dVisible:
+            self._refresh3dView()
 
     def set2dMapConfiguration(self, displayConfiguration):
         self.display2dMapConfiguration = displayConfiguration

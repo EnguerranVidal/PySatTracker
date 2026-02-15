@@ -174,3 +174,22 @@ class AddObjectDialog(QDialog):
     def acceptSelection(self):
         self.selectedNoradIndices = [item.data(Qt.UserRole) for item in self.listWidget.selectedItems()]
         self.accept()
+
+
+class AreaCycler:
+    def __init__(self):
+        self.cycle = [Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea, Qt.TopDockWidgetArea, Qt.BottomDockWidgetArea]
+        self.step = 0
+
+    def next(self, step=None):
+        if step is not None:
+            self.step = step
+        value = self.cycle[self.step]
+        self.step += 1
+        if self.step == 4:
+            self.step = 0
+        return value
+
+    def get(self, step):
+        assert step < 4
+        return self.cycle[step]
