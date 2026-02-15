@@ -16,12 +16,12 @@ from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, sav
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, currentDIr: str):
+    def __init__(self, currentDir: str):
         super().__init__()
         self.settings = {}
         self.icons = {}
         # FOLDER PATHS & SETTINGS
-        self.currentDir = currentDIr
+        self.currentDir = currentDir
         self.settingsPath = os.path.join(self.currentDir, 'settings.json')
         self.dataPath = os.path.join(self.currentDir, 'data')
         self.noradPath = os.path.join(self.dataPath, 'norad')
@@ -58,17 +58,29 @@ class MainWindow(QMainWindow):
         self.tleDatabase = None
         self._createIcons()
         self._createActions()
+        self._createToolBar()
         self._createMenuBar()
         self._setupStatusBar()
         self._restoreWindow()
         self._updateActionStates()
 
-    def _updateTabs(self, tabIndex):
+    def _updateStackedWidget(self, tabIndex):
         self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
         self.setObjectConfigWidgetsVisibility()
 
     def _createActions(self):
         self._selectionDependentActions = []
+        # OPEN 2D MAP
+        self.open2dMapAction = QAction('&Open 2D Map', self)
+        self.open2dMapAction.setIcon(self.icons['MAP'])
+        self.open2dMapAction.setStatusTip('Open 2D Map')
+        self.open2dMapAction.triggered.connect(self._open2dMap)
+        # OPEN 3D VIEW
+        self.open3dViewAction = QAction('&Open 3D View', self)
+        self.open3dViewAction.setIcon(self.icons['EARTH'])
+        self.open3dViewAction.setStatusTip('Open 3D View')
+        self.open3dViewAction.triggered.connect(self._open3dView)
+
         # RESET 2D MAP CONFIGURATION
         self.set2dMapConfigAsDefaultAction = QAction('&Set as Default', self)
         self.set2dMapConfigAsDefaultAction.setStatusTip('Set Current Object\'s 2D Map Configuration as Default')
@@ -186,8 +198,16 @@ class MainWindow(QMainWindow):
         self.helpMenu.addAction(self.githubAction)
         self.helpMenu.addAction(self.reportIssueAction)
 
+    def _createToolBar(self):
+        self.mainToolBar = QToolBar('Main Toolbar', self)
+        self.mainToolBar.addAction(self.open3dViewAction)
+        self.mainToolBar.addAction(self.open2dMapAction)
+        self.addToolBar(self.mainToolBar)
+
     def _createIcons(self):
         self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
+        self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
+        self.icons['MAP'] = QIcon(os.path.join(self.iconPath, 'map.png'))
         self.icons['PLAY'] = QIcon(os.path.join(self.iconPath, 'play.png'))
         self.icons['PAUSE'] = QIcon(os.path.join(self.iconPath, 'pause.png'))
         self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
@@ -315,8 +335,8 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.setActiveObjects(self.activeObjects)
         self.centralViewWidget.start()
         self._updateActionStates()
-        self.centralViewWidget.tabWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
-        self.centralViewWidget.tabChanged.connect(self._updateTabs)
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
+        self.centralViewWidget.stackedChanged.connect(self._updateStackedWidget)
         self.setObjectConfigWidgetsVisibility()
 
     def setObjectConfigWidgetsVisibility(self):
@@ -394,6 +414,12 @@ class MainWindow(QMainWindow):
         self.object2dMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
         self.object3dViewConfigDock.setSelectedObject(self.selectedObject, self.settings['3D_VIEW']['OBJECTS'])
         self._updateActionStates()
+
+    def _open2dMap(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '2D_MAP'))
+
+    def _open3dView(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
 
     def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
@@ -625,8 +651,8 @@ class ObjectInfoDockWidget(QDockWidget):
 
 
 class CentralViewWidget(QWidget):
-    tabChanged = pyqtSignal(int)
-    TABS = {0: '2D_MAP', 1: '3D_VIEW'}
+    stackedChanged = pyqtSignal(int)
+    TABS = {0: '3D_VIEW', 1: '2D_MAP'}
 
     def __init__(self, parent=None, icons=None, currentTab='2D_MAP', currentDir=None):
         super().__init__(parent)
@@ -658,32 +684,33 @@ class CentralViewWidget(QWidget):
         self.lastPositions = {}
 
         # MAIN TABS
-        self.map2dWidget = Map2dWidget()
         self.view3dWidget = View3dWidget()
-        self.tabWidget = QTabWidget()
-        self.tabWidget.addTab(self.map2dWidget, '2D MAP')
-        self.tabWidget.addTab(self.view3dWidget, '3D VIEW')
-        self.tabWidget.setCurrentWidget(self.map2dWidget if currentTab == '2D_MAP' else self.view3dWidget)
+        self.map2dWidget = Map2dWidget()
+        self.stackedWidget = QStackedWidget()
+        self.stackedWidget.addWidget(self.view3dWidget)
+        self.stackedWidget.addWidget(self.map2dWidget)
+        self.stackedWidget.setCurrentWidget(self.view3dWidget if currentTab == '3D_VIEW' else self.map2dWidget)
 
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
-        self.tabWidget.currentChanged.connect(self._onTabChanged)
-        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
-        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
+        self.stackedWidget.currentChanged.connect(self._onTabChanged)
+        self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
+        self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
+
 
         # MAIN LAYOUT
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.tabWidget)
+        layout.addWidget(self.stackedWidget)
         layout.addWidget(self.timeline)
 
     def _onTabChanged(self, index):
-        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
-        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
+        self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
+        self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
         if self.map2dVisible:
             self._refresh2dMap()
         if self.view3dVisible:
             self._refresh3dView()
-        self.tabChanged.emit(index)
+        self.stackedChanged.emit(index)
 
     def _onPositionsReady(self, positions: dict):
         self.lastPositions = positions
