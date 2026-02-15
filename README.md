@@ -23,24 +23,22 @@
 
 ## INSTALLATION
 
-
-
-
+1. Cloning the Github Repository.
 ```
 git clone https://github.com/EnguerranVidal/PySatTracker.git
 ```
-
+2. Going in the Repository Directory.
 ```
 cd PySatTracker
 ```
-
+3. Creating Conda Environment and activating it.
 ```
 conda create --name pysattracker python=3.10
 ```
 ```
 conda activate pysattracker
 ```
-
+4. Installing PySatTracker Requirements.
 ```
 pip install -r requirements.txt
 ```
@@ -48,13 +46,18 @@ pip install -r requirements.txt
 
 ## USING THE CODE
 
-To start the tool, the following command can be entered :
+To start the tool, the following steps can be followed :
+1. Going in the Repository Directory.
 ```
 cd PySatTracker
 ```
+2. Activating the Conda Environment.
 ```
 conda activate pysattracker
 ```
+3. Running the main.py file.
 ```
 python3 main.py
 ```
+
+<p align="left">(<a href="#readme-top">back to top</a>)</p>
