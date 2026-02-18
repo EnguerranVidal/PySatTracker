@@ -61,8 +61,8 @@ class TimelineWidget(QWidget):
         self.playPauseButton = SquareIconButton(os.path.join(self.iconPath, 'pause.png'))
         self.fastForwardButton = SquareIconButton(os.path.join(self.iconPath, 'fast-forward.png'))
         self.jumpToNowButton = SquareIconButton(os.path.join(self.iconPath, 'resume.png'))
-        self.speedLabel = QLabel("x1")
-        self.speedLabel.setMinimumWidth(40)
+        self.speedButton = QPushButton("x1")
+        self.speedButton.setMinimumWidth(40)
         self.timeSlider = GraduatedTimeSlider()
 
         # LAYOUT
@@ -74,7 +74,7 @@ class TimelineWidget(QWidget):
         layout.addWidget(self.playPauseButton)
         layout.addWidget(self.fastForwardButton)
         layout.addWidget(self.jumpToNowButton)
-        layout.addWidget(self.speedLabel)
+        layout.addWidget(self.speedButton)
         layout.addWidget(self.timeSlider, stretch=1)
 
         # CONNECTIONS
@@ -83,6 +83,7 @@ class TimelineWidget(QWidget):
         self.fastForwardButton.clicked.connect(self._fast)
         self.playPauseButton.clicked.connect(self.toggleRequested)
         self.jumpToNowButton.clicked.connect(self.jumpToNowRequested)
+        self.speedButton.clicked.connect(self._resetSpeed)
         self.timeSlider.slider.valueChanged.connect(self._scrub)
         self.timeSlider.slider.sliderPressed.connect(self._beginScrub)
         self.timeSlider.slider.sliderReleased.connect(self._endScrub)
@@ -98,6 +99,11 @@ class TimelineWidget(QWidget):
             self.speedIndex += 1
             self.speedRequested.emit(self.allowedSpeeds[self.speedIndex])
             self.setSpeed(self.allowedSpeeds[self.speedIndex])
+
+    def _resetSpeed(self):
+        self.speedIndex = self.allowedSpeeds.index(1)
+        self.speedRequested.emit(self.allowedSpeeds[self.speedIndex])
+        self.setSpeed(self.allowedSpeeds[self.speedIndex])
 
     def _beginScrub(self):
         if self.isRunning:
@@ -144,7 +150,7 @@ class TimelineWidget(QWidget):
         self.playPauseButton.setIconPath(os.path.join(self.iconPath, 'pause.png') if running else os.path.join(self.iconPath, 'play.png'))
 
     def setSpeed(self, speed: float):
-        self.speedLabel.setText(f"x{speed:g}")
+        self.speedButton.setText(f"x{speed:g}")
         if speed in self.allowedSpeeds:
             self.speedIndex = self.allowedSpeeds.index(speed)
 

@@ -32,10 +32,12 @@ class PlotViewTabWidget(QMainWindow):
             title = f'Tab {self.tabWidget.count() + 1}'
         self.tabWidget.addTab(QMainWindow(), title)
 
+
 class LinePlot(QWidget):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
+
 
 class PlotDockWidget(QDockWidget):
     def __init__(self, parent=None, title=None, widget: Optional[LinePlot] = None):
@@ -44,4 +46,3 @@ class PlotDockWidget(QDockWidget):
         self.plotWidget = GraphicsLayoutWidget()
         self.setWidget(self.plotWidget)
         self.setWindowTitle(title)
-
