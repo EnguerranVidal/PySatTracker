@@ -1,36 +1,66 @@
-import os
 from typing import Optional
-
-import numpy as np
-import imageio
-import pyqtgraph as pg
 from pyqtgraph import GraphicsLayoutWidget
 
-from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import *
+
+from gui.objects import AreaCycler
 
 
 class PlotViewTabWidget(QMainWindow):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.dockAreaCycler = AreaCycler()
         self.dockSpaces = [Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea, Qt.TopDockWidgetArea, Qt.BottomDockWidgetArea]
         self.tabWidget = QTabWidget()
         self.tabWidget.setMovable(True)
+        self.tabWidget.setTabsClosable(True)
+        self.tabWidget.tabCloseRequested.connect(self._closeTab)
+        self.tabWidget.tabBarDoubleClicked.connect(self._tabDoubleClicked)
         self.setCentralWidget(self.tabWidget)
 
     def closeCurrentTab(self):
         currentIndex = self.tabWidget.currentIndex()
-        if currentIndex != -1:
-            self.tabWidget.removeTab(currentIndex)
+        self._closeTab(currentIndex)
+
+    def _closeTab(self, index):
+        widget = self.tabWidget.widget(index)
+        self.tabWidget.removeTab(index)
+        widget.deleteLater()
 
     def closeAllTabs(self):
-        self.tabWidget.clear()
+        while self.tabWidget.count() > 0:
+            self._closeTab(0)
 
     def addNewTab(self, title=None):
         if title is None:
             title = f'Tab {self.tabWidget.count() + 1}'
         self.tabWidget.addTab(QMainWindow(), title)
+
+    def _tabDoubleClicked(self, tabIndex):
+        self.tabWidget.setTabsClosable(False)
+        plotTabName = self.tabWidget.tabText(tabIndex)
+        lineEdit = QLineEdit(plotTabName, self.tabWidget)
+        self.tabWidget.setTabText(tabIndex, '')
+        tabBar = self.tabWidget.tabBar()
+        tabBar.setTabButton(tabIndex, tabBar.ButtonPosition.LeftSide, lineEdit)
+        lineEdit.setFocus()
+        lineEdit.selectAll()
+        lineEdit.editingFinished.connect(lambda: self._finishEditingTabName(tabIndex, lineEdit))
+
+    def _finishEditingTabName(self, tabIndex, lineEdit):
+        tabBar = self.tabWidget.tabBar()
+        self.tabWidget.setTabText(tabIndex, lineEdit.text())
+        tabBar.setTabButton(tabIndex, tabBar.ButtonPosition.LeftSide, None)
+        self.tabWidget.setTabsClosable(True)
+
+    def addNewLinePlot(self):
+        plotWidget = LinePlot(self, self.currentDir)
+        dockWidget = PlotDockWidget(self, 'Line Plot', plotWidget)
+        area = self.dockSpaces[self.dockAreaCycler.next()]
+        self.addDockWidget(area, dockWidget)
+        self.tabWidget.addTab(dockWidget, dockWidget.windowTitle())
 
 
 class LinePlot(QWidget):

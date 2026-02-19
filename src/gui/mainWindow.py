@@ -62,7 +62,6 @@ class MainWindow(QMainWindow):
         self._createToolBars()
         self._createMenuBar()
         self._setupStatusBar()
-        self._restoreWindow()
         self._updateActionStates()
 
     def _updateStackedWidget(self, widgetIndex):
@@ -179,6 +178,11 @@ class MainWindow(QMainWindow):
         self.removeAllPlotTabsAction.setIcon(self.icons['CLOSE_ALL_TABS'])
         self.removeAllPlotTabsAction.setStatusTip('Remove All Plot Tabs')
         self.removeAllPlotTabsAction.triggered.connect(self._removeAllPlotTabs)
+        # ADD LINE PLOT
+        self.addLinePlotAction = QAction('&Add Line Plot', self)
+        self.addLinePlotAction.setIcon(self.icons['MULTI_PLOT'])
+        self.addLinePlotAction.setStatusTip('Add a Line Plot to the Current Plot Tab')
+        self.addLinePlotAction.triggered.connect(self._addLinePlot)
 
         # VISIT GITHUB
         self.githubAction = QAction('&Visit GitHub', self)
@@ -408,6 +412,7 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.stackedChanged.connect(self._updateStackedWidget)
         self.setObjectConfigWidgetsVisibility()
         self._manageToolBarVisibility(self.settings['CURRENT_TAB'])
+        self._restoreWindow()
 
     def setObjectConfigWidgetsVisibility(self):
         if self.settings['CURRENT_TAB'] == '2D_MAP':
@@ -416,6 +421,9 @@ class MainWindow(QMainWindow):
         if self.settings['CURRENT_TAB'] == '3D_VIEW':
             self.object2dMapConfigDock.setVisible(False)
             self.object3dViewConfigDock.setVisible(True)
+        if self.settings['CURRENT_TAB'] == 'PLOT_VIEW':
+            self.object2dMapConfigDock.setVisible(False)
+            self.object3dViewConfigDock.setVisible(False)
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -502,6 +510,9 @@ class MainWindow(QMainWindow):
 
     def _removeAllPlotTabs(self):
         self.centralViewWidget.plotViewWidget.closeAllTabs()
+
+    def _addLinePlot(self):
+        self.centralViewWidget.plotViewWidget.addNewLinePlot()
 
     def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
