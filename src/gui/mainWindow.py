@@ -72,17 +72,20 @@ class MainWindow(QMainWindow):
     def _createActions(self):
         self._selectionDependentActions = []
         # OPEN 2D MAP
-        self.open2dMapAction = QAction('&Open 2D Map', self)
+        self.open2dMapAction = QAction('&Open 2D Map', self, checkable=True)
+        self.open2dMapAction.setChecked(self.settings['CURRENT_TAB'] == '2D_MAP')
         self.open2dMapAction.setIcon(self.icons['MAP'])
         self.open2dMapAction.setStatusTip('Open 2D Map')
         self.open2dMapAction.triggered.connect(self._open2dMap)
         # OPEN 3D VIEW
-        self.open3dViewAction = QAction('&Open 3D View', self)
+        self.open3dViewAction = QAction('&Open 3D View', self, checkable=True)
+        self.open3dViewAction.setChecked(self.settings['CURRENT_TAB'] == '3D_VIEW')
         self.open3dViewAction.setIcon(self.icons['SATELLITE_GLOBE'])
         self.open3dViewAction.setStatusTip('Open 3D View')
         self.open3dViewAction.triggered.connect(self._open3dView)
         # OPEN PLOT VIEW
-        self.openPlotViewAction = QAction('&Open Plot View', self)
+        self.openPlotViewAction = QAction('&Open Plot View', self, checkable=True)
+        self.openPlotViewAction.setChecked(self.settings['CURRENT_TAB'] == 'PLOT_VIEW')
         self.openPlotViewAction.setIcon(self.icons['PLOT'])
         self.openPlotViewAction.setStatusTip('Open Plot View')
         self.openPlotViewAction.triggered.connect(self._openPlotView)
@@ -139,24 +142,28 @@ class MainWindow(QMainWindow):
         self.showEarthAction.setIcon(self.icons['EARTH'])
         self.showEarthAction.setStatusTip('Show 3D View Earth Model')
         self.showEarthAction.toggled.connect(self._checkEarth)
+        self.showEarthAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH GRID
         self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
         self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
         self.showEarthGridAction.setIcon(self.icons['EARTH_GRID'])
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
+        self.showEarthGridAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECI AXIS
         self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
         self.showEciAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECI_AXES'])
         self.showEciAxesAction.setIcon(self.icons['ECI'])
         self.showEciAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
         self.showEciAxesAction.toggled.connect(self._checkEciAxes)
+        self.showEciAxesAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECEF AXIS
         self.showEcefAxesAction = QAction('&Show ECEF Reference Frame', self, checkable=True)
         self.showEcefAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECEF_AXES'])
         self.showEcefAxesAction.setIcon(self.icons['ECEF'])
         self.showEcefAxesAction.setStatusTip('Show 3D View ECEF Reference Frame Axes')
         self.showEcefAxesAction.toggled.connect(self._checkEcefAxes)
+        self.showEcefAxesAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ORBITAL PATHS
         self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
         self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
@@ -248,6 +255,7 @@ class MainWindow(QMainWindow):
         self.plotViewToolBar.addAction(self.removePlotTabAction)
         self.plotViewToolBar.addAction(self.removeAllPlotTabsAction)
         self.plotViewToolBar.addSeparator()
+        self.plotViewToolBar.addAction(self.addLinePlotAction)
 
         # ADDING ALL TOOLBARS TO THE MAIN WINDOW
         self.addToolBar(self.mainToolBar)
@@ -495,12 +503,21 @@ class MainWindow(QMainWindow):
 
     def _open2dMap(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '2D_MAP'))
+        self.open2dMapAction.setChecked(True)
+        self.open3dViewAction.setChecked(False)
+        self.openPlotViewAction.setChecked(False)
 
     def _open3dView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
+        self.open2dMapAction.setChecked(False)
+        self.open3dViewAction.setChecked(True)
+        self.openPlotViewAction.setChecked(False)
 
     def _openPlotView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, 'PLOT_VIEW'))
+        self.open2dMapAction.setChecked(False)
+        self.open3dViewAction.setChecked(False)
+        self.openPlotViewAction.setChecked(True)
 
     def _addPlotTab(self):
         self.centralViewWidget.plotViewWidget.addNewTab()

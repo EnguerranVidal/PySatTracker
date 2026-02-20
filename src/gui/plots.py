@@ -58,9 +58,12 @@ class PlotViewTabWidget(QMainWindow):
     def addNewLinePlot(self):
         plotWidget = LinePlot(self, self.currentDir)
         dockWidget = PlotDockWidget(self, 'Line Plot', plotWidget)
-        area = self.dockSpaces[self.dockAreaCycler.next()]
-        self.addDockWidget(area, dockWidget)
-        self.tabWidget.addTab(dockWidget, dockWidget.windowTitle())
+        area = self.dockAreaCycler.next()
+        currentTabIndex = self.tabWidget.currentIndex()
+        if currentTabIndex == -1:
+            self.addNewTab()
+            currentTabIndex = 0
+        self.tabWidget.widget(currentTabIndex).addDockWidget(area, dockWidget)
 
 
 class LinePlot(QWidget):
