@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
 
         # CENTRAL VISUALIZATION WIDGET
         self.activeObjects, self.selectedObject = list(self.settings['ACTIVE_OBJECTS']), None
-        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir)
+        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings['TIMELINE_MODE'])
         self.setCentralWidget(self.centralViewWidget)
 
         # SATELLITE LIST WIDGET
@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self.objectListDock.removeObject.connect(self.removeSelectedObjects)
         self.centralViewWidget.map2dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
         self.centralViewWidget.view3dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
+        self.centralViewWidget.timeLineModeChanged.connect(self._timelineModeChanged)
 
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
@@ -68,6 +69,10 @@ class MainWindow(QMainWindow):
         self.settings['CURRENT_TAB'] = self.centralViewWidget.TABS[widgetIndex]
         self.setObjectConfigWidgetsVisibility()
         self._manageToolBarVisibility(self.centralViewWidget.TABS[widgetIndex])
+
+    def _timelineModeChanged(self, mode):
+        self.settings['TIMELINE_MODE'] = mode
+        self.saveSettings()
 
     def _createActions(self):
         self._selectionDependentActions = []
@@ -102,14 +107,18 @@ class MainWindow(QMainWindow):
         self._selectionDependentActions.append(self.reset2dMapConfigAction)
         # SHOW 2D MAP NIGHT LAYER ACTION
         self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
+        self.showNightLayerAction.setIcon(self.icons['SHADOW'])
         self.showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
         self.showNightLayerAction.setStatusTip('Show 2D Map Night Layer')
         self.showNightLayerAction.toggled.connect(self._checkNightLayer)
+        self.showNightLayerAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP SUN INDICATOR
         self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
+        self.sunIndicatorAction.setIcon(self.icons['SOLAR_CROSS'])
         self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
         self.sunIndicatorAction.setStatusTip('Show 2D Map Sun Indicator')
         self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        self.sunIndicatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP VERNAL POINT
         self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
         self.vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
@@ -249,6 +258,10 @@ class MainWindow(QMainWindow):
         self.view3dToolBar.addAction(self.showEarthGridAction)
         self.view3dToolBar.addAction(self.showEciAxesAction)
         self.view3dToolBar.addAction(self.showEcefAxesAction)
+        # 2D MAP TOOLBAR
+        self.map2dToolBar = QToolBar('2D Map Toolbar', self)
+        self.map2dToolBar.addAction(self.sunIndicatorAction)
+        self.map2dToolBar.addAction(self.showNightLayerAction)
         # PLOT VIEW TOOLBAR
         self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
         self.plotViewToolBar.addAction(self.addPlotTabAction)
@@ -260,20 +273,25 @@ class MainWindow(QMainWindow):
         # ADDING ALL TOOLBARS TO THE MAIN WINDOW
         self.addToolBar(self.mainToolBar)
         self.addToolBar(self.view3dToolBar)
+        self.addToolBar(self.map2dToolBar)
         self.addToolBar(self.plotViewToolBar)
 
     def _manageToolBarVisibility(self, tabName):
         if tabName == '2D_MAP':
             self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(True)
             self.plotViewToolBar.setVisible(False)
         elif tabName == '3D_VIEW':
             self.view3dToolBar.setVisible(True)
+            self.map2dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(False)
         elif tabName == 'PLOT_VIEW':
             self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(True)
         else:
             self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(False)
 
     def _createIcons(self):
@@ -285,6 +303,8 @@ class MainWindow(QMainWindow):
         self.icons['EARTH_GRID'] = QIcon(os.path.join(self.iconPath, 'earth-grid.png'))
         self.icons['ECI'] = QIcon(os.path.join(self.iconPath, 'eci.png'))
         self.icons['ECEF'] = QIcon(os.path.join(self.iconPath, 'ecef.png'))
+        self.icons['SHADOW'] = QIcon(os.path.join(self.iconPath, 'shadow.png'))
+        self.icons['SOLAR_CROSS'] = QIcon(os.path.join(self.iconPath, 'solar-cross.png'))
         self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
         self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
         self.icons['CLOSE_ALL_TABS'] = QIcon(os.path.join(self.iconPath, 'close-all-tabs.png'))
@@ -759,9 +779,11 @@ class ObjectInfoDockWidget(QDockWidget):
 
 class CentralViewWidget(QWidget):
     stackedChanged = pyqtSignal(int)
+    timeLineModeChanged = pyqtSignal(str)
     TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW'}
+    TIMELINE_MODES = {0: 'UTC', 1: 'LOCAL', 2: 'DELTA'}
 
-    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None):
+    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None, timeLineMode='UTC'):
         super().__init__(parent)
         self.currentDir = currentDir
         self.icons = icons if icons is not None else {}
@@ -775,14 +797,17 @@ class CentralViewWidget(QWidget):
 
         # TIMELINE WIDGET
         self.timeline = TimelineWidget(self, self.currentDir)
+        self.timeline.displayMode = getKeyFromValue(self.TIMELINE_MODES, timeLineMode)
         self.timeline.playRequested.connect(self.clock.play)
         self.timeline.pauseRequested.connect(self.clock.pause)
         self.timeline.toggleRequested.connect(self.clock.toggle)
         self.timeline.speedRequested.connect(self._onSpeedRequested)
         self.timeline.timeRequested.connect(self.clock.setTime)
         self.timeline.jumpToNowRequested.connect(self._jumpToNow)
+        self.timeline.timeFormatChanged.connect(self._onTimeModeChanged)
         self.clock.timeChanged.connect(self._onClockTimeChanged)
         self.clock.stateChanged.connect(self.timeline.setRunning)
+
 
         # VISUALIZATION CONFIGURATION
         self.activeObjects = set()
@@ -868,6 +893,9 @@ class CentralViewWidget(QWidget):
 
     def _onClockTimeChanged(self, simTime: datetime):
         self.timeline.setTime(simTime)
+
+    def _onTimeModeChanged(self, mode):
+        self.timeLineModeChanged.emit(self.TIMELINE_MODES[mode])
 
     def _onSpeedRequested(self, speed):
         self.clock.setSpeed(speed)

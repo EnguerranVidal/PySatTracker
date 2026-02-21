@@ -40,6 +40,7 @@ class TimelineWidget(QWidget):
     pauseRequested = pyqtSignal()
     toggleRequested = pyqtSignal()
     speedRequested = pyqtSignal(float)
+    timeFormatChanged = pyqtSignal(int)
     timeRequested = pyqtSignal(datetime)
     jumpToNowRequested = pyqtSignal()
 
@@ -120,6 +121,7 @@ class TimelineWidget(QWidget):
 
     def _cycleDisplayMode(self):
         self.displayMode = (self.displayMode + 1) % 3
+        self.timeFormatChanged.emit(self.displayMode)
 
     def setTime(self, simTime: datetime):
         realNow = datetime.utcnow()
