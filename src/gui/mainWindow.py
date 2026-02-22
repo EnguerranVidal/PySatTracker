@@ -817,7 +817,7 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
-        self.plotViewWidget = PlotViewTabWidget()
+        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir)
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)

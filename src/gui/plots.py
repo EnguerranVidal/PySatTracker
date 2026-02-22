@@ -1,10 +1,14 @@
+import os
 from typing import Optional
+
+from PyQt5.QtGui import QIcon
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
 from gui.objects import AreaCycler
+from gui.widgets import SquareIconButton
 
 
 class PlotViewTabWidget(QMainWindow):
@@ -59,8 +63,8 @@ class PlotViewTabWidget(QMainWindow):
         self.tabWidget.setTabsClosable(True)
 
     def addNewLinePlot(self):
-        plotWidget = LinePlot(self, self.currentDir)
-        dockWidget = PlotDockWidget(self, 'Line Plot', plotWidget)
+        plotWidget = LinePlot(self)
+        dockWidget = PlotDockWidget(parent=self, title='Line Plot', widget=plotWidget, currentDir=self.currentDir)
         dockWidget.showSettingsRequested.connect(self.handleShowSettings)
         area = self.dockAreaCycler.next()
         currentTabIndex = self.tabWidget.currentIndex()
@@ -70,6 +74,7 @@ class PlotViewTabWidget(QMainWindow):
         self.tabWidget.widget(currentTabIndex).addDockWidget(area, dockWidget)
 
     def handleShowSettings(self, dockWidget):
+        self.settingsDockWidget.addSettingsTab(dockWidget.windowTitle(), dockWidget)
         self.settingsDockWidget.show()
         self.settingsDockWidget.raise_()
         self.settingsDockWidget.activateWindow()
@@ -77,7 +82,6 @@ class PlotViewTabWidget(QMainWindow):
 class LinePlot(QWidget):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
-        self.currentDir = currentDir
         self.plot = GraphicsLayoutWidget(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -87,15 +91,18 @@ class LinePlot(QWidget):
 class PlotDockWidget(QDockWidget):
     showSettingsRequested = pyqtSignal('QDockWidget')
 
-    def __init__(self, parent=None, title=None, widget: Optional[LinePlot] = None):
+    def __init__(self, parent=None, title=None, currentDir:str = None, widget: Optional[LinePlot] = None):
         super().__init__(parent)
+        self.currentDir = currentDir
         self.setMouseTracking(True)
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.plotWidget = widget
         self.setWidget(self.plotWidget)
         self.setWindowTitle(title)
 
-        self.settingsButton = QPushButton("Settings", self.plotWidget)
+        settingsIconPath = os.path.join(self.currentDir, f'src/assets/icons/settings.png')
+        self.settingsButton = SquareIconButton(settingsIconPath, parent=self, flat=True, size=30)
+        self.settingsButton.setIcon(QIcon(settingsIconPath))
         self.settingsButton.hide()
         self.settingsButton.clicked.connect(lambda: self.showSettingsRequested.emit(self))
 
@@ -110,11 +117,9 @@ class PlotDockWidget(QDockWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         buttonSize = self.settingsButton.sizeHint()
-        x, y = self.plotWidget.width() - buttonSize.width() - 10, 10
+        hasTitleBar = not bool(self.features() & QDockWidget.NoDockWidgetFeatures)
+        x, y = self.plotWidget.width() - buttonSize.width(), 30 if hasTitleBar else 0
         self.settingsButton.setGeometry(x, y, buttonSize.width(), buttonSize.height())
-
-    def showSettingsDialog(self):
-        QMessageBox.information(self, "Settings", "This is a placeholder settings dialog.")
 
 
 class PlotSettingsDockWidget(QDockWidget):
@@ -122,5 +127,34 @@ class PlotSettingsDockWidget(QDockWidget):
         super().__init__(parent)
         self.setWindowTitle("Plot Settings")
         self.tabWidget = QTabWidget(self)
+        self.tabWidget.setTabsClosable(True)
+        self.tabWidget.tabCloseRequested.connect(self._closeSettingsTab)
         self.setWidget(self.tabWidget)
-        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.setFeatures(QDockWidget.DockWidgetClosable)
+        self.dockToSettings = {}
+
+    def addSettingsTab(self, title, dockWidget: PlotDockWidget):
+        if dockWidget not in self.dockToSettings:
+            widget = QWidget()
+            index = self.tabWidget.addTab(widget, title)
+            self.dockToSettings[dockWidget] = widget
+        else:
+            widget = self.dockToSettings[dockWidget]
+            index = self.tabWidget.indexOf(widget)
+        self.tabWidget.setCurrentIndex(index)
+
+
+    def _closeSettingsTab(self, index: int):
+        widget = self.tabWidget.widget(index)
+        self.tabWidget.removeTab(index)
+        dockToRemove = None
+        for dock, w in list(self.dockToSettings.items()):
+            if w == widget:
+                dockToRemove = dock
+                break
+        if dockToRemove:
+            del self.dockToSettings[dockToRemove]
+        widget.deleteLater()
+        if self.tabWidget.count() == 0:
+            self.hide()
+
