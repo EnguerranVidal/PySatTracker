@@ -1,7 +1,7 @@
 from typing import Optional
 from pyqtgraph import GraphicsLayoutWidget
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
 from gui.objects import AreaCycler
@@ -19,6 +19,9 @@ class PlotViewTabWidget(QMainWindow):
         self.tabWidget.tabCloseRequested.connect(self._closeTab)
         self.tabWidget.tabBarDoubleClicked.connect(self._tabDoubleClicked)
         self.setCentralWidget(self.tabWidget)
+        self.settingsDockWidget = PlotSettingsDockWidget(self)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
+        self.settingsDockWidget.hide()
 
     def closeCurrentTab(self):
         currentIndex = self.tabWidget.currentIndex()
@@ -58,6 +61,7 @@ class PlotViewTabWidget(QMainWindow):
     def addNewLinePlot(self):
         plotWidget = LinePlot(self, self.currentDir)
         dockWidget = PlotDockWidget(self, 'Line Plot', plotWidget)
+        dockWidget.showSettingsRequested.connect(self.handleShowSettings)
         area = self.dockAreaCycler.next()
         currentTabIndex = self.tabWidget.currentIndex()
         if currentTabIndex == -1:
@@ -65,17 +69,58 @@ class PlotViewTabWidget(QMainWindow):
             currentTabIndex = 0
         self.tabWidget.widget(currentTabIndex).addDockWidget(area, dockWidget)
 
+    def handleShowSettings(self, dockWidget):
+        self.settingsDockWidget.show()
+        self.settingsDockWidget.raise_()
+        self.settingsDockWidget.activateWindow()
 
 class LinePlot(QWidget):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.plot = GraphicsLayoutWidget(self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.plot)
 
 
 class PlotDockWidget(QDockWidget):
+    showSettingsRequested = pyqtSignal('QDockWidget')
+
     def __init__(self, parent=None, title=None, widget: Optional[LinePlot] = None):
         super().__init__(parent)
+        self.setMouseTracking(True)
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
-        self.plotWidget = GraphicsLayoutWidget()
+        self.plotWidget = widget
         self.setWidget(self.plotWidget)
         self.setWindowTitle(title)
+
+        self.settingsButton = QPushButton("Settings", self.plotWidget)
+        self.settingsButton.hide()
+        self.settingsButton.clicked.connect(lambda: self.showSettingsRequested.emit(self))
+
+    def enterEvent(self, event):
+        self.settingsButton.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.settingsButton.hide()
+        super().leaveEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        buttonSize = self.settingsButton.sizeHint()
+        x, y = self.plotWidget.width() - buttonSize.width() - 10, 10
+        self.settingsButton.setGeometry(x, y, buttonSize.width(), buttonSize.height())
+
+    def showSettingsDialog(self):
+        QMessageBox.information(self, "Settings", "This is a placeholder settings dialog.")
+
+
+class PlotSettingsDockWidget(QDockWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Plot Settings")
+        self.tabWidget = QTabWidget(self)
+        self.setWidget(self.tabWidget)
+        self.setFeatures(QDockWidget.NoDockWidgetFeatures)

@@ -808,7 +808,6 @@ class CentralViewWidget(QWidget):
         self.clock.timeChanged.connect(self._onClockTimeChanged)
         self.clock.stateChanged.connect(self.timeline.setRunning)
 
-
         # VISUALIZATION CONFIGURATION
         self.activeObjects = set()
         self.selectedObject = None
