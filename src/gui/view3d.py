@@ -13,6 +13,7 @@ from OpenGL.GL import *
 
 class View3dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
+    cameraChanged = pyqtSignal()
     EARTH_RADIUS = 6371
     EARTH_MOON_DISTANCE = 384400
 
@@ -20,7 +21,7 @@ class View3dWidget(QOpenGLWidget):
         super().__init__(parent)
         glutInit()
         self.setMouseTracking(True)
-        self.minZoom, self.maxZoom = 1.15, self.EARTH_MOON_DISTANCE / self.EARTH_RADIUS * 1.15
+        self.minZoom, self.maxZoom = 1.25, self.EARTH_MOON_DISTANCE / self.EARTH_RADIUS * 1.15
         self.objectSpotData, self.objectOrbitData, self.objectNameData = {}, {}, {}
         self.selectedObject, self.hoveredObject, self.visibleNorads, self.displayConfiguration = None, None, [], {}
         self.lastPosX, self.lastPosY = 0, 0
@@ -385,6 +386,7 @@ class View3dWidget(QOpenGLWidget):
             self.rotX = max(-89.0, min(89.0, self.rotX))
             self.lastPosX, self.lastPosY = event.x(), event.y()
             self.update()
+            self.cameraChanged.emit()
             return
         # HOVER DETECTION
         hovered = self._detectHover(event)
@@ -396,6 +398,7 @@ class View3dWidget(QOpenGLWidget):
         self.zoom *= (0.9 if delta > 0 else 1.1)
         self.zoom = max(float(self.minZoom), min(float(self.maxZoom), self.zoom))
         self.update()
+        self.cameraChanged.emit()
 
     @staticmethod
     def _loadCubeMap(faces):

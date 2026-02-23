@@ -63,18 +63,23 @@ class PlotViewTabWidget(QMainWindow):
         self.tabWidget.setTabsClosable(True)
 
     def addNewLinePlot(self):
-        plotWidget = LinePlot(self)
-        dockWidget = PlotDockWidget(parent=self, title='Line Plot', widget=plotWidget, currentDir=self.currentDir)
-        dockWidget.showSettingsRequested.connect(self.handleShowSettings)
-        area = self.dockAreaCycler.next()
         currentTabIndex = self.tabWidget.currentIndex()
         if currentTabIndex == -1:
             self.addNewTab()
             currentTabIndex = 0
+        currentWidgetChildren = self.tabWidget.widget(currentTabIndex).findChildren(QDockWidget)
+        dockWidget = PlotDockWidget(parent=self, title=f'Plot {len(currentWidgetChildren)}', widget=LinePlot(self), currentDir=self.currentDir)
+        dockWidget.showSettingsRequested.connect(self.handleShowSettings)
+        area = self.dockAreaCycler.next()
         self.tabWidget.widget(currentTabIndex).addDockWidget(area, dockWidget)
 
     def handleShowSettings(self, dockWidget):
-        self.settingsDockWidget.addSettingsTab(dockWidget.windowTitle(), dockWidget)
+        parentTab = dockWidget.parent()
+        tabIndex = self.tabWidget.indexOf(parentTab)
+        plotTabName = self.tabWidget.tabText(tabIndex)
+        plotDockWidgetName = dockWidget.windowTitle()
+        title = f"{plotTabName} > {plotDockWidgetName}"
+        self.settingsDockWidget.addSettingsTab(title, dockWidget)
         self.settingsDockWidget.show()
         self.settingsDockWidget.raise_()
         self.settingsDockWidget.activateWindow()
@@ -118,7 +123,7 @@ class PlotDockWidget(QDockWidget):
         super().resizeEvent(event)
         buttonSize = self.settingsButton.sizeHint()
         hasTitleBar = not bool(self.features() & QDockWidget.NoDockWidgetFeatures)
-        x, y = self.plotWidget.width() - buttonSize.width(), 30 if hasTitleBar else 0
+        x, y = self.plotWidget.width() - buttonSize.width() - 2, 30 if hasTitleBar else 0
         self.settingsButton.setGeometry(x, y, buttonSize.width(), buttonSize.height())
 
 

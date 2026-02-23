@@ -36,6 +36,10 @@ class MainWindow(QMainWindow):
         self.activeObjects, self.selectedObject = list(self.settings['ACTIVE_OBJECTS']), None
         self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings['TIMELINE_MODE'])
         self.setCentralWidget(self.centralViewWidget)
+        self.centralViewWidget.view3dWidget.zoom = self.settings['3D_VIEW']['ZOOM']
+        self.centralViewWidget.view3dWidget.rotX = self.settings['3D_VIEW']['ROTATION']['X']
+        self.centralViewWidget.view3dWidget.rotY = self.settings['3D_VIEW']['ROTATION']['Y']
+        self.centralViewWidget.view3dWidget.cameraChanged.connect(self._change3dViewCameraSettings)
 
         # SATELLITE LIST WIDGET
         self.objectListDock = ObjectListDockWidget(self)
@@ -178,6 +182,11 @@ class MainWindow(QMainWindow):
         self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
         self.showOrbitalPathsAction.setStatusTip('Allow showing 3D View Orbital Paths')
         self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
+        # RESET CAMERA VIEW
+        self.resetCameraViewAction = QAction('&Reset Camera View', self)
+        self.resetCameraViewAction.setIcon(self.icons['RESET_VIEW'])
+        self.resetCameraViewAction.setStatusTip('Reset 3D View Camera to Default Zoom and Rotation')
+        self.resetCameraViewAction.triggered.connect(self._resetCameraView)
 
         # ADD PLOT TAB
         self.addPlotTabAction = QAction('&Add Plot Tab', self)
@@ -238,6 +247,8 @@ class MainWindow(QMainWindow):
         self.view3dMenu.addAction(self.showEciAxesAction)
         self.view3dMenu.addAction(self.showEcefAxesAction)
         self.view3dMenu.addSeparator()
+        self.view3dMenu.addAction(self.resetCameraViewAction)
+        self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showOrbitalPathsAction)
 
         ### HELP MENU ###
@@ -258,6 +269,8 @@ class MainWindow(QMainWindow):
         self.view3dToolBar.addAction(self.showEarthGridAction)
         self.view3dToolBar.addAction(self.showEciAxesAction)
         self.view3dToolBar.addAction(self.showEcefAxesAction)
+        self.view3dToolBar.addSeparator()
+        self.view3dToolBar.addAction(self.resetCameraViewAction)
         # 2D MAP TOOLBAR
         self.map2dToolBar = QToolBar('2D Map Toolbar', self)
         self.map2dToolBar.addAction(self.sunIndicatorAction)
@@ -303,6 +316,7 @@ class MainWindow(QMainWindow):
         self.icons['EARTH_GRID'] = QIcon(os.path.join(self.iconPath, 'earth-grid.png'))
         self.icons['ECI'] = QIcon(os.path.join(self.iconPath, 'eci.png'))
         self.icons['ECEF'] = QIcon(os.path.join(self.iconPath, 'ecef.png'))
+        self.icons['RESET_VIEW'] = QIcon(os.path.join(self.iconPath, 'reset-view.png'))
         self.icons['SHADOW'] = QIcon(os.path.join(self.iconPath, 'shadow.png'))
         self.icons['SOLAR_CROSS'] = QIcon(os.path.join(self.iconPath, 'solar-cross.png'))
         self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
@@ -355,6 +369,13 @@ class MainWindow(QMainWindow):
         self.settings['3D_VIEW']['SHOW_ORBITS'] = checked
         self.saveSettings()
         self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+
+    def _resetCameraView(self):
+        self.centralViewWidget.view3dWidget.zoom = 5
+        self.centralViewWidget.view3dWidget.rotX = 45
+        self.centralViewWidget.view3dWidget.rotY = 225
+        self._change3dViewCameraSettings()
+        self.centralViewWidget.view3dWidget.update()
 
     def _checkGroundTracks(self, checked):
         self.settings['2D_MAP']['SHOW_GROUND_TRACK'] = checked
@@ -589,6 +610,12 @@ class MainWindow(QMainWindow):
         self.settings['2D_MAP']['SHOW_VERNAL'] = checked
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+
+    def _change3dViewCameraSettings(self):
+        self.settings['3D_VIEW']['ZOOM'] = self.centralViewWidget.view3dWidget.zoom
+        self.settings['3D_VIEW']['ROTATION']['X'] = self.centralViewWidget.view3dWidget.rotX
+        self.settings['3D_VIEW']['ROTATION']['Y'] = self.centralViewWidget.view3dWidget.rotY
+        self.saveSettings()
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
