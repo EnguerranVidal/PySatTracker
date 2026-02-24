@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QUr
 from PyQt5.QtWidgets import *
 
 from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
-from gui.plots import PlotViewTabWidget
+from gui.plots.general import PlotViewTabWidget
 from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker

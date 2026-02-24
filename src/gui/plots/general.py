@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
 from gui.objects import AreaCycler
+from gui.plots.line import LinePlot, LinePlotSettingsWidget
 from gui.widgets import SquareIconButton
 
 
@@ -88,14 +89,6 @@ class PlotViewTabWidget(QMainWindow):
         self.settingsDockWidget.raise_()
         self.settingsDockWidget.activateWindow()
 
-class LinePlot(QWidget):
-    def __init__(self, parent=None, currentDir:str = None):
-        super().__init__(parent)
-        self.plot = GraphicsLayoutWidget(self)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.plot)
-
 
 class PlotDockWidget(QDockWidget):
     showSettingsRequested = pyqtSignal('QDockWidget')
@@ -149,7 +142,10 @@ class PlotSettingsDockWidget(QDockWidget):
 
     def addSettingsTab(self, title, dockWidget: PlotDockWidget):
         if dockWidget not in self.dockToSettings:
-            widget = QWidget()
+            if isinstance(dockWidget.plotWidget, LinePlot):
+                widget = LinePlotSettingsWidget(dockWidget.plotWidget)
+            else:
+                widget = QWidget()
             index = self.tabWidget.addTab(widget, title)
             self.dockToSettings[dockWidget] = widget
         else:
