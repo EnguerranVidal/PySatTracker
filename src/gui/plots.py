@@ -33,6 +33,9 @@ class PlotViewTabWidget(QMainWindow):
 
     def _closeTab(self, index):
         widget = self.tabWidget.widget(index)
+        dockWidgets = widget.findChildren(PlotDockWidget)
+        for dw in dockWidgets:
+            self.settingsDockWidget.removeSettingsForDock(dw)
         self.tabWidget.removeTab(index)
         widget.deleteLater()
 
@@ -70,6 +73,7 @@ class PlotViewTabWidget(QMainWindow):
         currentWidgetChildren = self.tabWidget.widget(currentTabIndex).findChildren(QDockWidget)
         dockWidget = PlotDockWidget(parent=self, title=f'Plot {len(currentWidgetChildren)}', widget=LinePlot(self), currentDir=self.currentDir)
         dockWidget.showSettingsRequested.connect(self.handleShowSettings)
+        dockWidget.closed.connect(self.settingsDockWidget.removeSettingsForDock)
         area = self.dockAreaCycler.next()
         self.tabWidget.widget(currentTabIndex).addDockWidget(area, dockWidget)
 
@@ -95,6 +99,7 @@ class LinePlot(QWidget):
 
 class PlotDockWidget(QDockWidget):
     showSettingsRequested = pyqtSignal('QDockWidget')
+    closed = pyqtSignal('QDockWidget')
 
     def __init__(self, parent=None, title=None, currentDir:str = None, widget: Optional[LinePlot] = None):
         super().__init__(parent)
@@ -126,6 +131,10 @@ class PlotDockWidget(QDockWidget):
         x, y = self.plotWidget.width() - buttonSize.width() - 2, 30 if hasTitleBar else 0
         self.settingsButton.setGeometry(x, y, buttonSize.width(), buttonSize.height())
 
+    def closeEvent(self, event):
+        self.closed.emit(self)
+        super().closeEvent(event)
+
 
 class PlotSettingsDockWidget(QDockWidget):
     def __init__(self, parent=None):
@@ -148,6 +157,14 @@ class PlotSettingsDockWidget(QDockWidget):
             index = self.tabWidget.indexOf(widget)
         self.tabWidget.setCurrentIndex(index)
 
+    def removeSettingsForDock(self, dockWidget: PlotDockWidget):
+        if dockWidget in self.dockToSettings:
+            widget = self.dockToSettings[dockWidget]
+            index = self.tabWidget.indexOf(widget)
+            if index != -1:
+                self._closeSettingsTab(index)
+        if self.tabWidget.count() == 0:
+            self.hide()
 
     def _closeSettingsTab(self, index: int):
         widget = self.tabWidget.widget(index)
@@ -162,4 +179,3 @@ class PlotSettingsDockWidget(QDockWidget):
         widget.deleteLater()
         if self.tabWidget.count() == 0:
             self.hide()
-
