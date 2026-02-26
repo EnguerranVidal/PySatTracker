@@ -27,7 +27,7 @@ class View3dWidget(QOpenGLWidget):
         self.lastPosX, self.lastPosY = 0, 0
         self.zoom, self.rotX, self.rotY = 5, 45, 225
         self.earthShader = None
-        self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTexture = 0, 0, 0
+        self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTextures = 0, 0, []
         self.gmstAngle = 0
         self.sunDirection = np.array([1, 0, 0], dtype=float)
         self.sphere = None
@@ -50,11 +50,11 @@ class View3dWidget(QOpenGLWidget):
         try:
             img = Image.open("src/assets/earth/earth.jpg")
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
-            img_data = np.array(img.convert("RGB"), dtype=np.uint8)
+            imageData = np.array(img.convert("RGB"), dtype=np.uint8)
             width, height = img.size
             self.earthTextureIndex = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.earthTextureIndex)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
@@ -66,11 +66,11 @@ class View3dWidget(QOpenGLWidget):
         try:
             img = Image.open("src/assets/earth/earth_lights.jpg")
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
-            img_data = np.array(img.convert("RGB"), dtype=np.uint8)
+            imageData = np.array(img.convert("RGB"), dtype=np.uint8)
             width, height = img.size
             self.lightsTextureIndex = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.lightsTextureIndex)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
@@ -89,7 +89,7 @@ class View3dWidget(QOpenGLWidget):
         except Exception as e:
             raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
         # LOADING SKYBOX TEXTURES
-        self.skyboxTexture = self._loadCubeMap([
+        self.skyboxTextures = self._loadSkyBoxTextures([
             "src/assets/skybox/posx.png",
             "src/assets/skybox/negx.png",
             "src/assets/skybox/posy.png",
@@ -131,7 +131,13 @@ class View3dWidget(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE0)
         glDisable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, 0)
+        modelView = (GLdouble * 16)()
+        glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
+        originalModelView = list(modelView)
+        modelView[12] = modelView[13] = modelView[14] = 0.0
+        glLoadMatrixd(modelView)
         self.drawSkybox(size=500)
+        glLoadMatrixd(originalModelView)
         try:
             glUseProgram(0)
             glDisable(GL_LIGHTING)
@@ -401,97 +407,118 @@ class View3dWidget(QOpenGLWidget):
         self.cameraChanged.emit()
 
     @staticmethod
-    def _loadCubeMap(faces):
-        textureIndex = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_CUBE_MAP, textureIndex)
+    def _loadSkyBoxTextures(faces, resolution=2048):
+        textures = []
         for i, face in enumerate(faces):
-            img = Image.open(face).convert("RGB")
-            img_data = np.array(img, dtype=np.uint8)
-            width, height = img.size
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
-        glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
-        return textureIndex
+            try:
+                img = Image.open(face).convert("RGB")
+                img = img.rotate(180).resize((resolution, resolution)) if i in [1, 5] else img.rotate(180).transpose(Image.FLIP_LEFT_RIGHT).resize((resolution, resolution))
+                imageData = np.array(img, dtype=np.uint8)
+                width, height = img.size
+                textureIndex = glGenTextures(1)
+                glBindTexture(GL_TEXTURE_2D, textureIndex)
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+                glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP)
+                glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP)
+                glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+                glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
+                glBindTexture(GL_TEXTURE_2D, 0)
+                textures.append(textureIndex)
+                print(f"Skybox face {face} loaded successfully")
+            except Exception as e:
+                print(f"Failed to load {face}:", e)
+                textures.append(0)
+        return textures
 
-    def drawSkybox(self, size=50.0):
-        glDepthMask(GL_FALSE)
+    def drawSkybox(self, size=500.0):
+        glDisable(GL_DEPTH_TEST)
         glDisable(GL_LIGHTING)
         glDisable(GL_CULL_FACE)
         glUseProgram(0)
-        glEnable(GL_TEXTURE_CUBE_MAP)
-        glBindTexture(GL_TEXTURE_CUBE_MAP, self.skyboxTexture)
-        glColor4f(1, 1, 1, 0.2)
+        glEnable(GL_TEXTURE_2D)
+        glColor4f(1, 1, 1, 0.5)
+
+        # +X (right)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[0])
         glBegin(GL_QUADS)
-
-        # +X FACE
-        glTexCoord3f(1, -1, -1)
+        glTexCoord2f(0, 0)
         glVertex3f(size, -size, -size)
-        glTexCoord3f(1, -1, 1)
+        glTexCoord2f(1, 0)
         glVertex3f(size, -size, size)
-        glTexCoord3f(1, 1, 1)
+        glTexCoord2f(1, 1)
         glVertex3f(size, size, size)
-        glTexCoord3f(1, 1, -1)
+        glTexCoord2f(0, 1)
         glVertex3f(size, size, -size)
-
-        # -X FACE
-        glTexCoord3f(-1, -1, 1)
-        glVertex3f(-size, -size, size)
-        glTexCoord3f(-1, -1, -1)
-        glVertex3f(-size, -size, -size)
-        glTexCoord3f(-1, 1, -1)
-        glVertex3f(-size, size, -size)
-        glTexCoord3f(-1, 1, 1)
-        glVertex3f(-size, size, size)
-
-        # +Y FACE
-        glTexCoord3f(-1, 1, -1)
-        glVertex3f(-size, size, -size)
-        glTexCoord3f(1, 1, -1)
-        glVertex3f(size, size, -size)
-        glTexCoord3f(1, 1, 1)
-        glVertex3f(size, size, size)
-        glTexCoord3f(-1, 1, 1)
-        glVertex3f(-size, size, size)
-
-        # -Y FACE
-        glTexCoord3f(-1, -1, 1)
-        glVertex3f(-size, -size, size)
-        glTexCoord3f(1, -1, 1)
-        glVertex3f(size, -size, size)
-        glTexCoord3f(1, -1, -1)
-        glVertex3f(size, -size, -size)
-        glTexCoord3f(-1, -1, -1)
-        glVertex3f(-size, -size, -size)
-
-        # +Z FACE
-        glTexCoord3f(-1, -1, 1)
-        glVertex3f(-size, -size, size)
-        glTexCoord3f(1, -1, 1)
-        glVertex3f(size, -size, size)
-        glTexCoord3f(1, 1, 1)
-        glVertex3f(size, size, size)
-        glTexCoord3f(-1, 1, 1)
-        glVertex3f(-size, size, size)
-
-        # -Z FACE
-        glTexCoord3f(1, -1, -1)
-        glVertex3f(size, -size, -size)
-        glTexCoord3f(-1, -1, -1)
-        glVertex3f(-size, -size, -size)
-        glTexCoord3f(-1, 1, -1)
-        glVertex3f(-size, size, -size)
-        glTexCoord3f(1, 1, -1)
-        glVertex3f(size, size, -size)
-
         glEnd()
 
-        glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
-        glDisable(GL_TEXTURE_CUBE_MAP)
-        glDepthMask(GL_TRUE)
+        # -X (left)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[1])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex3f(-size, -size, size)
+        glTexCoord2f(1, 0)
+        glVertex3f(-size, -size, -size)
+        glTexCoord2f(1, 1)
+        glVertex3f(-size, size, -size)
+        glTexCoord2f(0, 1)
+        glVertex3f(-size, size, size)
+        glEnd()
+
+        # +Y (top)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[2])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex3f(-size, size, -size)
+        glTexCoord2f(1, 0)
+        glVertex3f(size, size, -size)
+        glTexCoord2f(1, 1)
+        glVertex3f(size, size, size)
+        glTexCoord2f(0, 1)
+        glVertex3f(-size, size, size)
+        glEnd()
+
+        # -Y (bottom)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[3])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex3f(-size, -size, size)
+        glTexCoord2f(1, 0)
+        glVertex3f(size, -size, size)
+        glTexCoord2f(1, 1)
+        glVertex3f(size, -size, -size)
+        glTexCoord2f(0, 1)
+        glVertex3f(-size, -size, -size)
+        glEnd()
+
+        # +Z (front)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[4])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex3f(-size, -size, size)
+        glTexCoord2f(1, 0)
+        glVertex3f(size, -size, size)
+        glTexCoord2f(1, 1)
+        glVertex3f(size, size, size)
+        glTexCoord2f(0, 1)
+        glVertex3f(-size, size, size)
+        glEnd()
+
+        # -Z (back)
+        glBindTexture(GL_TEXTURE_2D, self.skyboxTextures[5])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex3f(size, -size, -size)
+        glTexCoord2f(1, 0)
+        glVertex3f(-size, -size, -size)
+        glTexCoord2f(1, 1)
+        glVertex3f(-size, size, -size)
+        glTexCoord2f(0, 1)
+        glVertex3f(size, size, -size)
+        glEnd()
+
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glEnable(GL_DEPTH_TEST)
 
     def __del__(self):
         try:
@@ -505,8 +532,8 @@ class View3dWidget(QOpenGLWidget):
                     gluDeleteQuadric(self.sphere)
                 if self.earthShader:
                     glDeleteProgram(self.earthShader)
-                if self.skyboxTexture:
-                    glDeleteTextures([self.skyboxTexture])
+                if self.skyboxTextures:
+                    glDeleteTextures([self.skyboxTextures])
                 self.doneCurrent()
         except RuntimeError:
             pass
