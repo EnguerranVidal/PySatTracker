@@ -209,33 +209,17 @@ class View3dWidget(QOpenGLWidget):
         glVertex3f(0, 0, L)
         glEnd()
 
-    @staticmethod
-    def _drawEarthGrid(radius=1.001):
-        LAT_STEP = 15
-        LON_STEP = 15
-        SEGMENTS = 360
+    def _drawEarthGrid(self, radius=1.002):
         glColor3f(0.8, 0.8, 1.0)
         glLineWidth(1)
-        for lat_deg in range(-90 + LAT_STEP, 90, LAT_STEP):
-            lat_rad = np.radians(lat_deg)
-            glBegin(GL_LINE_LOOP)
-            for i in range(SEGMENTS):
-                lon_rad = 2 * np.pi * i / SEGMENTS
-                xGrid = radius * np.cos(lat_rad) * np.cos(lon_rad)
-                yGrid = radius * np.sin(lat_rad)
-                zGrid = radius * np.cos(lat_rad) * np.sin(lon_rad)
-                glVertex3f(xGrid, yGrid, zGrid)
-            glEnd()
-        for lon_deg in range(0, 360, LON_STEP):
-            lon_rad = np.radians(lon_deg)
-            glBegin(GL_LINE_STRIP)
-            for lat_deg in range(-90, 91, 5):
-                lat_rad = np.radians(lat_deg)
-                xGrid = radius * np.cos(lat_rad) * np.cos(lon_rad)
-                yGrid = radius * np.sin(lat_rad)
-                zGrid = radius * np.cos(lat_rad) * np.sin(lon_rad)
-                glVertex3f(xGrid, yGrid, zGrid)
-            glEnd()
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+        gluQuadricTexture(self.sphere, GL_FALSE)
+        glPushMatrix()
+        glRotatef(90, 1, 0, 0)
+        gluSphere(self.sphere, radius, 48, 24)
+        glPopMatrix()
+        gluQuadricTexture(self.sphere, GL_TRUE)
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
     def _drawObject(self, noradIndex):
         isSelected = (noradIndex == self.selectedObject)
