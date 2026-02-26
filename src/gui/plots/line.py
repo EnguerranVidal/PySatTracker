@@ -22,9 +22,20 @@ class LinePlot(QWidget):
 
 
 class LinePlotSettingsWidget(QWidget):
-    def __init__(self, linePlot: LinePlot, parent=None):
+    def __init__(self, linePlot: LinePlot, dockWidget=None, parent=None):
         super().__init__(parent)
         self.linePlot = linePlot
+        self.dockWidget = dockWidget
+
+        # PLOT NAME EDITOR
+        self.titleEdit = QLineEdit()
+        if self.dockWidget is not None:
+            self.titleEdit.setText(self.dockWidget.windowTitle())
+        self.titleEdit.textChanged.connect(self._updateDockTitle)
+        self.titleLayout = QHBoxLayout()
+        self.titleLayout.addWidget(QLabel("Plot Name:"))
+        self.titleLayout.addWidget(self.titleEdit)
+
         # LINE MANAGEMENT BUTTONS
         self.addButton = QPushButton("Add Line")
         self.removeButton = QPushButton("Remove Line")
@@ -41,9 +52,15 @@ class LinePlotSettingsWidget(QWidget):
 
         # MAIN LAYOUT
         mainLayout = QVBoxLayout(self)
+        mainLayout.addLayout(self.titleLayout)
         mainLayout.addLayout(self.buttonLayout)
         mainLayout.addWidget(self.listWidget)
         mainLayout.addWidget(self.stackedWidget)
+
+    def _updateDockTitle(self):
+        if self.dockWidget is not None:
+            self.dockWidget.setWindowTitle(self.titleEdit.text())
+            print(f"Updated dock title to: {self.titleEdit.text()}")
 
     def addNewLine(self):
         self.linePlot.addLine()
@@ -71,6 +88,13 @@ class LinePlotSettingsWidget(QWidget):
     def updateLineName(self, line, text):
         line['NAME'] = text
         row = self.linePlot.configuration['LINES'].index(line)
+        self.linePlot.configuration['LINES'][row]['NAME'] = text
+        item = self.linePlot.configuration['LINES'][row]['ITEM']
+        plotItem = self.linePlot.plot.getPlotItem()
+        legend = getattr(plotItem, 'legend', None)
+        if legend is not None:
+            legend.removeItem(item)
+            legend.addItem(item, text)
         self.listWidget.item(row).setText(text)
 
 
@@ -83,40 +107,63 @@ class LineSettingsPage(QWidget):
         pen = self.line.get('PEN', None)
 
         self.nameEdit = QLineEdit(self.line['NAME'])
-        self.nameEdit.textChanged.connect(self.updateName)
+        self.nameEdit.textChanged.connect(self._updateName)
 
+        # COLOR SETTINGS
         self.colorLabel = QLabel(pen.color().name().upper() if pen is not None else "#FFFFFF")
         self.colorButton = self._colorButton()
         self._setButtonColor(self.colorButton, pen.color().getRgb()[:3] if pen is not None else (255, 255, 255))
-
+        self.colorButton.clicked.connect(self._pickColor)
         colorLayout = QHBoxLayout()
         colorLayout.setContentsMargins(0, 0, 0, 0)
         colorLayout.addWidget(self.colorButton)
         colorLayout.addWidget(self.colorLabel)
 
+        # WIDTH SETTINGS
         self.widthSpinBox = QSpinBox()
         self.widthSpinBox.setRange(1, 10)
         self.widthSpinBox.setValue(pen.width())
-        self.widthSpinBox.valueChanged.connect(self.updateWidth)
+        self.widthSpinBox.valueChanged.connect(self._updateWidth)
+
+        # LINE STYLE SETTINGS
+        self.styleComboBox = QComboBox()
+        self.styleComboBox.addItem("Solid", Qt.SolidLine)
+        self.styleComboBox.addItem("Dash", Qt.DashLine)
+        self.styleComboBox.addItem("Dot", Qt.DotLine)
+        self.styleComboBox.addItem("Dash Dot", Qt.DashDotLine)
+        self.styleComboBox.setCurrentIndex(self.styleComboBox.findData(pen.style()))
+        self.styleComboBox.currentIndexChanged.connect(self._updateStyle)
 
         layout = QFormLayout(self)
         layout.addRow("Name:", self.nameEdit)
         layout.addRow("Color:", colorLayout)
+        layout.addRow("Width:", self.widthSpinBox)
+        layout.addRow("Style:", self.styleComboBox)
 
-    def updateName(self, text):
+    def _updateName(self, text):
         self.line['NAME'] = text
         self.nameChanged.emit(text)
 
-    def updateWidth(self, value):
+    def _updateWidth(self, value):
         pen = mkPen(color=self.line['PEN'].color(), width=value, style=self.line['PEN'].style())
         self.line['ITEM'].setPen(pen)
         self.line['PEN'] = pen
 
-    def updateColor(self, color):
-        pen = mkPen(color=color, width=self.line['PEN'].width(), style=self.line['PEN'].style())
+    def _updateStyle(self, index):
+        style = self.styleComboBox.itemData(index)
+        pen = mkPen(color=self.line['PEN'].color(), width=self.line['PEN'].width(), style=style)
         self.line['ITEM'].setPen(pen)
         self.line['PEN'] = pen
 
+    def _pickColor(self):
+        color = QColorDialog.getColor()
+        if not color.isValid():
+            return
+        self._setButtonColor(self.colorButton, color.getRgb()[:3])
+        self.colorLabel.setText(color.name().upper())
+        pen = mkPen(color=color.getRgb()[:3], width=self.line['PEN'].width(), style=self.line['PEN'].style())
+        self.line['ITEM'].setPen(pen)
+        self.line['PEN'] = pen
 
     @staticmethod
     def _colorButton():
@@ -128,12 +175,3 @@ class LineSettingsPage(QWidget):
     @staticmethod
     def _setButtonColor(colorButton, color):
         colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
-
-    def _pickColor(self, section):
-        if self._currentConfig is None:
-            return
-        color = QColorDialog.getColor()
-        if not color.isValid():
-            return
-        colorButton = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
-        self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())

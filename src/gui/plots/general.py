@@ -143,7 +143,7 @@ class PlotSettingsDockWidget(QDockWidget):
     def addSettingsTab(self, title, dockWidget: PlotDockWidget):
         if dockWidget not in self.dockToSettings:
             if isinstance(dockWidget.plotWidget, LinePlot):
-                widget = LinePlotSettingsWidget(dockWidget.plotWidget)
+                widget = LinePlotSettingsWidget(dockWidget.plotWidget, dockWidget=dockWidget, parent=self.tabWidget)
             else:
                 widget = QWidget()
             index = self.tabWidget.addTab(widget, title)

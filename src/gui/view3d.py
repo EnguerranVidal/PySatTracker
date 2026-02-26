@@ -209,8 +209,8 @@ class View3dWidget(QOpenGLWidget):
         glVertex3f(0, 0, L)
         glEnd()
 
-    def _drawEarthGrid(self, radius=1.002):
-        glColor3f(0.8, 0.8, 1.0)
+    def _drawEarthGrid(self, radius=1.003):
+        glColor4f(0.5, 1.0, 1.0, 1.0)
         glLineWidth(1)
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         gluQuadricTexture(self.sphere, GL_FALSE)
