@@ -358,10 +358,10 @@ class Object2dMapConfigDockWidget(QDockWidget):
 
     @staticmethod
     def _colorButton():
-        btn = QPushButton()
-        btn.setFixedSize(24, 24)
-        btn.setStyleSheet("border: 1px solid #666;")
-        return btn
+        colorButton = QPushButton()
+        colorButton.setFixedSize(24, 24)
+        colorButton.setStyleSheet("border: 1px solid #666;")
+        return colorButton
 
     @staticmethod
     def _groupBox(title: str):
@@ -374,8 +374,8 @@ class Object2dMapConfigDockWidget(QDockWidget):
         return box
 
     @staticmethod
-    def _setButtonColor(btn, color):
-        btn.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
+    def _setButtonColor(colorButton, color):
+        colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
 
     def _modeToLabel(self, mode):
         for label, value in self.MODES.items():
@@ -424,9 +424,9 @@ class Object2dMapConfigDockWidget(QDockWidget):
         color = QColorDialog.getColor()
         if not color.isValid():
             return
-        button = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
+        colorButton = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
         self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())
-        self._setButtonColor(button, self._currentConfig[section]['COLOR'])
+        self._setButtonColor(colorButton, self._currentConfig[section]['COLOR'])
         self._emitConfig()
 
     def _emitConfig(self, *_):

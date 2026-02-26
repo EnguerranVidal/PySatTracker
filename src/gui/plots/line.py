@@ -80,3 +80,60 @@ class LineSettingsPage(QWidget):
     def __init__(self, line, parent=None):
         super().__init__(parent)
         self.line = line
+        pen = self.line.get('PEN', None)
+
+        self.nameEdit = QLineEdit(self.line['NAME'])
+        self.nameEdit.textChanged.connect(self.updateName)
+
+        self.colorLabel = QLabel(pen.color().name().upper() if pen is not None else "#FFFFFF")
+        self.colorButton = self._colorButton()
+        self._setButtonColor(self.colorButton, pen.color().getRgb()[:3] if pen is not None else (255, 255, 255))
+
+        colorLayout = QHBoxLayout()
+        colorLayout.setContentsMargins(0, 0, 0, 0)
+        colorLayout.addWidget(self.colorButton)
+        colorLayout.addWidget(self.colorLabel)
+
+        self.widthSpinBox = QSpinBox()
+        self.widthSpinBox.setRange(1, 10)
+        self.widthSpinBox.setValue(pen.width())
+        self.widthSpinBox.valueChanged.connect(self.updateWidth)
+
+        layout = QFormLayout(self)
+        layout.addRow("Name:", self.nameEdit)
+        layout.addRow("Color:", colorLayout)
+
+    def updateName(self, text):
+        self.line['NAME'] = text
+        self.nameChanged.emit(text)
+
+    def updateWidth(self, value):
+        pen = mkPen(color=self.line['PEN'].color(), width=value, style=self.line['PEN'].style())
+        self.line['ITEM'].setPen(pen)
+        self.line['PEN'] = pen
+
+    def updateColor(self, color):
+        pen = mkPen(color=color, width=self.line['PEN'].width(), style=self.line['PEN'].style())
+        self.line['ITEM'].setPen(pen)
+        self.line['PEN'] = pen
+
+
+    @staticmethod
+    def _colorButton():
+        colorButton = QPushButton()
+        colorButton.setFixedSize(24, 24)
+        colorButton.setStyleSheet("border: 1px solid #666;")
+        return colorButton
+
+    @staticmethod
+    def _setButtonColor(colorButton, color):
+        colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
+
+    def _pickColor(self, section):
+        if self._currentConfig is None:
+            return
+        color = QColorDialog.getColor()
+        if not color.isValid():
+            return
+        colorButton = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
+        self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())

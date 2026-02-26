@@ -610,8 +610,8 @@ class Object3dViewConfigDockWidget(QDockWidget):
         return "Never"
 
     @staticmethod
-    def _setButtonColor(btn, color):
-        btn.setStyleSheet(f"background-color: rgb({color[0] * 255},{color[1] * 255},{color[2] * 255}); border: 1px solid #666;")
+    def _setButtonColor(colorButton, color):
+        colorButton.setStyleSheet(f"background-color: rgb({color[0] * 255},{color[1] * 255},{color[2] * 255}); border: 1px solid #666;")
 
     def _pickColor(self, section):
         if self._currentConfig is None:
@@ -619,9 +619,9 @@ class Object3dViewConfigDockWidget(QDockWidget):
         color = QColorDialog.getColor()
         if not color.isValid():
             return
-        button = self.spotColorButton if section == 'SPOT' else self.orbitColorButton
+        colorButton = self.spotColorButton if section == 'SPOT' else self.orbitColorButton
         self._currentConfig[section]['COLOR'] = (color.red() / 255, color.green() / 255, color.blue() / 255, 1)
-        self._setButtonColor(button, self._currentConfig[section]['COLOR'])
+        self._setButtonColor(colorButton, self._currentConfig[section]['COLOR'])
         self._emitConfig()
 
     def _emitConfig(self, *_):
