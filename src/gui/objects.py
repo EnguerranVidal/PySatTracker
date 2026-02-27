@@ -119,6 +119,10 @@ class OrbitWorker(QObject):
         earth3dResults['SUN_DIRECTION_ECI'] = self.engine.solarDirectionEci(simulationTime)
         earth3dResults['SUN_DIRECTION_ECEF'] =  self.engine.eciToEcef(earth3dResults['SUN_DIRECTION_ECI'], simulationTime)
         results['3D_VIEW'] = earth3dResults
+        # PLOT VIEW CALCULATIONS
+        plotResults = {'OBJECTS': {noradIndex: {'NAME': self.database.getObjectName(noradIndex)} for noradIndex in self.noradIndices}}
+        # TODO : Add ordering system for selected plot data in plot view widget.
+        results['PLOT_VIEW'] = plotResults
         # RESULTS EMISSION
         self.positionsReady.emit(results)
 

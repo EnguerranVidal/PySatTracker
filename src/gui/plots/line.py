@@ -1,7 +1,9 @@
 from pyqtgraph import PlotWidget, mkPen
+from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
+from src.core.orbitalEngine import OrbitalMechanicsEngine
 
 class LinePlot(QWidget):
     def __init__(self, parent=None, currentDir:str = None):
@@ -12,13 +14,31 @@ class LinePlot(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
         self.configuration = {'LINES': []}
+        self.plot_items = []
 
-    def addLine(self, name=None, color='w', width=1, style=Qt.SolidLine):
+    def addLine(self, name=None, color='#ffffff', width=1, style=Qt.SolidLine):
         if name is None:
             name = f"Line {len(self.configuration['LINES']) + 1}"
-        pen = mkPen(color, width=width, style=style)
+        colorName = QColor(color).name() if isinstance(color, str) else color.name()
+        line_config = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'time', 'X_VARIABLE': '', 'Y_OBJECT': 'time', 'Y_VARIABLE': ''}
+        self.configuration['LINES'].append(line_config)
+        pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
-        self.configuration['LINES'].append({'ITEM': item, 'NAME': name, 'PEN': pen})
+        self.plot_items.append(item)
+
+    def _setConfig(self, config):
+        for item in self.plot_items:
+            self.plot.removeItem(item)
+        self.plot_items = []
+        self.configuration = config.copy()
+        for line_conf in self.configuration['LINES']:
+            name = line_conf.get('NAME', f"Line {len(self.plot_items) + 1}")
+            color = line_conf.get('COLOR', '#ffffff')
+            width = line_conf.get('WIDTH', 1)
+            style = line_conf.get('STYLE', Qt.SolidLine)
+            pen = mkPen(QColor(color), width=width, style=style)
+            item = self.plot.plot([], [], pen=pen, name=name)
+            self.plot_items.append(item)
 
 
 class LinePlotSettingsWidget(QWidget):
@@ -57,10 +77,11 @@ class LinePlotSettingsWidget(QWidget):
         mainLayout.addWidget(self.listWidget)
         mainLayout.addWidget(self.stackedWidget)
 
+        self.updateLinesList()
+
     def _updateDockTitle(self):
         if self.dockWidget is not None:
             self.dockWidget.setWindowTitle(self.titleEdit.text())
-            print(f"Updated dock title to: {self.titleEdit.text()}")
 
     def addNewLine(self):
         self.linePlot.addLine()
@@ -81,15 +102,14 @@ class LinePlotSettingsWidget(QWidget):
             widget.deleteLater()
         for lineConfiguration in self.linePlot.configuration['LINES']:
             self.listWidget.addItem(lineConfiguration['NAME'])
-            settingsPage = LineSettingsPage(lineConfiguration)
+            settingsPage = LineSettingsPage(lineConfiguration, self.linePlot)
             settingsPage.nameChanged.connect(lambda text, l=lineConfiguration: self.updateLineName(l, text))
             self.stackedWidget.addWidget(settingsPage)
 
     def updateLineName(self, line, text):
         line['NAME'] = text
         row = self.linePlot.configuration['LINES'].index(line)
-        self.linePlot.configuration['LINES'][row]['NAME'] = text
-        item = self.linePlot.configuration['LINES'][row]['ITEM']
+        item = self.linePlot.plot_items[row]
         plotItem = self.linePlot.plot.getPlotItem()
         legend = getattr(plotItem, 'legend', None)
         if legend is not None:
@@ -101,18 +121,18 @@ class LinePlotSettingsWidget(QWidget):
 class LineSettingsPage(QWidget):
     nameChanged = pyqtSignal(str)
 
-    def __init__(self, line, parent=None):
+    def __init__(self, line, linePlot, parent=None):
         super().__init__(parent)
         self.line = line
-        pen = self.line.get('PEN', None)
+        self.linePlot = linePlot
 
         self.nameEdit = QLineEdit(self.line['NAME'])
         self.nameEdit.textChanged.connect(self._updateName)
 
         # COLOR SETTINGS
-        self.colorLabel = QLabel(pen.color().name().upper() if pen is not None else "#FFFFFF")
+        self.colorLabel = QLabel(QColor(self.line['COLOR']).name().upper())
         self.colorButton = self._colorButton()
-        self._setButtonColor(self.colorButton, pen.color().getRgb()[:3] if pen is not None else (255, 255, 255))
+        self._setButtonColor(self.colorButton, QColor(self.line['COLOR']).getRgb()[:3])
         self.colorButton.clicked.connect(self._pickColor)
         colorLayout = QHBoxLayout()
         colorLayout.setContentsMargins(0, 0, 0, 0)
@@ -122,7 +142,7 @@ class LineSettingsPage(QWidget):
         # WIDTH SETTINGS
         self.widthSpinBox = QSpinBox()
         self.widthSpinBox.setRange(1, 10)
-        self.widthSpinBox.setValue(pen.width())
+        self.widthSpinBox.setValue(self.line['WIDTH'])
         self.widthSpinBox.valueChanged.connect(self._updateWidth)
 
         # LINE STYLE SETTINGS
@@ -131,39 +151,77 @@ class LineSettingsPage(QWidget):
         self.styleComboBox.addItem("Dash", Qt.DashLine)
         self.styleComboBox.addItem("Dot", Qt.DotLine)
         self.styleComboBox.addItem("Dash Dot", Qt.DashDotLine)
-        self.styleComboBox.setCurrentIndex(self.styleComboBox.findData(pen.style()))
+        self.styleComboBox.setCurrentIndex(self.styleComboBox.findData(self.line['STYLE']))
         self.styleComboBox.currentIndexChanged.connect(self._updateStyle)
+
+        # X & Y AXES SETTINGS
+        self.xGroup = QGroupBox("X Axis")
+        self.xObjectComboBox = QComboBox()
+        self._populateFirstCombo(self.xObjectComboBox)
+        self.xObjectComboBox.setCurrentText(self.line['X_OBJECT'])
+        self.xObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_OBJECT': text}))
+        self.xVariableComboBox = QComboBox()
+        self._populateSecondCombo(self.xVariableComboBox)
+        self.xVariableComboBox.setCurrentText(self.line['X_VARIABLE'])
+        self.xVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_VARIABLE': text}))
+        xLayout = QFormLayout(self.xGroup)
+        xLayout.addRow("Object:", self.xObjectComboBox)
+        xLayout.addRow("Variable:", self.xVariableComboBox)
+        self.yGroup = QGroupBox("Y Axis")
+        self.yObjectComboBox = QComboBox()
+        self._populateFirstCombo(self.yObjectComboBox)
+        self.yObjectComboBox.setCurrentText(self.line['Y_OBJECT'])
+        self.yObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_OBJECT': text}))
+        self.yVariableComboBox = QComboBox()
+        self._populateSecondCombo(self.yVariableComboBox)
+        self.yVariableComboBox.setCurrentText(self.line['Y_VARIABLE'])
+        self.yVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_VARIABLE': text}))
+        yLayout = QFormLayout(self.yGroup)
+        yLayout.addRow("Object:", self.yObjectComboBox)
+        yLayout.addRow("Variable:", self.yVariableComboBox)
+        self.swapButton = QPushButton("Swap Axes")
+        self.swapButton.clicked.connect(self._swapAxes)
+
+        self.axesGroup = QGroupBox("Axes Settings")
+        self.axesLayout = QVBoxLayout(self.axesGroup)
+        self.axesLayout.addWidget(self.xGroup)
+        self.axesLayout.addWidget(self.yGroup)
+        self.axesLayout.addWidget(self.swapButton)
 
         layout = QFormLayout(self)
         layout.addRow("Name:", self.nameEdit)
         layout.addRow("Color:", colorLayout)
         layout.addRow("Width:", self.widthSpinBox)
         layout.addRow("Style:", self.styleComboBox)
+        layout.addRow(self.axesGroup)
 
     def _updateName(self, text):
         self.line['NAME'] = text
         self.nameChanged.emit(text)
 
     def _updateWidth(self, value):
-        pen = mkPen(color=self.line['PEN'].color(), width=value, style=self.line['PEN'].style())
-        self.line['ITEM'].setPen(pen)
-        self.line['PEN'] = pen
+        self.line['WIDTH'] = value
+        pen = mkPen(QColor(self.line['COLOR']), width=value, style=self.line['STYLE'])
+        row = self.linePlot.configuration['LINES'].index(self.line)
+        self.linePlot.plot_items[row].setPen(pen)
 
     def _updateStyle(self, index):
         style = self.styleComboBox.itemData(index)
-        pen = mkPen(color=self.line['PEN'].color(), width=self.line['PEN'].width(), style=style)
-        self.line['ITEM'].setPen(pen)
-        self.line['PEN'] = pen
+        self.line['STYLE'] = style
+        pen = mkPen(QColor(self.line['COLOR']), width=self.line['WIDTH'], style=style)
+        row = self.linePlot.configuration['LINES'].index(self.line)
+        self.linePlot.plot_items[row].setPen(pen)
 
     def _pickColor(self):
-        color = QColorDialog.getColor()
+        color = QColorDialog.getColor(QColor(self.line['COLOR']))
         if not color.isValid():
             return
         self._setButtonColor(self.colorButton, color.getRgb()[:3])
         self.colorLabel.setText(color.name().upper())
-        pen = mkPen(color=color.getRgb()[:3], width=self.line['PEN'].width(), style=self.line['PEN'].style())
-        self.line['ITEM'].setPen(pen)
-        self.line['PEN'] = pen
+        self.line['COLOR'] = color.name()
+        pen = mkPen(color, width=self.line['WIDTH'], style=self.line['STYLE'])
+        row = self.linePlot.configuration['LINES'].index(self.line)
+        self.linePlot.plot_items[row].setPen(pen)
 
     @staticmethod
     def _colorButton():
@@ -175,3 +233,27 @@ class LineSettingsPage(QWidget):
     @staticmethod
     def _setButtonColor(colorButton, color):
         colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
+
+    @staticmethod
+    def _populateFirstCombo(combo):
+        combo.addItem("time")
+        active_objects = ["Object1", "Object2", "Object3"]
+        for obj in active_objects:
+            combo.addItem(obj)
+
+    @staticmethod
+    def _populateSecondCombo(combo):
+        orbitalEngine = OrbitalMechanicsEngine()
+        variables = orbitalEngine.getAvailableVariables()
+        for text in variables:
+            combo.addItem(text)
+
+    def _swapAxes(self):
+        xObject = self.xObjectComboBox.currentText()
+        yObject = self.yObjectComboBox.currentText()
+        self.xObjectComboBox.setCurrentText(yObject)
+        self.yObjectComboBox.setCurrentText(xObject)
+        xVariable = self.xVariableComboBox.currentText()
+        yVariable = self.yVariableComboBox.currentText()
+        self.xVariableComboBox.setCurrentText(yVariable)
+        self.yVariableComboBox.setCurrentText(xVariable)

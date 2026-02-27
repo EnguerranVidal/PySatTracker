@@ -207,5 +207,9 @@ class OrbitalMechanicsEngine:
             return np.rad2deg(vernalLongitude), np.rad2deg(0)
         return vernalLongitude, 0
 
-
-
+    @staticmethod
+    def getAvailableVariables():
+        return ["ALTITUDE", "LATITUDE", "LONGITUDE", "AZIMUTH", "ELEVATION", "RANGE", "RANGE_RATE", "VELOCITY", "ECCENTRICITY", "INCLINATION",
+                "SEMI_MAJOR_AXIS", "TRUE_ANOMALY", "MEAN_ANOMALY", "ARGUMENT_OF_PERIGEE", "RAAN", "ORBITAL_PERIOD", "APOGEE", "PERIGEE",
+                "MEAN_MOTION", "SPECIFIC_ORBITAL_ENERGY", "ANGULAR_MOMENTUM", "FLIGHT_PATH_ANGLE", "BETA_ANGLE", "ECCENTRIC_ANOMALY", "TIME_SINCE_PERIAPSIS",
+                "RADIAL_VELOCITY", "TANGENTIAL_VELOCITY", "LOCAL_SIDEREAL_TIME", "DRAG_ACCELERATION", "J2_PERTURBATION_RATE"]

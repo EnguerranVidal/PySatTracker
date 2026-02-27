@@ -871,6 +871,8 @@ class CentralViewWidget(QWidget):
             self._refresh2dMap()
         if self.view3dVisible:
             self._refresh3dView()
+        if self.plotViewVisible:
+            self._refreshPlotView()
         self.stackedChanged.emit(index)
 
     def _onPositionsReady(self, positions: dict):
@@ -879,6 +881,8 @@ class CentralViewWidget(QWidget):
             self._refresh2dMap()
         if self.view3dVisible:
             self._refresh3dView()
+        if self.plotViewVisible:
+            self._refreshPlotView()
 
     def setDatabase(self, database):
         self.orbitWorker.database = database
@@ -889,6 +893,8 @@ class CentralViewWidget(QWidget):
             self._refresh2dMap()
         if self.view3dVisible:
             self._refresh3dView()
+        if self.plotViewVisible:
+            self._refreshPlotView()
 
     def setActiveObjects(self, noradIndices):
         self.activeObjects = set(noradIndices)
@@ -897,6 +903,8 @@ class CentralViewWidget(QWidget):
             self._refresh2dMap()
         if self.view3dVisible:
             self._refresh3dView()
+        if self.plotViewVisible:
+            self._refreshPlotView()
 
     def set2dMapConfiguration(self, displayConfiguration):
         self.display2dMapConfiguration = displayConfiguration
@@ -913,6 +921,10 @@ class CentralViewWidget(QWidget):
     def _refresh3dView(self):
         if self.view3dVisible and self.lastPositions:
             self.view3dWidget.updateData(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
+
+    def _refreshPlotView(self):
+        if self.plotViewVisible and self.lastPositions:
+            self.plotViewWidget.updateData(self.lastPositions, self.activeObjects)
 
     def start(self):
         self.clock.play()

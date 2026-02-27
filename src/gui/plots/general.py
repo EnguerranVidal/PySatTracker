@@ -16,6 +16,7 @@ class PlotViewTabWidget(QMainWindow):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.visibleNorads, self.objectNameData = [], {}
         self.dockAreaCycler = AreaCycler()
         self.dockSpaces = [Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea, Qt.TopDockWidgetArea, Qt.BottomDockWidgetArea]
         self.tabWidget = QTabWidget()
@@ -88,6 +89,10 @@ class PlotViewTabWidget(QMainWindow):
         self.settingsDockWidget.show()
         self.settingsDockWidget.raise_()
         self.settingsDockWidget.activateWindow()
+
+    def updateData(self, positions: dict, visibleNorads: set[int]):
+         self.visibleNorads = visibleNorads
+         self.objectNameData = {str(noradIndex): positions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in visibleNorads}
 
 
 class PlotDockWidget(QDockWidget):
