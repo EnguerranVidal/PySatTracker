@@ -16,7 +16,8 @@ class PlotViewTabWidget(QMainWindow):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
-        self.visibleNorads, self.objectNameData = [], {}
+        self.displayConfiguration = {}
+        self.visibleNorads, self.lastPositions = [], None
         self.dockAreaCycler = AreaCycler()
         self.dockSpaces = [Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea, Qt.TopDockWidgetArea, Qt.BottomDockWidgetArea]
         self.tabWidget = QTabWidget()
@@ -66,6 +67,10 @@ class PlotViewTabWidget(QMainWindow):
         self.tabWidget.setTabText(tabIndex, lineEdit.text())
         tabBar.setTabButton(tabIndex, tabBar.ButtonPosition.LeftSide, None)
         self.tabWidget.setTabsClosable(True)
+        parentTab = self.tabWidget.widget(tabIndex)
+        dockWidgets = parentTab.findChildren(PlotDockWidget)
+        for dockWidget in dockWidgets:
+            self.settingsDockWidget.updateSettingsTabTitle(dockWidget)
 
     def addNewLinePlot(self):
         currentTabIndex = self.tabWidget.currentIndex()
@@ -92,7 +97,15 @@ class PlotViewTabWidget(QMainWindow):
 
     def updateData(self, positions: dict, visibleNorads: set[int]):
          self.visibleNorads = visibleNorads
-         self.objectNameData = {str(noradIndex): positions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in visibleNorads}
+         self.lastPositions = positions
+         for i in range(self.tabWidget.count()):
+            tab = self.tabWidget.widget(i)
+            dockWidgets = tab.findChildren(PlotDockWidget)
+            for dockWidget in dockWidgets:
+                dockWidget.updateData(positions, visibleNorads)
+
+    def setDisplayConfiguration(self, configuration):
+        self.displayConfiguration = configuration
 
 
 class PlotDockWidget(QDockWidget):
@@ -113,6 +126,11 @@ class PlotDockWidget(QDockWidget):
         self.settingsButton.setIcon(QIcon(settingsIconPath))
         self.settingsButton.hide()
         self.settingsButton.clicked.connect(lambda: self.showSettingsRequested.emit(self))
+        self.lastPositions, self.visibleNorads = None, set()
+
+    def updateData(self, positions: dict, visibleNorads: set[int]):
+        self.visibleNorads = visibleNorads
+        self.lastPositions = positions
 
     def enterEvent(self, event):
         self.settingsButton.show()
@@ -153,6 +171,7 @@ class PlotSettingsDockWidget(QDockWidget):
                 widget = QWidget()
             index = self.tabWidget.addTab(widget, title)
             self.dockToSettings[dockWidget] = widget
+            dockWidget.windowTitleChanged.connect(lambda title: self.updateSettingsTabTitle(dockWidget))
         else:
             widget = self.dockToSettings[dockWidget]
             index = self.tabWidget.indexOf(widget)
@@ -180,3 +199,16 @@ class PlotSettingsDockWidget(QDockWidget):
         widget.deleteLater()
         if self.tabWidget.count() == 0:
             self.hide()
+
+    def updateSettingsTabTitle(self, dockWidget: PlotDockWidget):
+        if dockWidget in self.dockToSettings:
+            widget = self.dockToSettings[dockWidget]
+            index = self.tabWidget.indexOf(widget)
+            if index != -1:
+                main = self.parent()
+                parentTab = dockWidget.parent()
+                tabIndex = main.tabWidget.indexOf(parentTab)
+                plotTabName = main.tabWidget.tabText(tabIndex)
+                plotDockWidgetName = dockWidget.windowTitle()
+                title = f"{plotTabName} > {plotDockWidgetName}"
+                self.tabWidget.setTabText(index, title)

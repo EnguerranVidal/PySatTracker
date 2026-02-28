@@ -14,31 +14,31 @@ class LinePlot(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
         self.configuration = {'LINES': []}
-        self.plot_items = []
+        self.plotItems = []
 
     def addLine(self, name=None, color='#ffffff', width=1, style=Qt.SolidLine):
         if name is None:
             name = f"Line {len(self.configuration['LINES']) + 1}"
         colorName = QColor(color).name() if isinstance(color, str) else color.name()
-        line_config = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'time', 'X_VARIABLE': '', 'Y_OBJECT': 'time', 'Y_VARIABLE': ''}
+        line_config = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'TIME', 'X_VARIABLE': '', 'Y_OBJECT': 'TIME', 'Y_VARIABLE': ''}
         self.configuration['LINES'].append(line_config)
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
-        self.plot_items.append(item)
+        self.plotItems.append(item)
 
-    def _setConfig(self, config):
-        for item in self.plot_items:
+    def setConfiguration(self, config):
+        for item in self.plotItems:
             self.plot.removeItem(item)
-        self.plot_items = []
+        self.plotItems = []
         self.configuration = config.copy()
-        for line_conf in self.configuration['LINES']:
-            name = line_conf.get('NAME', f"Line {len(self.plot_items) + 1}")
-            color = line_conf.get('COLOR', '#ffffff')
-            width = line_conf.get('WIDTH', 1)
-            style = line_conf.get('STYLE', Qt.SolidLine)
+        for lineConfiguration in self.configuration['LINES']:
+            name = lineConfiguration.get('NAME', f"Line {len(self.plotItems) + 1}")
+            color = lineConfiguration.get('COLOR', '#ffffff')
+            width = lineConfiguration.get('WIDTH', 1)
+            style = lineConfiguration.get('STYLE', Qt.SolidLine)
             pen = mkPen(QColor(color), width=width, style=style)
             item = self.plot.plot([], [], pen=pen, name=name)
-            self.plot_items.append(item)
+            self.plotItems.append(item)
 
 
 class LinePlotSettingsWidget(QWidget):
@@ -102,14 +102,14 @@ class LinePlotSettingsWidget(QWidget):
             widget.deleteLater()
         for lineConfiguration in self.linePlot.configuration['LINES']:
             self.listWidget.addItem(lineConfiguration['NAME'])
-            settingsPage = LineSettingsPage(lineConfiguration, self.linePlot)
+            settingsPage = LineSettingsPage(lineConfiguration, self.linePlot, parent=self)
             settingsPage.nameChanged.connect(lambda text, l=lineConfiguration: self.updateLineName(l, text))
             self.stackedWidget.addWidget(settingsPage)
 
     def updateLineName(self, line, text):
         line['NAME'] = text
         row = self.linePlot.configuration['LINES'].index(line)
-        item = self.linePlot.plot_items[row]
+        item = self.linePlot.plotItems[row]
         plotItem = self.linePlot.plot.getPlotItem()
         legend = getattr(plotItem, 'legend', None)
         if legend is not None:
@@ -203,14 +203,14 @@ class LineSettingsPage(QWidget):
         self.line['WIDTH'] = value
         pen = mkPen(QColor(self.line['COLOR']), width=value, style=self.line['STYLE'])
         row = self.linePlot.configuration['LINES'].index(self.line)
-        self.linePlot.plot_items[row].setPen(pen)
+        self.linePlot.plotItems[row].setPen(pen)
 
     def _updateStyle(self, index):
         style = self.styleComboBox.itemData(index)
         self.line['STYLE'] = style
         pen = mkPen(QColor(self.line['COLOR']), width=self.line['WIDTH'], style=style)
         row = self.linePlot.configuration['LINES'].index(self.line)
-        self.linePlot.plot_items[row].setPen(pen)
+        self.linePlot.plotItems[row].setPen(pen)
 
     def _pickColor(self):
         color = QColorDialog.getColor(QColor(self.line['COLOR']))
@@ -221,7 +221,7 @@ class LineSettingsPage(QWidget):
         self.line['COLOR'] = color.name()
         pen = mkPen(color, width=self.line['WIDTH'], style=self.line['STYLE'])
         row = self.linePlot.configuration['LINES'].index(self.line)
-        self.linePlot.plot_items[row].setPen(pen)
+        self.linePlot.plotItems[row].setPen(pen)
 
     @staticmethod
     def _colorButton():
@@ -234,12 +234,16 @@ class LineSettingsPage(QWidget):
     def _setButtonColor(colorButton, color):
         colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
 
-    @staticmethod
-    def _populateFirstCombo(combo):
-        combo.addItem("time")
-        active_objects = ["Object1", "Object2", "Object3"]
-        for obj in active_objects:
-            combo.addItem(obj)
+    def _populateFirstCombo(self, combo):
+        combo.clear()
+        combo.addItem("TIME")
+        visibleNorads = getattr(self.parent().dockWidget, 'visibleNorads', [])
+        lastPositions = getattr(self.parent().dockWidget, 'lastPositions', None)
+        if lastPositions is not None:
+            objectNames = {noradIndex: lastPositions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in visibleNorads}
+            combo.insertSeparator(combo.count())
+            for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):
+                combo.addItem(name, noradIndex)
 
     @staticmethod
     def _populateSecondCombo(combo):
