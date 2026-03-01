@@ -104,8 +104,38 @@ class PlotViewTabWidget(QMainWindow):
             for dockWidget in dockWidgets:
                 dockWidget.updateData(positions, visibleNorads)
 
-    def setDisplayConfiguration(self, configuration):
-        self.displayConfiguration = configuration
+    def getLayoutConfiguration(self):
+        layout = {"TABS": []}
+        for i in range(self.tabWidget.count()):
+            tab = self.tabWidget.widget(i)
+            tabName = self.tabWidget.tabText(i)
+            dockWidgets = []
+            for dock in tab.findChildren(PlotDockWidget):
+                config = dock.plotWidget.configuration
+                if isinstance(dock.plotWidget, LinePlot):
+                    plotType = "LINE"
+                else:
+                    plotType = "NONE"
+                dockWidgets.append({"TITLE": dock.windowTitle(), "AREA": tab.dockWidgetArea(dock), "PLOT_TYPE": plotType, "CONFIGURATION": config})
+            layout["TABS"].append({"NAME": tabName, "DOCKS": dockWidgets})
+        return layout
+
+    def setLayoutConfiguration(self, layout):
+        self.closeAllTabs()
+        for tabConfiguration in layout.get("TABS", []):
+            self.addNewTab(tabConfiguration["NAME"])
+            currentTabIndex = self.tabWidget.count() - 1
+            currentTab = self.tabWidget.widget(currentTabIndex)
+            for dockWidgetConfiguration in tabConfiguration["DOCKS"]:
+                title = dockWidgetConfiguration["TITLE"]
+                area = dockWidgetConfiguration["AREA"]
+                if dockWidgetConfiguration["PLOT_TYPE"] == "LINE":
+                    widget = LinePlot(self)
+                    widget.setConfiguration(dockWidgetConfiguration["CONFIGURATION"])
+                    dockWidget = PlotDockWidget(parent=self, title=title, widget=widget, currentDir=self.currentDir)
+                    dockWidget.showSettingsRequested.connect(self.handleShowSettings)
+                    dockWidget.closed.connect(self.settingsDockWidget.removeSettingsForDock)
+                    currentTab.addDockWidget(area, dockWidget)
 
 
 class PlotDockWidget(QDockWidget):

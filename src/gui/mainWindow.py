@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.view3dWidget.rotX = self.settings['3D_VIEW']['ROTATION']['X']
         self.centralViewWidget.view3dWidget.rotY = self.settings['3D_VIEW']['ROTATION']['Y']
         self.centralViewWidget.view3dWidget.cameraChanged.connect(self._change3dViewCameraSettings)
+        self.centralViewWidget.plotViewWidget.setLayoutConfiguration(self.settings['PLOT_VIEW'])
 
         # SATELLITE LIST WIDGET
         self.objectListDock = ObjectListDockWidget(self)
@@ -620,6 +621,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self.centralViewWidget.close()
         # SAVING SETTINGS
+        self.settings['PLOT_VIEW']  = self.centralViewWidget.plotViewWidget.getLayoutConfiguration()
         self.settings['WINDOW']['MAXIMIZED'] = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
