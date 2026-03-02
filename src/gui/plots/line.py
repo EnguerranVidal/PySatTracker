@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import *
 from src.core.orbitalEngine import OrbitalMechanicsEngine
 
 class LinePlot(QWidget):
+    visibleNoradsChanged = pyqtSignal()
+
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.plot = PlotWidget(self)
@@ -13,6 +15,8 @@ class LinePlot(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
+        self.lastPositions = None
+        self.visibleNorads = set()
         self.configuration = {'LINES': []}
         self.plotItems = []
 
@@ -40,12 +44,21 @@ class LinePlot(QWidget):
             item = self.plot.plot([], [], pen=pen, name=name)
             self.plotItems.append(item)
 
+    def updateData(self, positions: dict, visibleNorads: set[int]):
+        self.lastPositions = positions
+        if self.visibleNorads != visibleNorads:
+            self.visibleNorads = visibleNorads
+            self.visibleNoradsChanged.emit()
+
 
 class LinePlotSettingsWidget(QWidget):
     def __init__(self, linePlot: LinePlot, dockWidget=None, parent=None):
         super().__init__(parent)
         self.linePlot = linePlot
+        self.linePlot.visibleNoradsChanged.connect(self.refreshObjectCombos)
         self.dockWidget = dockWidget
+        self.lastPositions = {}
+        self.visibleNorads = set()
 
         # PLOT NAME EDITOR
         self.titleEdit = QLineEdit()
@@ -102,7 +115,7 @@ class LinePlotSettingsWidget(QWidget):
             widget.deleteLater()
         for lineConfiguration in self.linePlot.configuration['LINES']:
             self.listWidget.addItem(lineConfiguration['NAME'])
-            settingsPage = LineSettingsPage(lineConfiguration, self.linePlot, parent=self)
+            settingsPage = LineSettingsPage(owner=self, line=lineConfiguration, linePlot=self.linePlot)
             settingsPage.nameChanged.connect(lambda text, l=lineConfiguration: self.updateLineName(l, text))
             self.stackedWidget.addWidget(settingsPage)
 
@@ -117,18 +130,27 @@ class LinePlotSettingsWidget(QWidget):
             legend.addItem(item, text)
         self.listWidget.item(row).setText(text)
 
+    def refreshObjectCombos(self):
+        for i in range(self.stackedWidget.count()):
+            page = self.stackedWidget.widget(i)
+            if isinstance(page, LineSettingsPage):
+                page.fillFirstCombo(page.xObjectComboBox)
+                page.fillFirstCombo(page.yObjectComboBox)
+
 
 class LineSettingsPage(QWidget):
     nameChanged = pyqtSignal(str)
 
-    def __init__(self, line, linePlot, parent=None):
+    def __init__(self, line, linePlot, parent=None, owner=None):
         super().__init__(parent)
         self.line = line
         self.linePlot = linePlot
-
+        self.owner = owner if owner is not None else parent
+        orbitalEngine = OrbitalMechanicsEngine()
+        self.engineVariables = orbitalEngine.getAvailableVariables()
+        # NAME SETTINGS
         self.nameEdit = QLineEdit(self.line['NAME'])
         self.nameEdit.textChanged.connect(self._updateName)
-
         # COLOR SETTINGS
         self.colorLabel = QLabel(QColor(self.line['COLOR']).name().upper())
         self.colorButton = self._colorButton()
@@ -157,11 +179,11 @@ class LineSettingsPage(QWidget):
         # X & Y AXES SETTINGS
         self.xGroup = QGroupBox("X Axis")
         self.xObjectComboBox = QComboBox()
-        self._populateFirstCombo(self.xObjectComboBox)
+        self.fillFirstCombo(self.xObjectComboBox)
         self.xObjectComboBox.setCurrentText(self.line['X_OBJECT'])
         self.xObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_OBJECT': text}))
         self.xVariableComboBox = QComboBox()
-        self._populateSecondCombo(self.xVariableComboBox)
+        self.fillSecondCombo(self.xVariableComboBox)
         self.xVariableComboBox.setCurrentText(self.line['X_VARIABLE'])
         self.xVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_VARIABLE': text}))
         xLayout = QFormLayout(self.xGroup)
@@ -169,11 +191,11 @@ class LineSettingsPage(QWidget):
         xLayout.addRow("Variable:", self.xVariableComboBox)
         self.yGroup = QGroupBox("Y Axis")
         self.yObjectComboBox = QComboBox()
-        self._populateFirstCombo(self.yObjectComboBox)
+        self.fillFirstCombo(self.yObjectComboBox)
         self.yObjectComboBox.setCurrentText(self.line['Y_OBJECT'])
         self.yObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_OBJECT': text}))
         self.yVariableComboBox = QComboBox()
-        self._populateSecondCombo(self.yVariableComboBox)
+        self.fillSecondCombo(self.yVariableComboBox)
         self.yVariableComboBox.setCurrentText(self.line['Y_VARIABLE'])
         self.yVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_VARIABLE': text}))
         yLayout = QFormLayout(self.yGroup)
@@ -234,23 +256,21 @@ class LineSettingsPage(QWidget):
     def _setButtonColor(colorButton, color):
         colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
 
-    def _populateFirstCombo(self, combo):
+    def fillFirstCombo(self, combo: QComboBox):
+        combo.blockSignals(True)
         combo.clear()
         combo.addItem("TIME")
-        visibleNorads = getattr(self.parent().dockWidget, 'visibleNorads', [])
-        lastPositions = getattr(self.parent().dockWidget, 'lastPositions', None)
-        if lastPositions is not None:
-            objectNames = {noradIndex: lastPositions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in visibleNorads}
-            combo.insertSeparator(combo.count())
-            for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):
-                combo.addItem(name, noradIndex)
+        objectNames = {noradIndex: self.linePlot.lastPositions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in self.linePlot.visibleNorads}
+        combo.insertSeparator(combo.count())
+        for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):
+             combo.addItem(name, noradIndex)
+        combo.blockSignals(False)
 
-    @staticmethod
-    def _populateSecondCombo(combo):
-        orbitalEngine = OrbitalMechanicsEngine()
-        variables = orbitalEngine.getAvailableVariables()
-        for text in variables:
+    def fillSecondCombo(self, combo: QComboBox):
+        combo.blockSignals(True)
+        for text in self.engineVariables:
             combo.addItem(text)
+        combo.blockSignals(False)
 
     def _swapAxes(self):
         xObject = self.xObjectComboBox.currentText()

@@ -102,7 +102,7 @@ class PlotViewTabWidget(QMainWindow):
             tab = self.tabWidget.widget(i)
             dockWidgets = tab.findChildren(PlotDockWidget)
             for dockWidget in dockWidgets:
-                dockWidget.updateData(positions, visibleNorads)
+                dockWidget.plotWidget.updateData(positions, visibleNorads)
 
     def getLayoutConfiguration(self):
         layout = {"TABS": []}
@@ -158,10 +158,6 @@ class PlotDockWidget(QDockWidget):
         self.settingsButton.clicked.connect(lambda: self.showSettingsRequested.emit(self))
         self.lastPositions, self.visibleNorads = None, set()
 
-    def updateData(self, positions: dict, visibleNorads: set[int]):
-        self.visibleNorads = visibleNorads
-        self.lastPositions = positions
-
     def enterEvent(self, event):
         self.settingsButton.show()
         super().enterEvent(event)
@@ -180,6 +176,7 @@ class PlotDockWidget(QDockWidget):
     def closeEvent(self, event):
         self.closed.emit(self)
         super().closeEvent(event)
+        self.deleteLater()
 
 
 class PlotSettingsDockWidget(QDockWidget):
