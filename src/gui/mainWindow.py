@@ -918,15 +918,15 @@ class CentralViewWidget(QWidget):
 
     def _refresh2dMap(self):
         if self.map2dVisible and self.lastPositions:
-            self.map2dWidget.updateMap(self.lastPositions, self.activeObjects, self.selectedObject, self.display2dMapConfiguration)
+            self.map2dWidget.updateMap({'2D_MAP' : self.lastPositions['2D_MAP']}, self.activeObjects, self.selectedObject, self.display2dMapConfiguration)
 
     def _refresh3dView(self):
         if self.view3dVisible and self.lastPositions:
-            self.view3dWidget.updateData(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
+            self.view3dWidget.updateData({'3D_VIEW' : self.lastPositions['3D_VIEW']}, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
 
     def _refreshPlotView(self):
         if self.plotViewVisible and self.lastPositions:
-            self.plotViewWidget.updateData(self.lastPositions, self.activeObjects)
+            self.plotViewWidget.updateData({'PLOT_VIEW' : self.lastPositions['PLOT_VIEW']}, self.activeObjects)
 
     def start(self):
         self.clock.play()

@@ -1,6 +1,6 @@
 from pyqtgraph import PlotWidget, mkPen
 from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
 from src.core.orbitalEngine import OrbitalMechanicsEngine
@@ -24,8 +24,9 @@ class LinePlot(QWidget):
         if name is None:
             name = f"Line {len(self.configuration['LINES']) + 1}"
         colorName = QColor(color).name() if isinstance(color, str) else color.name()
-        line_config = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'TIME', 'X_VARIABLE': '', 'Y_OBJECT': 'TIME', 'Y_VARIABLE': ''}
-        self.configuration['LINES'].append(line_config)
+        lineConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'TIME', 'X_VARIABLE': '', 'Y_OBJECT': 'TIME', 'Y_VARIABLE': '',
+                             'TIME_MODE': 'REAL', 'TIME_BEFORE': 30.0, 'TIME_BEFORE_UNIT': 'minutes', 'TIME_AFTER': 30.0, 'TIME_AFTER_UNIT': 'minutes', 'TIME_START': None, 'TIME_END': None}
+        self.configuration['LINES'].append(lineConfiguration)
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
         self.plotItems.append(item)
@@ -134,8 +135,8 @@ class LinePlotSettingsWidget(QWidget):
         for i in range(self.stackedWidget.count()):
             page = self.stackedWidget.widget(i)
             if isinstance(page, LineSettingsPage):
-                page.fillFirstCombo(page.xObjectComboBox)
-                page.fillFirstCombo(page.yObjectComboBox)
+                page.fillObjectCombo(page.xObjectComboBox)
+                page.fillObjectCombo(page.yObjectComboBox)
 
 
 class LineSettingsPage(QWidget):
@@ -151,7 +152,6 @@ class LineSettingsPage(QWidget):
         # NAME SETTINGS
         self.nameEdit = QLineEdit(self.line['NAME'])
         self.nameEdit.textChanged.connect(self._updateName)
-        # COLOR SETTINGS
         self.colorLabel = QLabel(QColor(self.line['COLOR']).name().upper())
         self.colorButton = self._colorButton()
         self._setButtonColor(self.colorButton, QColor(self.line['COLOR']).getRgb()[:3])
@@ -160,14 +160,10 @@ class LineSettingsPage(QWidget):
         colorLayout.setContentsMargins(0, 0, 0, 0)
         colorLayout.addWidget(self.colorButton)
         colorLayout.addWidget(self.colorLabel)
-
-        # WIDTH SETTINGS
         self.widthSpinBox = QSpinBox()
         self.widthSpinBox.setRange(1, 10)
         self.widthSpinBox.setValue(self.line['WIDTH'])
         self.widthSpinBox.valueChanged.connect(self._updateWidth)
-
-        # LINE STYLE SETTINGS
         self.styleComboBox = QComboBox()
         self.styleComboBox.addItem("Solid", Qt.SolidLine)
         self.styleComboBox.addItem("Dash", Qt.DashLine)
@@ -179,36 +175,99 @@ class LineSettingsPage(QWidget):
         # X & Y AXES SETTINGS
         self.xGroup = QGroupBox("X Axis")
         self.xObjectComboBox = QComboBox()
-        self.fillFirstCombo(self.xObjectComboBox)
+        self.fillObjectCombo(self.xObjectComboBox)
         self.xObjectComboBox.setCurrentText(self.line['X_OBJECT'])
         self.xObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_OBJECT': text}))
         self.xVariableComboBox = QComboBox()
-        self.fillSecondCombo(self.xVariableComboBox)
+        self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         self.xVariableComboBox.setCurrentText(self.line['X_VARIABLE'])
         self.xVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_VARIABLE': text}))
+        self.xObjectComboBox.currentTextChanged.connect(lambda: self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox))
         xLayout = QFormLayout(self.xGroup)
         xLayout.addRow("Object:", self.xObjectComboBox)
         xLayout.addRow("Variable:", self.xVariableComboBox)
         self.yGroup = QGroupBox("Y Axis")
         self.yObjectComboBox = QComboBox()
-        self.fillFirstCombo(self.yObjectComboBox)
+        self.fillObjectCombo(self.yObjectComboBox)
         self.yObjectComboBox.setCurrentText(self.line['Y_OBJECT'])
         self.yObjectComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_OBJECT': text}))
         self.yVariableComboBox = QComboBox()
-        self.fillSecondCombo(self.yVariableComboBox)
+        self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         self.yVariableComboBox.setCurrentText(self.line['Y_VARIABLE'])
         self.yVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_VARIABLE': text}))
+        self.yObjectComboBox.currentTextChanged.connect(lambda: self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox))
         yLayout = QFormLayout(self.yGroup)
         yLayout.addRow("Object:", self.yObjectComboBox)
         yLayout.addRow("Variable:", self.yVariableComboBox)
         self.swapButton = QPushButton("Swap Axes")
         self.swapButton.clicked.connect(self._swapAxes)
-
         self.axesGroup = QGroupBox("Axes Settings")
-        self.axesLayout = QVBoxLayout(self.axesGroup)
-        self.axesLayout.addWidget(self.xGroup)
-        self.axesLayout.addWidget(self.yGroup)
-        self.axesLayout.addWidget(self.swapButton)
+        axesLayout = QVBoxLayout(self.axesGroup)
+        axesLayout.addWidget(self.xGroup)
+        axesLayout.addWidget(self.yGroup)
+        axesLayout.addWidget(self.swapButton)
+
+        # TIME SETTINGS
+        self.timeGroup = QGroupBox("Time Settings")
+        self.realTimeRadio = QRadioButton("Real Time")
+        self.fixedTimeRadio = QRadioButton("Fixed Time")
+        timeMode = self.line.get('TIME_MODE', 'REAL')
+        self.realTimeRadio.setChecked(timeMode == 'REAL')
+        self.fixedTimeRadio.setChecked(timeMode == 'FIXED')
+        timeModeLayout = QHBoxLayout()
+        timeModeLayout.addWidget(self.realTimeRadio)
+        timeModeLayout.addWidget(self.fixedTimeRadio)
+        self.beforeRealTimeSpinBox = QDoubleSpinBox()
+        self.beforeRealTimeSpinBox.setRange(0, 1e6)
+        self.beforeRealTimeSpinBox.setDecimals(2)
+        self.beforeRealTimeSpinBox.setValue(self.line.get('TIME_BEFORE', 30.0))
+        self.beforeRealTimeUnitComboBox = QComboBox()
+        self.beforeRealTimeUnitComboBox.addItems(["seconds", "minutes", "hours", "days", "orbital periods"])
+        self.beforeRealTimeUnitComboBox.setCurrentText(self.line.get('TIME_BEFORE_UNIT', 'minutes'))
+        beforeRealTimeLayout = QHBoxLayout()
+        beforeRealTimeLayout.addWidget(self.beforeRealTimeSpinBox)
+        beforeRealTimeLayout.addWidget(self.beforeRealTimeUnitComboBox)
+        self.afterRealTimeSpinBox = QDoubleSpinBox()
+        self.afterRealTimeSpinBox.setRange(0, 1e6)
+        self.afterRealTimeSpinBox.setDecimals(2)
+        self.afterRealTimeSpinBox.setValue(self.line.get('TIME_AFTER', 30.0))
+        self.afterRealTimeUnitComboBox = QComboBox()
+        self.afterRealTimeUnitComboBox.addItems(["seconds", "minutes", "hours", "days", "orbital periods"])
+        self.afterRealTimeUnitComboBox.setCurrentText(self.line.get('TIME_AFTER_UNIT', 'minutes'))
+        afterRealTimeLayout = QHBoxLayout()
+        afterRealTimeLayout.addWidget(self.afterRealTimeSpinBox)
+        afterRealTimeLayout.addWidget(self.afterRealTimeUnitComboBox)
+        self.realTimeWidget = QWidget()
+        realTimeFormLayout = QFormLayout(self.realTimeWidget)
+        realTimeFormLayout.addRow("Time Before:", beforeRealTimeLayout)
+        realTimeFormLayout.addRow("Time After:", afterRealTimeLayout)
+        self.startTimeEdit = QDateTimeEdit()
+        self.startTimeEdit.setCalendarPopup(True)
+        self.startTimeEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        startTimeString = self.line.get('TIME_START')
+        if startTimeString:
+            dt = QDateTime.fromString(startTimeString, Qt.ISODate)
+            if dt.isValid():
+                self.startEdit.setDateTime(dt)
+        self.endTimeEdit = QDateTimeEdit()
+        self.endTimeEdit.setCalendarPopup(True)
+        self.endTimeEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        endTimeString = self.line.get('TIME_END')
+        if endTimeString:
+            dt = QDateTime.fromString(endTimeString, Qt.ISODate)
+            if dt.isValid():
+                self.endEdit.setDateTime(dt)
+        self.fixedTimeWidget = QWidget()
+        fixedTimeLayout = QFormLayout(self.fixedTimeWidget)
+        fixedTimeLayout.addRow("Start Time:", self.startTimeEdit)
+        fixedTimeLayout.addRow("End Time:", self.endTimeEdit)
+        self.timeStackedWidget = QStackedWidget()
+        self.timeStackedWidget.addWidget(self.realTimeWidget)
+        self.timeStackedWidget.addWidget(self.fixedTimeWidget)
+        self.realTimeRadio.toggled.connect(lambda checked: self.timeStackedWidget.setCurrentIndex(0 if checked else 1))
+        timeLayout = QVBoxLayout(self.timeGroup)
+        timeLayout.addLayout(timeModeLayout)
+        timeLayout.addWidget(self.timeStackedWidget)
 
         layout = QFormLayout(self)
         layout.addRow("Name:", self.nameEdit)
@@ -216,6 +275,7 @@ class LineSettingsPage(QWidget):
         layout.addRow("Width:", self.widthSpinBox)
         layout.addRow("Style:", self.styleComboBox)
         layout.addRow(self.axesGroup)
+        layout.addRow(self.timeGroup)
 
     def _updateName(self, text):
         self.line['NAME'] = text
@@ -256,20 +316,40 @@ class LineSettingsPage(QWidget):
     def _setButtonColor(colorButton, color):
         colorButton.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
 
-    def fillFirstCombo(self, combo: QComboBox):
+    def fillObjectCombo(self, combo: QComboBox):
         combo.blockSignals(True)
+        currentObject, currentData = combo.currentText(), combo.currentData()
         combo.clear()
         combo.addItem("TIME")
-        objectNames = {noradIndex: self.linePlot.lastPositions['PLOT_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in self.linePlot.visibleNorads}
-        combo.insertSeparator(combo.count())
-        for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):
-             combo.addItem(name, noradIndex)
+        if self.linePlot.lastPositions:
+            activeObjects = self.linePlot.lastPositions.get('PLOT_VIEW', {}).get('OBJECTS', {})
+            objectNames = {norad: activeObjects[norad]['NAME'] for norad in self.linePlot.visibleNorads if norad in activeObjects}
+            if objectNames:
+                combo.insertSeparator(combo.count())
+                for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):
+                     combo.addItem(name, noradIndex)
+        if currentObject == "TIME":
+            combo.setCurrentText("TIME")
+        elif currentData is not None:
+            index = combo.findData(currentData)
+            combo.setCurrentIndex(index if index != -1 else 0)
+        else:
+            combo.setCurrentIndex(0)
         combo.blockSignals(False)
 
-    def fillSecondCombo(self, combo: QComboBox):
+    def _fillVariableCombo(self, combo: QComboBox, objectCombo: QComboBox = None):
         combo.blockSignals(True)
-        for text in self.engineVariables:
-            combo.addItem(text)
+        currentVariable = combo.currentText()
+        combo.clear()
+        if objectCombo.currentText() == "TIME":
+            combo.addItem("UTC_FORMAT")
+            combo.addItem("LOC_FORMAT")
+        else:
+            for text in self.engineVariables:
+                combo.addItem(text)
+        if currentVariable:
+            newIndex = combo.findText(currentVariable)
+            combo.setCurrentIndex(newIndex if newIndex != -1 else 0)
         combo.blockSignals(False)
 
     def _swapAxes(self):
