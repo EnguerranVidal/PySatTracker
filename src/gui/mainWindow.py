@@ -189,6 +189,17 @@ class MainWindow(QMainWindow):
         self.resetCameraViewAction.setStatusTip('Reset 3D View Camera to Default Zoom and Rotation')
         self.resetCameraViewAction.triggered.connect(self._resetCameraView)
 
+        # TOGGLE PLAY/PAUSE
+        self.playPauseAction = QAction('&Pause Simulation', self)
+        self.playPauseAction.setIcon(self.icons['PAUSE'])
+        self.playPauseAction.setStatusTip('Pause Simulation')
+        self.playPauseAction.triggered.connect(self._togglePlayPause)
+        # RESUME SIMULATION (JUMP TO NOW)
+        self.resumeAction = QAction('&Resume Simulation', self)
+        self.resumeAction.setIcon(self.icons['RESUME'])
+        self.resumeAction.setStatusTip('Resume Simulation (Jump to Current Time)')
+        self.resumeAction.triggered.connect(self._resumeSimulation)
+
         # ADD PLOT TAB
         self.addPlotTabAction = QAction('&Add Plot Tab', self)
         self.addPlotTabAction.setIcon(self.icons['ADD_TAB'])
@@ -220,10 +231,18 @@ class MainWindow(QMainWindow):
         self.reportIssueAction.setIcon(self.icons['BUG'])
         self.reportIssueAction.setStatusTip('Report an Issue')
         self.reportIssueAction.triggered.connect(self._reportIssue)
+        # QUIT APPLICATION
+        self.quitAction = QAction('&Quit', self)
+        self.quitAction.setStatusTip('Quit Application')
+        self.quitAction.triggered.connect(self.close)
 
     def _createMenuBar(self):
         self.menuBar = self.menuBar()
         self._selectionDependentActions = []
+
+        ### FILE MENU ###
+        self.fileMenu = self.menuBar.addMenu('&File')
+        self.fileMenu.addAction(self.quitAction)
 
         ### VIEW MENU ###
         self.viewMenu = self.menuBar.addMenu('&View')
@@ -251,6 +270,21 @@ class MainWindow(QMainWindow):
         self.view3dMenu.addAction(self.resetCameraViewAction)
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showOrbitalPathsAction)
+        self.viewMenu.addSeparator()
+        # PLOT VIEW MENU
+        self.plotMenu = self.viewMenu.addMenu('&Plots')
+        self.plotTabMenu = self.plotMenu.addMenu('&Tabs')
+        self.plotTabMenu.addAction(self.addPlotTabAction)
+        self.plotTabMenu.addAction(self.removePlotTabAction)
+        self.plotTabMenu.addAction(self.removeAllPlotTabsAction)
+        self.plotMenu.addSeparator()
+        self.plotMenu.addAction(self.addLinePlotAction)
+
+        ### TOOLS MENU ###
+        self.toolsMenu = self.menuBar.addMenu('&Tools')
+        self.simulationMenu = self.toolsMenu.addMenu('&Simulation')
+        self.simulationMenu.addAction(self.playPauseAction)
+        self.simulationMenu.addAction(self.resumeAction)
 
         ### HELP MENU ###
         self.helpMenu = self.menuBar.addMenu('&Help')
@@ -279,8 +313,6 @@ class MainWindow(QMainWindow):
         # PLOT VIEW TOOLBAR
         self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
         self.plotViewToolBar.addAction(self.addPlotTabAction)
-        self.plotViewToolBar.addAction(self.removePlotTabAction)
-        self.plotViewToolBar.addAction(self.removeAllPlotTabsAction)
         self.plotViewToolBar.addSeparator()
         self.plotViewToolBar.addAction(self.addLinePlotAction)
 
@@ -331,6 +363,26 @@ class MainWindow(QMainWindow):
         self.icons['RESUME'] = QIcon(os.path.join(self.iconPath, 'resume.png'))
         self.icons['BUG'] = QIcon(os.path.join(self.iconPath, 'bug.png'))
         self.icons['GITHUB'] = QIcon(os.path.join(self.iconPath, 'github.png'))
+
+    def _togglePlayPause(self):
+        if self.centralViewWidget.timeline.isRunning:
+            self.centralViewWidget.timeline.toggleRequested.emit()
+            self.playPauseAction.setIcon(self.icons['PLAY'])
+            self.playPauseAction.setText('&Play Simulation')
+            self.playPauseAction.setStatusTip('Play Simulation')
+        else:
+            self.centralViewWidget.timeline.toggleRequested.emit()
+            self.playPauseAction.setIcon(self.icons['PAUSE'])
+            self.playPauseAction.setText('&Pause Simulation')
+            self.playPauseAction.setStatusTip('Pause Simulation')
+
+    def _resumeSimulation(self):
+        self.centralViewWidget.timeline.jumpToNowRequested.emit()
+        if not self.centralViewWidget.timeline.isRunning:
+            self.centralViewWidget.timeline.toggleRequested.emit()
+            self.playPauseAction.setIcon(self.icons['PAUSE'])
+            self.playPauseAction.setText('&Pause Simulation')
+            self.playPauseAction.setStatusTip('Pause Simulation')
 
     def _resetObject3dViewConfig(self):
         if self.selectedObject is None:
