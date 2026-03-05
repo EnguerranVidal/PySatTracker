@@ -1,11 +1,7 @@
-import os
-import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import numpy as np
-from PyQt5.QtCore import QObject, QTimer, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon, QPainter, QPen
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal, QSize, QDateTime, Qt, QTime
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QRect
 
 from src.core.orbitalEngine import OrbitalMechanicsEngine
 
@@ -15,29 +11,29 @@ class SimulationClock(QObject):
     speedChanged = pyqtSignal(float)
     stateChanged = pyqtSignal(bool)
 
-    def __init__(self, startTime=None, parent=None):
+    def __init__(self, startDateTime=None, parent=None):
         super().__init__(parent)
 
-        self.currentTime = startTime or datetime.utcnow()
+        self.currentDateTime = startDateTime or datetime.utcnow()
         self.speed = 1.0
         self.running = False
-        self._lastRealTime = datetime.utcnow()
+        self._lastRealDateTime = datetime.utcnow()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(30)
 
     def _tick(self):
         now = datetime.utcnow()
-        realDelta = (now - self._lastRealTime).total_seconds()
-        self._lastRealTime = now
+        realDelta = (now - self._lastRealDateTime).total_seconds()
+        self._lastRealDateTime = now
         if not self.running:
             return
         simDelta = timedelta(seconds=realDelta * self.speed)
-        self.currentTime += simDelta
-        self.timeChanged.emit(self.currentTime)
+        self.currentDateTime += simDelta
+        self.timeChanged.emit(self.currentDateTime)
 
     def play(self):
-        self._lastRealTime = datetime.utcnow()
+        self._lastRealDateTime = datetime.utcnow()
         self.running = True
         self.stateChanged.emit(True)
 
@@ -52,10 +48,13 @@ class SimulationClock(QObject):
         self.speed = max(0.0, speed)
         self.speedChanged.emit(self.speed)
 
-    def setTime(self, newTime: datetime):
-        self.currentTime = newTime
-        self._lastRealTime = datetime.utcnow()
-        self.timeChanged.emit(self.currentTime)
+    def getDateTime(self):
+        return self.currentDateTime
+
+    def setDateTime(self, newDateTime: datetime):
+        self.currentDateTime = newDateTime
+        self._lastRealDateTime = datetime.utcnow()
+        self.timeChanged.emit(self.currentDateTime)
 
 
 class OrbitWorker(QObject):
@@ -106,15 +105,12 @@ class OrbitWorker(QObject):
             try:
                 satellite = self.database.getSatrec(noradIndex)
                 state = self.engine.satelliteState(satellite, simulationTime)
-                # INSTANT POSITION
                 rEci, vEci = state['rECI'], state['vECI']
                 earth3dResults['OBJECTS'][noradIndex]['POSITION'] = {'R_ECI': rEci, 'V_ECI': vEci, 'ALTITUDE': state['altitude'], 'LATITUDE': np.rad2deg(state['latitude']), 'LONGITUDE': np.rad2deg(state['longitude'])}
-                # ORBIT PATH
                 positionsEci = self.engine.satelliteOrbitPath(satellite, simulationTime, nbPoints=361, nbPast=0.5, nbFuture=0.5)
                 earth3dResults['OBJECTS'][noradIndex]['ORBIT_PATH'] = positionsEci
             except Exception as e:
                 print(f"Worker error {noradIndex}: {e}")
-        # GMST FOR 3D VIEW
         earth3dResults['GMST'] = self.engine.greenwichMeridianSiderealTime(simulationTime)
         earth3dResults['SUN_DIRECTION_ECI'] = self.engine.solarDirectionEci(simulationTime)
         earth3dResults['SUN_DIRECTION_ECEF'] =  self.engine.eciToEcef(earth3dResults['SUN_DIRECTION_ECI'], simulationTime)
@@ -197,3 +193,42 @@ class AreaCycler:
     def get(self, step):
         assert step < 4
         return self.cycle[step]
+
+
+class SetTimeDialog(QDialog):
+    def __init__(self, initialDatetime=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Date and Time")
+        self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+        self.calendar = QCalendarWidget(self)
+        self.timeEdit = QTimeEdit(self)
+        self.timeEdit.setDisplayFormat("HH:mm:ss")
+        self.okButton = QPushButton("OK")
+        self.okButton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.okButton.clicked.connect(self.accept)
+        self.cancelButton = QPushButton("Cancel")
+        self.cancelButton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.cancelButton.clicked.connect(self.reject)
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(8, 8, 8, 8)
+        mainLayout.setSpacing(6)
+        mainLayout.addWidget(self.calendar)
+        mainLayout.addWidget(self.timeEdit)
+        buttonLayout = QHBoxLayout()
+        buttonLayout.setSpacing(6)
+        buttonLayout.addWidget(self.okButton)
+        buttonLayout.addWidget(self.cancelButton)
+        mainLayout.addLayout(buttonLayout)
+        if initialDatetime is None:
+            initialDatetime = QDateTime.currentDateTime()
+        self.setDatetime(initialDatetime)
+        self.adjustSize()
+        self.setFixedSize(self.sizeHint())
+
+
+    def setDatetime(self, dt):
+        self.calendar.setSelectedDate(dt.date())
+        self.timeEdit.setTime(dt.time())
+
+    def getDatetime(self):
+        return QDateTime(self.calendar.selectedDate(), self.timeEdit.time())

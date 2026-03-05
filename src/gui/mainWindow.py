@@ -12,7 +12,7 @@ from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
 from gui.plots.general import PlotViewTabWidget
 from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
-from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker
+from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, SetTimeDialog
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 
 
@@ -194,11 +194,11 @@ class MainWindow(QMainWindow):
         self.playPauseAction.setIcon(self.icons['PAUSE'])
         self.playPauseAction.setStatusTip('Pause Simulation')
         self.playPauseAction.triggered.connect(self._togglePlayPause)
-        # RESUME SIMULATION (JUMP TO NOW)
-        self.resumeAction = QAction('&Resume Simulation', self)
-        self.resumeAction.setIcon(self.icons['RESUME'])
-        self.resumeAction.setStatusTip('Resume Simulation (Jump to Current Time)')
-        self.resumeAction.triggered.connect(self._resumeSimulation)
+        # SET SIMULATION TIME
+        self.setSimulationTimeAction = QAction('&Set Simulation DateTime', self)
+        self.setSimulationTimeAction.setIcon(self.icons['TIME'])
+        self.setSimulationTimeAction.setStatusTip('Set Simulation DateTime')
+        self.setSimulationTimeAction.triggered.connect(self._setSimulationTime)
 
         # ADD PLOT TAB
         self.addPlotTabAction = QAction('&Add Plot Tab', self)
@@ -284,7 +284,7 @@ class MainWindow(QMainWindow):
         self.toolsMenu = self.menuBar.addMenu('&Tools')
         self.simulationMenu = self.toolsMenu.addMenu('&Simulation')
         self.simulationMenu.addAction(self.playPauseAction)
-        self.simulationMenu.addAction(self.resumeAction)
+        self.simulationMenu.addAction(self.setSimulationTimeAction)
 
         ### HELP MENU ###
         self.helpMenu = self.menuBar.addMenu('&Help')
@@ -361,6 +361,7 @@ class MainWindow(QMainWindow):
         self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
         self.icons['SLOW_DOWN'] = QIcon(os.path.join(self.iconPath, 'slow-down.png'))
         self.icons['RESUME'] = QIcon(os.path.join(self.iconPath, 'resume.png'))
+        self.icons['TIME'] = QIcon(os.path.join(self.iconPath, 'time.png'))
         self.icons['BUG'] = QIcon(os.path.join(self.iconPath, 'bug.png'))
         self.icons['GITHUB'] = QIcon(os.path.join(self.iconPath, 'github.png'))
 
@@ -383,6 +384,14 @@ class MainWindow(QMainWindow):
             self.playPauseAction.setIcon(self.icons['PAUSE'])
             self.playPauseAction.setText('&Pause Simulation')
             self.playPauseAction.setStatusTip('Pause Simulation')
+
+    def _setSimulationTime(self):
+        currentDatetime = self.centralViewWidget.clock.getDateTime()
+        dialog = SetTimeDialog(currentDatetime, parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            newDatetime = dialog.getDatetime()
+            self.centralViewWidget.clock.setDateTime(newDatetime)
+            self.centralViewWidget.timeline.setTime(newDatetime)
 
     def _resetObject3dViewConfig(self):
         if self.selectedObject is None:
@@ -873,7 +882,6 @@ class CentralViewWidget(QWidget):
         self.workerThread = QThread(self)
         self.orbitWorker = OrbitWorker(None)
         self.orbitWorker.moveToThread(self.workerThread)
-        self.clock.timeChanged.connect(self.orbitWorker.compute)
         self.workerThread.start()
 
         # TIMELINE WIDGET
@@ -883,7 +891,7 @@ class CentralViewWidget(QWidget):
         self.timeline.pauseRequested.connect(self.clock.pause)
         self.timeline.toggleRequested.connect(self.clock.toggle)
         self.timeline.speedRequested.connect(self._onSpeedRequested)
-        self.timeline.timeRequested.connect(self.clock.setTime)
+        self.timeline.timeRequested.connect(self.clock.setDateTime)
         self.timeline.jumpToNowRequested.connect(self._jumpToNow)
         self.timeline.timeFormatChanged.connect(self._onTimeModeChanged)
         self.clock.timeChanged.connect(self._onClockTimeChanged)
@@ -985,6 +993,7 @@ class CentralViewWidget(QWidget):
 
     def _onClockTimeChanged(self, simTime: datetime):
         self.timeline.setTime(simTime)
+        self.orbitWorker.compute(simTime)
 
     def _onTimeModeChanged(self, mode):
         self.timeLineModeChanged.emit(self.TIMELINE_MODES[mode])
@@ -995,7 +1004,7 @@ class CentralViewWidget(QWidget):
     def _jumpToNow(self):
         now = datetime.utcnow()
         self.timeline.resetReferenceTime(now)
-        self.clock.setTime(now)
+        self.clock.setDateTime(now)
 
     def closeEvent(self, event):
         self.orbitWorker.stop()
