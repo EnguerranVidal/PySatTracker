@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
             self.playPauseAction.setStatusTip('Pause Simulation')
 
     def _resumeSimulation(self):
-        self.centralViewWidget.timeline.jumpToNowRequested.emit()
+        self.centralViewWidget.timeline.resumeRequested.emit()
         if not self.centralViewWidget.timeline.isRunning:
             self.centralViewWidget.timeline.toggleRequested.emit()
             self.playPauseAction.setIcon(self.icons['PAUSE'])
@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
         currentDatetime = self.centralViewWidget.clock.getDateTime()
         dialog = SetTimeDialog(currentDatetime, parent=self)
         if dialog.exec_() == QDialog.Accepted:
-            newDatetime = dialog.getDatetime()
+            newDatetime = dialog.getDatetime().toPyDateTime()
             self.centralViewWidget.clock.setDateTime(newDatetime)
             self.centralViewWidget.timeline.setTime(newDatetime)
 
@@ -892,7 +892,7 @@ class CentralViewWidget(QWidget):
         self.timeline.toggleRequested.connect(self.clock.toggle)
         self.timeline.speedRequested.connect(self._onSpeedRequested)
         self.timeline.timeRequested.connect(self.clock.setDateTime)
-        self.timeline.jumpToNowRequested.connect(self._jumpToNow)
+        self.timeline.resumeRequested.connect(self._resume)
         self.timeline.timeFormatChanged.connect(self._onTimeModeChanged)
         self.clock.timeChanged.connect(self._onClockTimeChanged)
         self.clock.stateChanged.connect(self.timeline.setRunning)
@@ -1001,9 +1001,9 @@ class CentralViewWidget(QWidget):
     def _onSpeedRequested(self, speed):
         self.clock.setSpeed(speed)
 
-    def _jumpToNow(self):
+    def _resume(self):
         now = datetime.utcnow()
-        self.timeline.resetReferenceTime(now)
+        self.timeline.setTime(now)
         self.clock.setDateTime(now)
 
     def closeEvent(self, event):

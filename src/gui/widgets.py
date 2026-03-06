@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-from PyQt5.QtCore import pyqtSignal, QSize
-from PyQt5.QtGui import QPainter, QPen, QPixmap, QIcon
+from PyQt5.QtCore import pyqtSignal, QSize, QDateTime, QEvent, QPointF
+from PyQt5.QtGui import QPainter, QPen, QPixmap, QIcon, QPolygonF
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 
@@ -42,7 +42,7 @@ class TimelineWidget(QWidget):
     speedRequested = pyqtSignal(float)
     timeFormatChanged = pyqtSignal(int)
     timeRequested = pyqtSignal(datetime)
-    jumpToNowRequested = pyqtSignal()
+    resumeRequested = pyqtSignal()
 
     def __init__(self, parent = None, currentDir:str = None):
         super().__init__(parent)
@@ -58,10 +58,12 @@ class TimelineWidget(QWidget):
         self.timeButton = QPushButton("UTC ---------- --:--:--.---")
         self.timeButton.setFlat(True)
         self.timeButton.setMinimumWidth(160)
+        self.timeButton.installEventFilter(self)
+        self.timeButton.setToolTip("Left click: set simulation time\nRight click: change time display mode")
         self.slowDownButton = SquareIconButton(os.path.join(self.iconPath, 'slow-down.png'))
         self.playPauseButton = SquareIconButton(os.path.join(self.iconPath, 'pause.png'))
         self.fastForwardButton = SquareIconButton(os.path.join(self.iconPath, 'fast-forward.png'))
-        self.jumpToNowButton = SquareIconButton(os.path.join(self.iconPath, 'resume.png'))
+        self.resumeButton = SquareIconButton(os.path.join(self.iconPath, 'resume.png'))
         self.speedButton = QPushButton("x1")
         self.speedButton.setMinimumWidth(40)
         self.timeSlider = GraduatedTimeSlider()
@@ -74,20 +76,20 @@ class TimelineWidget(QWidget):
         layout.addWidget(self.slowDownButton)
         layout.addWidget(self.playPauseButton)
         layout.addWidget(self.fastForwardButton)
-        layout.addWidget(self.jumpToNowButton)
+        layout.addWidget(self.resumeButton)
         layout.addWidget(self.speedButton)
         layout.addWidget(self.timeSlider, stretch=1)
 
         # CONNECTIONS
-        self.timeButton.clicked.connect(self._cycleDisplayMode)
+        self.timeButton.clicked.connect(self._openTimeDialog)
         self.slowDownButton.clicked.connect(self._slow)
         self.fastForwardButton.clicked.connect(self._fast)
         self.playPauseButton.clicked.connect(self.toggleRequested)
-        self.jumpToNowButton.clicked.connect(self.jumpToNowRequested)
+        self.resumeButton.clicked.connect(self._resume)
         self.speedButton.clicked.connect(self._resetSpeed)
-        self.timeSlider.slider.valueChanged.connect(self._scrub)
-        self.timeSlider.slider.sliderPressed.connect(self._beginScrub)
-        self.timeSlider.slider.sliderReleased.connect(self._endScrub)
+        self.timeSlider.slider.valueChanged.connect(self._scrubSlider)
+        self.timeSlider.slider.sliderPressed.connect(self._beginScrubSlider)
+        self.timeSlider.slider.sliderReleased.connect(self._endScrubSlider)
 
     def _slow(self):
         if self.speedIndex > 0:
@@ -106,18 +108,31 @@ class TimelineWidget(QWidget):
         self.speedRequested.emit(self.allowedSpeeds[self.speedIndex])
         self.setSpeed(self.allowedSpeeds[self.speedIndex])
 
-    def _beginScrub(self):
+    def _resume(self):
+        self.resumeRequested.emit()
+        if not self.isRunning:
+            self.playRequested.emit()
+
+    def _beginScrubSlider(self):
         if self.isRunning:
             self.pauseRequested.emit()
 
-    def _scrub(self, value):
+    def _scrubSlider(self, value):
         if self.ignoreSlider:
             return
         self.timeRequested.emit(self.referenceTime + timedelta(seconds=value))
 
-    def _endScrub(self):
+    def _endScrubSlider(self):
         if self.isRunning:
             self.playRequested.emit()
+
+    def _openTimeDialog(self):
+        from src.gui.objects import SetTimeDialog
+        current = self.referenceTime + timedelta(seconds=self.timeSlider.slider.value())
+        dialog = SetTimeDialog(QDateTime(current), parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            newTime = dialog.getDatetime().toPyDateTime()
+            self.timeRequested.emit(newTime)
 
     def _cycleDisplayMode(self):
         self.displayMode = (self.displayMode + 1) % 3
@@ -135,12 +150,25 @@ class TimelineWidget(QWidget):
         if self.displayMode == 0:
             text = simTime.strftime("UTC %Y-%m-%d %H:%M:%S.%f")[:-4]
         elif self.displayMode == 1:
-            local_time = simTime.replace(tzinfo=timezone.utc).astimezone()
-            text = local_time.strftime("LOC %Y-%m-%d %H:%M:%S.%f")[:-4]
+            localDateTime = simTime.replace(tzinfo=timezone.utc).astimezone()
+            text = localDateTime.strftime("LOC %Y-%m-%d %H:%M:%S.%f")[:-4]
         else:
             timeDifference = int((simTime - realNow).total_seconds())
             sign = "+" if timeDifference >= 0 else "-"
-            text = f"Δ {sign}{abs(timeDifference)}s"
+            remaining = abs(timeDifference)
+            years = int(remaining // (365 * 86400))
+            remaining %= (365 * 86400)
+            months = int(remaining // (30 * 86400))
+            remaining %= (30 * 86400)
+            days = int(remaining // 86400)
+            remaining %= 86400
+            hours = int(remaining // 3600)
+            remaining %= 3600
+            minutes = int(remaining // 60)
+            remaining %= 60
+            seconds = int(remaining)
+            fraction = int((remaining - seconds) * 100)
+            text = f"Δ {sign}{years:04}-{months:02}-{days:02}-{hours:02}-{minutes:02}-{seconds:02}.{fraction:02}"
         self.timeButton.setText(text)
         if not self.timeSlider.slider.isSliderDown():
             self.ignoreSlider = True
@@ -159,11 +187,12 @@ class TimelineWidget(QWidget):
     def setNow(self, now: datetime):
         self.referenceTime = now
 
-    def resetReferenceTime(self, t: datetime):
-        self.referenceTime = t
-        self.ignoreSlider = True
-        self.timeSlider.slider.setValue(0)
-        self.ignoreSlider = False
+    def eventFilter(self, obj, event):
+        if obj == self.timeButton and event.type() == QEvent.MouseButtonPress:
+            if event.button() == Qt.RightButton:
+                self._cycleDisplayMode()
+                return True
+        return super().eventFilter(obj, event)
 
 
 class GraduatedTimeSlider(QWidget):
@@ -190,6 +219,10 @@ class GraduatedTimeSlider(QWidget):
                 painter.drawLine(int(x), rectangle.top() - 8, int(x), rectangle.top())
             else:
                 painter.drawLine(int(x), rectangle.top() - 4, int(x), rectangle.top())
+        xSliderZeroValue = rectangle.left() + (0 - minimumValue) / span * rectangle.width()
+        arrowPoints = QPolygonF([QPointF(xSliderZeroValue - 4, rectangle.top() - 10), QPointF(xSliderZeroValue + 4, rectangle.top() - 10), QPointF(xSliderZeroValue, rectangle.top() - 2)])
+        painter.setBrush(Qt.gray)
+        painter.drawPolygon(arrowPoints)
 
     def setRangeHours(self, hours: int):
         self.slider.setRange(-3600 * hours, 3600 * hours)

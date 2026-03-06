@@ -1,8 +1,11 @@
+from datetime import datetime
+
 from pyqtgraph import PlotWidget, mkPen
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
+from gui.objects import SetTimeDialog
 from src.core.orbitalEngine import OrbitalMechanicsEngine
 
 class LinePlot(QWidget):

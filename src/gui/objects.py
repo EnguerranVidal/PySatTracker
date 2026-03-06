@@ -200,9 +200,9 @@ class SetTimeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Select Date and Time")
         self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
-        self.calendar = QCalendarWidget(self)
-        self.timeEdit = QTimeEdit(self)
-        self.timeEdit.setDisplayFormat("HH:mm:ss")
+        self.dateTimeEdit = QDateTimeEdit(self)
+        self.dateTimeEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.dateTimeEdit.setCalendarPopup(True)
         self.okButton = QPushButton("OK")
         self.okButton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.okButton.clicked.connect(self.accept)
@@ -212,8 +212,7 @@ class SetTimeDialog(QDialog):
         mainLayout = QVBoxLayout(self)
         mainLayout.setContentsMargins(8, 8, 8, 8)
         mainLayout.setSpacing(6)
-        mainLayout.addWidget(self.calendar)
-        mainLayout.addWidget(self.timeEdit)
+        mainLayout.addWidget(self.dateTimeEdit)
         buttonLayout = QHBoxLayout()
         buttonLayout.setSpacing(6)
         buttonLayout.addWidget(self.okButton)
@@ -223,12 +222,10 @@ class SetTimeDialog(QDialog):
             initialDatetime = QDateTime.currentDateTime()
         self.setDatetime(initialDatetime)
         self.adjustSize()
-        self.setFixedSize(self.sizeHint())
-
+        self.setFixedWidth(300)
 
     def setDatetime(self, dt):
-        self.calendar.setSelectedDate(dt.date())
-        self.timeEdit.setTime(dt.time())
+        self.dateTimeEdit.setDateTime(dt)
 
     def getDatetime(self):
-        return QDateTime(self.calendar.selectedDate(), self.timeEdit.time())
+        return self.dateTimeEdit.dateTime()
