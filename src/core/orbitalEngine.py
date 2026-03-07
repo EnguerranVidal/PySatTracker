@@ -194,6 +194,8 @@ class OrbitalMechanicsEngine:
         sunLongitude, sunLatitude, _ = self.subSolarPoint(dt, radians=True)
         longitudes = np.linspace(-np.pi, np.pi, nbPoints)
         latitudes = np.arctan(-np.cos(longitudes - sunLongitude) / np.tan(sunLatitude))
+        order = np.argsort(longitudes)
+        longitudes, latitudes = longitudes[order], latitudes[order]
         if not radians:
             return np.rad2deg(longitudes), np.rad2deg(latitudes)
         return longitudes, latitudes

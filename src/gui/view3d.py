@@ -59,7 +59,7 @@ class View3dWidget(QOpenGLWidget):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, 0)
-            print("Earth texture loaded successfully")
+            print("Earth earthTexture loaded successfully")
         except Exception as e:
             print("Failed to load earth.jpg:", e)
             self.earthTextureIndex = 0
@@ -75,7 +75,7 @@ class View3dWidget(QOpenGLWidget):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, 0)
-            print("Earth lights texture loaded successfully")
+            print("Earth lights earthTexture loaded successfully")
         except Exception as e:
             print("Failed to load earth_lights.jpg:", e)
             self.lightsTextureIndex = 0

@@ -1,15 +1,16 @@
 import os
-
 import numpy as np
 import imageio
 import pyqtgraph as pg
+from OpenGL.GL import *
+from OpenGL.GLU import *
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
 from PyQt5.QtWidgets import *
 
 
-class Map2dWidget(QWidget):
+class OldMap2dWidget(QWidget):
     objectSelected = pyqtSignal(list)
     ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
@@ -440,3 +441,278 @@ class Object2dMapConfigDockWidget(QDockWidget):
         self._currentConfig['FOOTPRINT']['MODE'] = self.MODES[self.footprintModeCombo.currentText()]
         self._currentConfig['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
         self.configChanged.emit(self.noradIndex, self._currentConfig)
+
+
+class Map2dWidget(QOpenGLWidget):
+    objectSelected = pyqtSignal(list)
+    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
+
+    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg'):
+        super().__init__(parent)
+        self.mapImagePath = mapImagePath
+        self.zoom, self.offset, self.lastMousePos = 1.0, np.array([0.0, 0.0]), None
+        self.selectedObject, self.hoveredObject, self.hoverRadius = None, None, 20
+        self.displayConfiguration = {}
+        self.objectPositions, self.groundTracks, self.footprints = {}, {}, {}
+        self.sunLongitude, self.sunLatitude = None, None
+        self.earthTexture = None
+        self.terminator = None
+        self.vernal = None
+        self._loadEarthTexture()
+
+    def _loadEarthTexture(self):
+        if not os.path.exists(self.mapImagePath):
+            raise FileNotFoundError(self.mapImagePath)
+        mapImage = imageio.imread(self.mapImagePath)
+        mapImage = np.flipud(mapImage)
+        self.mapHeight, self.mapWidth = mapImage.shape[:2]
+        self.earthTextureData = mapImage.astype(np.uint8)
+
+    def initializeGL(self):
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_POINT_SMOOTH)
+        glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
+        self.earthTexture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        mapImage = self.earthTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mapImage.shape[1], mapImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, mapImage)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+    def _lonlatToCartesian(self, longitude, latitude):
+        longitude, latitude = np.asarray(longitude), np.asarray(latitude)
+        return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
+
+    @staticmethod
+    def _splitWrapSegment(longitudes, latitudes, threshold=180):
+        longitudes, latitudes = np.asarray(longitudes), np.asarray(latitudes)
+        if longitudes.size < 2:
+            return [(longitudes, latitudes)]
+        diffLongitudes = np.diff(longitudes)
+        jumps = np.abs(diffLongitudes) > threshold
+        if not np.any(jumps):
+            return [(longitudes, latitudes)]
+        splitIndices = np.where(jumps)[0] + 1
+        longitudeSegments = np.split(longitudes, splitIndices)
+        latitudeSegments = np.split(latitudes, splitIndices)
+        for k, index in enumerate(splitIndices):
+            # LINEAR INTERPOLATION
+            previousLongitude, nextLongitude = longitudes[index - 1], longitudes[index]
+            previousLatitude, nextLatitude = latitudes[index - 1], latitudes[index]
+            if previousLongitude > nextLongitude:
+                longitudeA, longitudeB = previousLongitude, nextLongitude + 360
+                latitudeA, latitudeB = previousLatitude, nextLatitude
+                borderA, borderB = 180, -180
+            else:
+                longitudeA, longitudeB = nextLongitude + 360, previousLongitude
+                latitudeA, latitudeB = nextLatitude, previousLatitude
+                borderA, borderB = -180, 180
+            a = (latitudeB - latitudeA) / (longitudeB - longitudeA)
+            b = latitudeA - a * longitudeA
+            latitudeBorder = a * 180 + b
+            # ADDING BORDER POINTS TO SEGMENTS
+            longitudeSegments[k] = np.append(longitudeSegments[k], borderA)
+            latitudeSegments[k] = np.append(latitudeSegments[k], latitudeBorder)
+            longitudeSegments[k + 1] = np.insert(longitudeSegments[k + 1], 0, borderB)
+            latitudeSegments[k + 1] = np.insert(latitudeSegments[k + 1], 0, latitudeBorder)
+        return list(zip(longitudeSegments, latitudeSegments))
+
+    def _computeViewRect(self):
+        widgetAspectRatio = self.width() / self.height()
+        mapAspectRatio = self.mapWidth / self.mapHeight
+        viewWidth, viewHeight = self.mapWidth * self.zoom, self.mapHeight * self.zoom
+        if widgetAspectRatio > mapAspectRatio:
+            viewWidth = viewHeight * widgetAspectRatio
+        else:
+            viewHeight = viewWidth / widgetAspectRatio
+        xCenter, yCenter = self.mapWidth / 2 - self.offset[0], self.mapHeight / 2 - self.offset[1]
+        left, right, bottom, top = xCenter - viewWidth / 2, xCenter + viewWidth / 2, yCenter - viewHeight / 2, yCenter + viewHeight / 2
+        return left, right, bottom, top
+
+    def _screenToWorld(self, px, py):
+        left, right, bottom, top = self._computeViewRect()
+        xWorld, yWorld = left + (px / self.width()) * (right - left), bottom + (1 - py / self.height()) * (top - bottom)
+        return xWorld, yWorld
+
+    def paintGL(self):
+        glClearColor(0.12, 0.13, 0.14, 1)
+        glClear(GL_COLOR_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        left, right, bottom, top = self._computeViewRect()
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        glOrtho(left, right, bottom, top, -1, 1)
+        self._drawEarth()
+        self._drawNight()
+        self._drawGroundTracks()
+        self._drawFootprints()
+        self._drawObjects()
+        self._drawSun()
+        self._drawVernal()
+
+    def _drawEarth(self):
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        glColor4f(1, 1, 1, 1)
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex2f(0, 0)
+        glTexCoord2f(1, 0)
+        glVertex2f(self.mapWidth, 0)
+        glTexCoord2f(1, 1)
+        glVertex2f(self.mapWidth, self.mapHeight)
+        glTexCoord2f(0, 1)
+        glVertex2f(0, self.mapHeight)
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
+
+    def _drawGroundTracks(self):
+        glColor3f(0.2, 0.8, 1)
+        for norad, track in self.groundTracks.items():
+            lons = track['LONGITUDE']
+            lats = track['LATITUDE']
+            segments = self._splitWrapSegment(lons, lats)
+            for segLon, segLat in segments:
+                glBegin(GL_LINE_STRIP)
+                for lon, lat in zip(segLon, segLat):
+                    x, y = self._lonlatToCartesian(lon, lat)
+                    glVertex2f(x, y)
+                glEnd()
+
+    def _drawFootprints(self):
+        glColor3f(1, 0.5, 0)
+        for norad, footprint in self.footprints.items():
+            lons = footprint['LONGITUDE']
+            lats = footprint['LATITUDE']
+            segments = self._splitWrapSegment(lons, lats)
+            for segLon, segLat in segments:
+                glBegin(GL_LINE_STRIP)
+                for lon, lat in zip(segLon, segLat):
+                    x, y = self._lonlatToCartesian(lon, lat)
+                    glVertex2f(x, y)
+                glEnd()
+
+    def _drawObjects(self):
+        glPointSize(6)
+        glBegin(GL_POINTS)
+        for norad, pos in self.objectPositions.items():
+            lon = pos['POSITION']['LONGITUDE']
+            lat = pos['POSITION']['LATITUDE']
+            x, y = self._lonlatToCartesian(lon, lat)
+            if norad == self.selectedObject:
+                glColor3f(1, 1, 0)
+            else:
+                glColor3f(1, 1, 1)
+            glVertex2f(x, y)
+        glEnd()
+
+    def _drawSun(self):
+        if self.sunLongitude is None:
+            return
+        x, y = self._lonlatToCartesian(self.sunLongitude, self.sunLatitude)
+        glPointSize(20)
+        glColor3f(1, 1, 0)
+        glBegin(GL_POINTS)
+        glVertex2f(x, y)
+        glEnd()
+
+    def _drawVernal(self):
+        if self.vernal is None:
+            return
+        x, y = self._lonlatToCartesian(self.vernal['LONGITUDE'], self.vernal['LATITUDE'])
+        glPointSize(10)
+        glColor3f(0, 1, 0)
+        glBegin(GL_POINTS)
+        glVertex2f(x, y)
+        glEnd()
+
+    def _drawNight(self):
+        if self.terminator is None:
+            return
+        longitudes, latitudes = np.array(self.terminator['LONGITUDE']), np.array(self.terminator['LATITUDE'])
+        longitudes = (longitudes + 180) % 360 - 180
+        sortingIndices = np.argsort(longitudes)
+        longitudes, latitudes = longitudes[sortingIndices], latitudes[sortingIndices]
+        border = 0 if self.sunLatitude >= 0 else self.mapHeight
+        vertices = []
+        for longitude, latitude in zip(longitudes, latitudes):
+            x, y = self._lonlatToCartesian(longitude, latitude)
+            vertices.append([x, y, 0.0])
+        vertices.append([self.mapWidth, y, 0.0])
+        vertices.append([self.mapWidth, border, 0.0])
+        vertices.append([0, border, 0.0])
+        tesseract = gluNewTess()
+        gluTessCallback(tesseract, GLU_TESS_BEGIN, glBegin)
+        gluTessCallback(tesseract, GLU_TESS_VERTEX, glVertex3dv)
+        gluTessCallback(tesseract, GLU_TESS_END, glEnd)
+        gluTessCallback(tesseract, GLU_TESS_ERROR, lambda e: print(f"Tessellation error: {e}"))
+        glColor4f(0, 0, 0, 0.35)
+        gluTessBeginPolygon(tesseract, None)
+        gluTessBeginContour(tesseract)
+        for v in vertices:
+            gluTessVertex(tesseract, v, v)
+        gluTessEndContour(tesseract)
+        gluTessEndPolygon(tesseract)
+        gluDeleteTess(tesseract)
+
+    def updateMap(self, positions, visibleNorads, selectedNorad, displayConfiguration):
+        self.selectedObject = selectedNorad
+        self.displayConfiguration = displayConfiguration
+        mapData = positions['2D_MAP']
+        self.sunLongitude, self.sunLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
+        self.vernal = mapData['VERNAL']
+        self.terminator = mapData['NIGHT']
+        self.objectPositions.clear()
+        self.groundTracks.clear()
+        self.footprints.clear()
+        for norad in visibleNorads:
+            if norad not in mapData['OBJECTS']:
+                continue
+            obj = mapData['OBJECTS'][norad]
+            self.objectPositions[norad] = obj
+            if 'GROUND_TRACK' in obj:
+                self.groundTracks[norad] = obj['GROUND_TRACK']
+            if 'VISIBILITY' in obj:
+                self.footprints[norad] = obj['VISIBILITY']
+        self.update()
+
+    def wheelEvent(self, event):
+        xBefore, yBefore = self._screenToWorld(event.x(), event.y())
+        if event.angleDelta().y() > 0:
+            self.zoom *= 0.9
+        else:
+            self.zoom *= 1.1
+        xAfter, yAfter = self._screenToWorld(event.x(), event.y())
+        self.offset[0] += xAfter - xBefore
+        self.offset[1] += yAfter - yBefore
+        self.update()
+
+    def mousePressEvent(self, event):
+        self.lastMousePos = event.pos()
+
+    def mouseMoveEvent(self, event):
+        if self.lastMousePos is None:
+            return
+        dx = (event.x() - self.lastMousePos.x()) / self.width() * self.mapWidth
+        dy = (event.y() - self.lastMousePos.y()) / self.height() * self.mapHeight
+        self.offset[0] += dx * self.zoom
+        self.offset[1] -= dy * self.zoom
+        self.lastMousePos = event.pos()
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        x = event.x() / self.width() * self.mapWidth
+        y = (1 - event.y() / self.height()) * self.mapHeight
+        closest = None
+        closestDist = 999
+        for norad, pos in self.objectPositions.items():
+            xObject, yObject = self._lonlatToCartesian(pos['POSITION']['LONGITUDE'], pos['POSITION']['LATITUDE'])
+            dist = np.hypot(xObject - x, yObject - y)
+            if dist < self.hoverRadius and dist < closestDist:
+                closest = norad
+                closestDist = dist
+        if closest is not None:
+            self.objectSelected.emit([closest])
