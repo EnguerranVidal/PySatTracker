@@ -471,6 +471,10 @@ class Map2dWidget(QOpenGLWidget):
     def initializeGL(self):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_LINE_SMOOTH)
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
+        glEnable(GL_POLYGON_SMOOTH)
+        glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST)
         glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
         self.earthTexture = glGenTextures(1)
@@ -531,10 +535,16 @@ class Map2dWidget(QOpenGLWidget):
         left, right, bottom, top = xCenter - viewWidth / 2, xCenter + viewWidth / 2, yCenter - viewHeight / 2, yCenter + viewHeight / 2
         return left, right, bottom, top
 
-    def _screenToWorld(self, px, py):
+    def _screenCoordinateToWorld(self, px, py):
         left, right, bottom, top = self._computeViewRect()
         xWorld, yWorld = left + (px / self.width()) * (right - left), bottom + (1 - py / self.height()) * (top - bottom)
         return xWorld, yWorld
+
+    def _pixelToWorldDistance(self, pixelDistance):
+        left, right, bottom, top = self._computeViewRect()
+        worldWidth = right - left
+        worldHeight = top - bottom
+        return pixelDistance * worldWidth / self.width(), pixelDistance * worldHeight / self.height()
 
     def paintGL(self):
         glClearColor(0.12, 0.13, 0.14, 1)
@@ -546,12 +556,17 @@ class Map2dWidget(QOpenGLWidget):
         glLoadIdentity()
         glOrtho(left, right, bottom, top, -1, 1)
         self._drawEarth()
-        self._drawNight()
-        self._drawGroundTracks()
-        self._drawFootprints()
+        if self.displayConfiguration.get('SHOW_NIGHT', False):
+            self._drawNight()
+        if self.displayConfiguration.get('SHOW_GROUND_TRACK', False):
+            self._drawGroundTracks()
+        if self.displayConfiguration.get('SHOW_FOOTPRINT', False):
+            self._drawFootprints()
         self._drawObjects()
-        self._drawSun()
-        self._drawVernal()
+        if self.displayConfiguration.get('SHOW_SUN', False):
+            self._drawSun()
+        if self.displayConfiguration.get('SHOW_VERNAL', False):
+            self._drawVernal()
 
     def _drawEarth(self):
         glEnable(GL_TEXTURE_2D)
@@ -569,64 +584,117 @@ class Map2dWidget(QOpenGLWidget):
         glEnd()
         glDisable(GL_TEXTURE_2D)
 
+    @staticmethod
+    def _shouldRender(mode: str, isSelected: bool):
+        if mode == "ALWAYS":
+            return True
+        if mode == "WHEN_SELECTED":
+            return isSelected
+        return False  # NEVER
+
     def _drawGroundTracks(self):
         glColor3f(0.2, 0.8, 1)
-        for norad, track in self.groundTracks.items():
-            lons = track['LONGITUDE']
-            lats = track['LATITUDE']
-            segments = self._splitWrapSegment(lons, lats)
-            for segLon, segLat in segments:
-                glBegin(GL_LINE_STRIP)
-                for lon, lat in zip(segLon, segLat):
-                    x, y = self._lonlatToCartesian(lon, lat)
-                    glVertex2f(x, y)
-                glEnd()
+        for noradIndex, track in self.groundTracks.items():
+            isSelected = (noradIndex == self.selectedObject)
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected):
+                color, width = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+                glLineWidth(width)
+                segments = self._splitWrapSegment(track['LONGITUDE'], track['LATITUDE'])
+                for segLon, segLat in segments:
+                    glBegin(GL_LINE_STRIP)
+                    for lon, lat in zip(segLon, segLat):
+                        x, y = self._lonlatToCartesian(lon, lat)
+                        glVertex2f(x, y)
+                    glEnd()
+                lastLon, lastLat = segments[-1]
+                if len(lastLon) >= 2:
+                    x0, y0 = self._lonlatToCartesian(lastLon[-2], lastLat[-2])
+                    x1, y1 = self._lonlatToCartesian(lastLon[-1], lastLat[-1])
+                    self._drawGroundTrackArrow(x0, y0, x1, y1, color)
 
     def _drawFootprints(self):
-        glColor3f(1, 0.5, 0)
-        for norad, footprint in self.footprints.items():
-            lons = footprint['LONGITUDE']
-            lats = footprint['LATITUDE']
-            segments = self._splitWrapSegment(lons, lats)
-            for segLon, segLat in segments:
-                glBegin(GL_LINE_STRIP)
-                for lon, lat in zip(segLon, segLat):
-                    x, y = self._lonlatToCartesian(lon, lat)
-                    glVertex2f(x, y)
-                glEnd()
+        for noradIndex, footprint in self.footprints.items():
+            isSelected = (noradIndex == self.selectedObject)
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected):
+                color, width = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+                glLineWidth(width)
+                segments = self._splitWrapSegment(footprint['LONGITUDE'], footprint['LATITUDE'])
+                for segLon, segLat in segments:
+                    glBegin(GL_LINE_STRIP)
+                    for lon, lat in zip(segLon, segLat):
+                        x, y = self._lonlatToCartesian(lon, lat)
+                        glVertex2f(x, y)
+                    glEnd()
 
     def _drawObjects(self):
-        glPointSize(6)
-        glBegin(GL_POINTS)
-        for norad, pos in self.objectPositions.items():
-            lon = pos['POSITION']['LONGITUDE']
-            lat = pos['POSITION']['LATITUDE']
-            x, y = self._lonlatToCartesian(lon, lat)
-            if norad == self.selectedObject:
-                glColor3f(1, 1, 0)
+        for noradIndex, pos in self.objectPositions.items():
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            color, size = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
+            x, y = self._lonlatToCartesian(pos['POSITION']['LONGITUDE'], pos['POSITION']['LATITUDE'])
+            glPointSize(size)
+            if noradIndex == self.selectedObject:
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
             else:
                 glColor3f(1, 1, 1)
+            glBegin(GL_POINTS)
             glVertex2f(x, y)
+            glEnd()
+
+    def _drawGroundTrackArrow(self, x0, y0, x1, y1, color):
+        dx, dy = x1 - x0, y1 - y0
+        length = np.hypot(dx, dy)
+        if length < 1e-9:
+            return
+        ux, uy = dx / length, dy / length
+        xPixels, yPixels = -uy, ux
+        arrowLength, arrowWidth, maxLen = 1.2 * length, 0.7 * length, 0.04 * self.mapWidth
+        arrowLength, arrowWidth = min(arrowLength, maxLen), min(arrowWidth, maxLen * 0.6)
+        xArrowTip, yArrowTip = x1, y1
+        xArrowBase, yArrowBase = x1 - ux * arrowLength, y1 - uy * arrowLength
+        xLeft, yLeft = xArrowBase + xPixels * arrowWidth, yArrowBase + yPixels * arrowWidth
+        xRight, yRight = xArrowBase - xPixels * arrowWidth, yArrowBase - yPixels * arrowWidth
+        glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+        glBegin(GL_TRIANGLES)
+        glVertex2f(xArrowTip, yArrowTip)
+        glVertex2f(xLeft, yLeft)
+        glVertex2f(xRight, yRight)
         glEnd()
 
     def _drawSun(self):
-        if self.sunLongitude is None:
-            return
         x, y = self._lonlatToCartesian(self.sunLongitude, self.sunLatitude)
-        glPointSize(20)
-        glColor3f(1, 1, 0)
-        glBegin(GL_POINTS)
+        innerRadiusPx = 6
+        outerRadiusPx = 9
+        innerRadiusX, innerRadiusY = self._pixelToWorldDistance(innerRadiusPx)
+        outerRadiusX, outerRadiusY = self._pixelToWorldDistance(outerRadiusPx)
+        segments = 32
+        glColor3f(1.0, 0.7, 0.0)
+        glBegin(GL_TRIANGLE_FAN)
         glVertex2f(x, y)
+        for a in np.linspace(0, 2 * np.pi, segments):
+            glVertex2f(x + outerRadiusX * np.cos(a), y + outerRadiusY * np.sin(a))
+        glEnd()
+        glColor3f(1.0, 1.0, 0.2)
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(x, y)
+        for a in np.linspace(0, 2 * np.pi, segments):
+            glVertex2f(x + innerRadiusX * np.cos(a), y + innerRadiusY * np.sin(a))
         glEnd()
 
     def _drawVernal(self):
-        if self.vernal is None:
-            return
         x, y = self._lonlatToCartesian(self.vernal['LONGITUDE'], self.vernal['LATITUDE'])
-        glPointSize(10)
-        glColor3f(0, 1, 0)
-        glBegin(GL_POINTS)
-        glVertex2f(x, y)
+        sizePx = 10
+        sizeX, sizeY = self._pixelToWorldDistance(sizePx)
+        glLineWidth(2)
+        glColor3f(0.0, 1.0, 0.0)
+        glBegin(GL_LINES)
+        glVertex2f(x - sizeX, y)
+        glVertex2f(x + sizeX, y)
+        glVertex2f(x, y - sizeY)
+        glVertex2f(x, y + sizeY)
         glEnd()
 
     def _drawNight(self):
@@ -680,12 +748,12 @@ class Map2dWidget(QOpenGLWidget):
         self.update()
 
     def wheelEvent(self, event):
-        xBefore, yBefore = self._screenToWorld(event.x(), event.y())
+        xBefore, yBefore = self._screenCoordinateToWorld(event.x(), event.y())
         if event.angleDelta().y() > 0:
             self.zoom *= 0.9
         else:
             self.zoom *= 1.1
-        xAfter, yAfter = self._screenToWorld(event.x(), event.y())
+        xAfter, yAfter = self._screenCoordinateToWorld(event.x(), event.y())
         self.offset[0] += xAfter - xBefore
         self.offset[1] += yAfter - yBefore
         self.update()
