@@ -4,6 +4,8 @@ import imageio
 import pyqtgraph as pg
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GLUT import *
+from PyQt5.QtGui import QFont, QColor, QPainter
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
@@ -458,6 +460,7 @@ class Map2dWidget(QOpenGLWidget):
         self.earthTexture = None
         self.terminator = None
         self.vernal = None
+        self.setMouseTracking(True)
         self._loadEarthTexture()
 
     def _loadEarthTexture(self):
@@ -477,6 +480,7 @@ class Map2dWidget(QOpenGLWidget):
         glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST)
         glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
+        glutInit()
         self.earthTexture = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.earthTexture)
         mapImage = self.earthTextureData
@@ -535,16 +539,41 @@ class Map2dWidget(QOpenGLWidget):
         left, right, bottom, top = xCenter - viewWidth / 2, xCenter + viewWidth / 2, yCenter - viewHeight / 2, yCenter + viewHeight / 2
         return left, right, bottom, top
 
-    def _screenCoordinateToWorld(self, px, py):
+    def _screenCoordinateToWorld(self, xScreen, yScreen):
         left, right, bottom, top = self._computeViewRect()
-        xWorld, yWorld = left + (px / self.width()) * (right - left), bottom + (1 - py / self.height()) * (top - bottom)
+        xWorld, yWorld = left + (xScreen / self.width()) * (right - left), bottom + (1 - yScreen / self.height()) * (top - bottom)
         return xWorld, yWorld
+
+    def _worldCoordinateToScreen(self, xWorld, yWorld):
+        left, right, bottom, top = self._computeViewRect()
+        nx = (xWorld - left) / (right - left)
+        ny = (yWorld - bottom) / (top - bottom)
+        xScreen = nx * self.width()
+        yScreen = (1 - ny) * self.height()
+        return xScreen, yScreen
 
     def _pixelToWorldDistance(self, pixelDistance):
         left, right, bottom, top = self._computeViewRect()
         worldWidth = right - left
         worldHeight = top - bottom
         return pixelDistance * worldWidth / self.width(), pixelDistance * worldHeight / self.height()
+
+    def _pickSatellite(self, xMouse, yMouse):
+        closest = None
+        closestDistance = float("inf")
+        for noradIndex, pos in self.objectPositions.items():
+            lon = pos['POSITION']['LONGITUDE']
+            lat = pos['POSITION']['LATITUDE']
+            xWorld, yWorld = self._lonlatToCartesian(lon, lat)
+            xScreen, yScreen = self._worldCoordinateToScreen(xWorld, yWorld)
+            dx = xScreen - xMouse
+            dy = yScreen - yMouse
+            distance = np.hypot(dx, dy)
+            cfg = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if distance < self.hoverRadius and distance < closestDistance:
+                closest = noradIndex
+                closestDistance = distance
+        return closest
 
     def paintGL(self):
         glClearColor(0.12, 0.13, 0.14, 1)
@@ -567,6 +596,7 @@ class Map2dWidget(QOpenGLWidget):
             self._drawSun()
         if self.displayConfiguration.get('SHOW_VERNAL', False):
             self._drawVernal()
+        self._drawLabels()
 
     def _drawEarth(self):
         glEnable(GL_TEXTURE_2D)
@@ -644,6 +674,42 @@ class Map2dWidget(QOpenGLWidget):
             glVertex2f(x, y)
             glEnd()
 
+    def _drawLabels(self):
+        viewPort = (GLint * 4)()
+        glGetIntegerv(GL_VIEWPORT, viewPort)
+        for noradIndex, pos in self.objectPositions.items():
+            isSelected = (noradIndex == self.selectedObject)
+            isHovered = (noradIndex == self.hoveredObject)
+            isActive = isSelected or isHovered
+            if not isActive:
+                continue
+            lon = pos['POSITION']['LONGITUDE']
+            lat = pos['POSITION']['LATITUDE']
+            xWorld, yWorld = self._lonlatToCartesian(lon, lat)
+            xScreen, yScreen = self._worldCoordinateToScreen(xWorld, yWorld)
+            glMatrixMode(GL_PROJECTION)
+            glPushMatrix()
+            glLoadIdentity()
+            glOrtho(0, viewPort[2], 0, viewPort[3], -1, 1)
+            glMatrixMode(GL_MODELVIEW)
+            glPushMatrix()
+            glLoadIdentity()
+            glActiveTexture(GL_TEXTURE1)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glActiveTexture(GL_TEXTURE0)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor4f(1, 1, 1, 1)
+            glRasterPos2f(xScreen + 5, viewPort[3] - yScreen + 5)
+            objectName = pos.get("NAME", str(noradIndex))
+            for char in objectName:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
+            glPopMatrix()
+
     def _drawGroundTrackArrow(self, x0, y0, x1, y1, color):
         dx, dy = x1 - x0, y1 - y0
         length = np.hypot(dx, dy)
@@ -709,7 +775,6 @@ class Map2dWidget(QOpenGLWidget):
         for longitude, latitude in zip(longitudes, latitudes):
             x, y = self._lonlatToCartesian(longitude, latitude)
             vertices.append([x, y, 0.0])
-        vertices.append([self.mapWidth, y, 0.0])
         vertices.append([self.mapWidth, border, 0.0])
         vertices.append([0, border, 0.0])
         tesseract = gluNewTess()
@@ -762,6 +827,10 @@ class Map2dWidget(QOpenGLWidget):
         self.lastMousePos = event.pos()
 
     def mouseMoveEvent(self, event):
+        hovered = self._pickSatellite(event.x(), event.y())
+        if hovered != self.hoveredObject:
+            self.hoveredObject = hovered
+            self.update()
         if self.lastMousePos is None:
             return
         dx = (event.x() - self.lastMousePos.x()) / self.width() * self.mapWidth
@@ -772,15 +841,9 @@ class Map2dWidget(QOpenGLWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
-        x = event.x() / self.width() * self.mapWidth
-        y = (1 - event.y() / self.height()) * self.mapHeight
-        closest = None
-        closestDist = 999
-        for norad, pos in self.objectPositions.items():
-            xObject, yObject = self._lonlatToCartesian(pos['POSITION']['LONGITUDE'], pos['POSITION']['LATITUDE'])
-            dist = np.hypot(xObject - x, yObject - y)
-            if dist < self.hoverRadius and dist < closestDist:
-                closest = norad
-                closestDist = dist
-        if closest is not None:
-            self.objectSelected.emit([closest])
+        picked = self._pickSatellite(event.x(), event.y())
+        if picked is not None:
+            self.selectedObject = picked
+            self.objectSelected.emit([picked])
+            self.update()
+        self.lastMousePos = None
