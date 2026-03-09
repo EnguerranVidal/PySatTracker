@@ -174,8 +174,8 @@ class Map2dWidget(QOpenGLWidget):
         glLoadIdentity()
         glOrtho(left, right, bottom, top, -1, 1)
         self._drawEarth()
-        # if self.displayConfiguration.get('SHOW_NIGHT', False):
-        #     self._drawNight()
+        if self.displayConfiguration.get('SHOW_TERMINATOR', False):
+            self._drawTerminator()
         if self.displayConfiguration.get('SHOW_GROUND_TRACK', False):
             self._drawGroundTracks()
         if self.displayConfiguration.get('SHOW_FOOTPRINT', False):
@@ -188,7 +188,8 @@ class Map2dWidget(QOpenGLWidget):
         self._drawLabels()
 
     def _drawEarth(self):
-        if self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None:
+        correctShaderLoading = self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None
+        if self.displayConfiguration.get('SHOW_NIGHT', False) and correctShaderLoading:
             glUseProgram(self.earthShader)
             glActiveTexture(GL_TEXTURE0)
             glBindTexture(GL_TEXTURE_2D, self.earthTexture)
@@ -203,21 +204,17 @@ class Map2dWidget(QOpenGLWidget):
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.earthTexture)
         glColor4f(1, 1, 1, 1)
-        glBegin(GL_TRIANGLES)
+        glBegin(GL_QUADS)
         glTexCoord2f(0, 0)
         glVertex2f(0, 0)
         glTexCoord2f(1, 0)
         glVertex2f(self.mapWidth, 0)
         glTexCoord2f(1, 1)
         glVertex2f(self.mapWidth, self.mapHeight)
-        glTexCoord2f(0, 0)
-        glVertex2f(0, 0)
-        glTexCoord2f(1, 1)
-        glVertex2f(self.mapWidth, self.mapHeight)
         glTexCoord2f(0, 1)
         glVertex2f(0, self.mapHeight)
         glEnd()
-        if self.earthShader and self.nightTexture:
+        if self.displayConfiguration.get('SHOW_NIGHT', False) and correctShaderLoading:
             glUseProgram(0)
             glActiveTexture(GL_TEXTURE1)
             glDisable(GL_TEXTURE_2D)
@@ -272,10 +269,10 @@ class Map2dWidget(QOpenGLWidget):
                     glEnd()
 
     def _drawObjects(self):
-        for noradIndex, pos in self.objectPositions.items():
+        for noradIndex, position in self.objectPositions.items():
             noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
             color, size = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
-            x, y = self._lonlatToCartesian(pos['POSITION']['LONGITUDE'], pos['POSITION']['LATITUDE'])
+            x, y = self._lonlatToCartesian(position['POSITION']['LONGITUDE'], position['POSITION']['LATITUDE'])
             glPointSize(size)
             if noradIndex == self.selectedObject:
                 glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
@@ -288,15 +285,13 @@ class Map2dWidget(QOpenGLWidget):
     def _drawLabels(self):
         viewPort = (GLint * 4)()
         glGetIntegerv(GL_VIEWPORT, viewPort)
-        for noradIndex, pos in self.objectPositions.items():
+        for noradIndex, position in self.objectPositions.items():
             isSelected = (noradIndex == self.selectedObject)
             isHovered = (noradIndex == self.hoveredObject)
             isActive = isSelected or isHovered
             if not isActive:
                 continue
-            lon = pos['POSITION']['LONGITUDE']
-            lat = pos['POSITION']['LATITUDE']
-            xWorld, yWorld = self._lonlatToCartesian(lon, lat)
+            xWorld, yWorld = self._lonlatToCartesian(position['POSITION']['LONGITUDE'], position['POSITION']['LATITUDE'])
             xScreen, yScreen = self._worldCoordinateToScreen(xWorld, yWorld)
             glMatrixMode(GL_PROJECTION)
             glPushMatrix()
@@ -313,7 +308,7 @@ class Map2dWidget(QOpenGLWidget):
             glBindTexture(GL_TEXTURE_2D, 0)
             glColor4f(1, 1, 1, 1)
             glRasterPos2f(xScreen + 5, viewPort[3] - yScreen + 5)
-            objectName = pos.get("NAME", str(noradIndex))
+            objectName = position.get("NAME", str(noradIndex))
             for char in objectName:
                 glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
             glMatrixMode(GL_PROJECTION)
@@ -322,11 +317,11 @@ class Map2dWidget(QOpenGLWidget):
             glPopMatrix()
 
     def _drawGroundTrackArrow(self, x0, y0, x1, y1, color):
-        dx, dy = x1 - x0, y1 - y0
-        length = np.hypot(dx, dy)
+        xDifference, yDifference = x1 - x0, y1 - y0
+        length = np.hypot(xDifference, yDifference)
         if length < 1e-9:
             return
-        ux, uy = dx / length, dy / length
+        ux, uy = xDifference / length, yDifference / length
         xPixels, yPixels = -uy, ux
         arrowLength, arrowWidth, maxLen = 1.2 * length, 0.7 * length, 0.04 * self.mapWidth
         arrowLength, arrowWidth = min(arrowLength, maxLen), min(arrowWidth, maxLen * 0.6)
@@ -374,33 +369,20 @@ class Map2dWidget(QOpenGLWidget):
         glVertex2f(x, y + sizeY)
         glEnd()
 
-    def _drawNight(self):
+    def _drawTerminator(self):
         if self.terminator is None:
             return
         longitudes, latitudes = np.array(self.terminator['LONGITUDE']), np.array(self.terminator['LATITUDE'])
         longitudes = (longitudes + 180) % 360 - 180
-        sortingIndices = np.argsort(longitudes)
-        longitudes, latitudes = longitudes[sortingIndices], latitudes[sortingIndices]
-        border = 0 if self.sunLatitude >= 0 else self.mapHeight
-        vertices = []
-        for longitude, latitude in zip(longitudes, latitudes):
-            x, y = self._lonlatToCartesian(longitude, latitude)
-            vertices.append([x, y, 0.0])
-        vertices.append([self.mapWidth, border, 0.0])
-        vertices.append([0, border, 0.0])
-        tesseract = gluNewTess()
-        gluTessCallback(tesseract, GLU_TESS_BEGIN, glBegin)
-        gluTessCallback(tesseract, GLU_TESS_VERTEX, glVertex3dv)
-        gluTessCallback(tesseract, GLU_TESS_END, glEnd)
-        gluTessCallback(tesseract, GLU_TESS_ERROR, lambda e: print(f"Tessellation error: {e}"))
-        glColor4f(0, 0, 0, 0.35)
-        gluTessBeginPolygon(tesseract, None)
-        gluTessBeginContour(tesseract)
-        for v in vertices:
-            gluTessVertex(tesseract, v, v)
-        gluTessEndContour(tesseract)
-        gluTessEndPolygon(tesseract)
-        gluDeleteTess(tesseract)
+        segments = self._splitWrapSegment(longitudes, latitudes)
+        glColor4f(1.0, 0.0, 0.0, 0.5)
+        glLineWidth(2.0)
+        for segLon, segLat in segments:
+            glBegin(GL_LINE_STRIP)
+            for lon, lat in zip(segLon, segLat):
+                x, y = self._lonlatToCartesian(lon, lat)
+                glVertex2f(x, y)
+            glEnd()
 
     def updateMap(self, positions, visibleNorads, selectedNorad, displayConfiguration):
         self.selectedObject = selectedNorad

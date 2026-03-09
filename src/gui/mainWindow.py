@@ -117,6 +117,13 @@ class MainWindow(QMainWindow):
         self.showNightLayerAction.setStatusTip('Show 2D Map Night Layer')
         self.showNightLayerAction.toggled.connect(self._checkNightLayer)
         self.showNightLayerAction.setIconVisibleInMenu(False)
+        # SHOW 2D MAP TERMINATOR LINE
+        self.showMap2dTerminatorAction = QAction('&Show Terminator Line', self, checkable=True)
+        self.showMap2dTerminatorAction.setIcon(self.icons['SUNSET'])
+        self.showMap2dTerminatorAction.setChecked(self.settings['2D_MAP']['SHOW_TERMINATOR'])
+        self.showMap2dTerminatorAction.setStatusTip('Show 2D Map Terminator')
+        self.showMap2dTerminatorAction.toggled.connect(self._checkMap2dTerminator)
+        self.showMap2dTerminatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP SUN INDICATOR
         self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
         self.sunIndicatorAction.setIcon(self.icons['SOLAR_CROSS'])
@@ -253,6 +260,7 @@ class MainWindow(QMainWindow):
         self.map2dMenu.addSeparator()
         self.map2dMenu.addAction(self.showNightLayerAction)
         self.map2dMenu.addAction(self.sunIndicatorAction)
+        self.map2dMenu.addAction(self.showMap2dTerminatorAction)
         self.map2dMenu.addAction(self.vernalPointAction)
         self.map2dMenu.addSeparator()
         self.map2dMenu.addAction(self.showGroundTracksAction)
@@ -310,6 +318,7 @@ class MainWindow(QMainWindow):
         self.map2dToolBar = QToolBar('2D Map Toolbar', self)
         self.map2dToolBar.addAction(self.sunIndicatorAction)
         self.map2dToolBar.addAction(self.showNightLayerAction)
+        self.map2dToolBar.addAction(self.showMap2dTerminatorAction)
         # PLOT VIEW TOOLBAR
         self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
         self.plotViewToolBar.addAction(self.addPlotTabAction)
@@ -352,6 +361,7 @@ class MainWindow(QMainWindow):
         self.icons['RESET_VIEW'] = QIcon(os.path.join(self.iconPath, 'reset-view.png'))
         self.icons['SHADOW'] = QIcon(os.path.join(self.iconPath, 'shadow.png'))
         self.icons['SOLAR_CROSS'] = QIcon(os.path.join(self.iconPath, 'solar-cross.png'))
+        self.icons['SUNSET'] = QIcon(os.path.join(self.iconPath, 'sunset.png'))
         self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
         self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
         self.icons['CLOSE_ALL_TABS'] = QIcon(os.path.join(self.iconPath, 'close-all-tabs.png'))
@@ -670,6 +680,11 @@ class MainWindow(QMainWindow):
 
     def _checkVernalPoint(self, checked):
         self.settings['2D_MAP']['SHOW_VERNAL'] = checked
+        self.saveSettings()
+        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+
+    def _checkMap2dTerminator(self, checked):
+        self.settings['2D_MAP']['SHOW_TERMINATOR'] = checked
         self.saveSettings()
         self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
