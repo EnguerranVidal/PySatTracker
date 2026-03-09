@@ -3,9 +3,9 @@ import numpy as np
 import imageio
 import pyqtgraph as pg
 from OpenGL.GL import *
+from OpenGL.GL.shaders import compileProgram, compileShader
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
-from PyQt5.QtGui import QFont, QColor, QPainter
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
@@ -449,35 +449,39 @@ class Map2dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
     ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
-    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg'):
+    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg', nightImagePath='src/assets/earth/earth_lights.jpg'):
         super().__init__(parent)
-        self.mapImagePath = mapImagePath
+        self.mapImagePath, self.nightImagePath = mapImagePath, nightImagePath
         self.zoom, self.offset, self.lastMousePos = 1.0, np.array([0.0, 0.0]), None
         self.selectedObject, self.hoveredObject, self.hoverRadius = None, None, 20
         self.displayConfiguration = {}
         self.objectPositions, self.groundTracks, self.footprints = {}, {}, {}
         self.sunLongitude, self.sunLatitude = None, None
-        self.earthTexture = None
+        self.earthTexture, self.nightTexture, self.earthShader = None, None, None
         self.terminator = None
         self.vernal = None
         self.setMouseTracking(True)
-        self._loadEarthTexture()
+        self._loadEarthTextures()
 
-    def _loadEarthTexture(self):
+    def _loadEarthTextures(self):
         if not os.path.exists(self.mapImagePath):
             raise FileNotFoundError(self.mapImagePath)
         mapImage = imageio.imread(self.mapImagePath)
-        mapImage = np.flipud(mapImage)
+        mapImage = mapImage[::-1]
         self.mapHeight, self.mapWidth = mapImage.shape[:2]
         self.earthTextureData = mapImage.astype(np.uint8)
+        if not os.path.exists(self.nightImagePath):
+            raise FileNotFoundError(self.nightImagePath)
+        nightImage = imageio.imread(self.nightImagePath)
+        nightImage = nightImage[::-1]
+        self.nightHeight, self.nightWidth = nightImage.shape[:2]
+        self.nightTextureData = nightImage.astype(np.uint8)
 
     def initializeGL(self):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glEnable(GL_LINE_SMOOTH)
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
-        glEnable(GL_POLYGON_SMOOTH)
-        glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST)
         glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
         glutInit()
@@ -486,8 +490,26 @@ class Map2dWidget(QOpenGLWidget):
         mapImage = self.earthTextureData
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mapImage.shape[1], mapImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, mapImage)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        self.nightTexture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.nightTexture)
+        img = self.nightTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.shape[1], img.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, img)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        try:
+            with open("src/assets/earth/map.vert") as f:
+                vertSource = f.read()
+            with open("src/assets/earth/map.frag") as f:
+                fragSource = f.read()
+            self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
+        except Exception as e:
+            self.earthShader = None
+            raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
 
     def _lonlatToCartesian(self, longitude, latitude):
         longitude, latitude = np.asarray(longitude), np.asarray(latitude)
@@ -585,8 +607,8 @@ class Map2dWidget(QOpenGLWidget):
         glLoadIdentity()
         glOrtho(left, right, bottom, top, -1, 1)
         self._drawEarth()
-        if self.displayConfiguration.get('SHOW_NIGHT', False):
-            self._drawNight()
+        # if self.displayConfiguration.get('SHOW_NIGHT', False):
+        #     self._drawNight()
         if self.displayConfiguration.get('SHOW_GROUND_TRACK', False):
             self._drawGroundTracks()
         if self.displayConfiguration.get('SHOW_FOOTPRINT', False):
@@ -599,19 +621,41 @@ class Map2dWidget(QOpenGLWidget):
         self._drawLabels()
 
     def _drawEarth(self):
-        glEnable(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        if self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None:
+            glUseProgram(self.earthShader)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+            glUniform1i(glGetUniformLocation(self.earthShader, "dayTexture"), 0)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.nightTexture)
+            glUniform1i(glGetUniformLocation(self.earthShader, "nightTexture"), 1)
+            glUniform1f(glGetUniformLocation(self.earthShader, "sunLongitudeRadians"), np.radians(self.sunLongitude))
+            glUniform1f(glGetUniformLocation(self.earthShader, "sunLatitudeRadians"), np.radians(self.sunLatitude))
+            glUniform1f(glGetUniformLocation(self.earthShader, "twilightWidth"), 0.15)
+        else:
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.earthTexture)
         glColor4f(1, 1, 1, 1)
-        glBegin(GL_QUADS)
+        glBegin(GL_TRIANGLES)
         glTexCoord2f(0, 0)
         glVertex2f(0, 0)
         glTexCoord2f(1, 0)
         glVertex2f(self.mapWidth, 0)
         glTexCoord2f(1, 1)
         glVertex2f(self.mapWidth, self.mapHeight)
+        glTexCoord2f(0, 0)
+        glVertex2f(0, 0)
+        glTexCoord2f(1, 1)
+        glVertex2f(self.mapWidth, self.mapHeight)
         glTexCoord2f(0, 1)
         glVertex2f(0, self.mapHeight)
         glEnd()
+        if self.earthShader and self.nightTexture:
+            glUseProgram(0)
+            glActiveTexture(GL_TEXTURE1)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glActiveTexture(GL_TEXTURE0)
         glDisable(GL_TEXTURE_2D)
 
     @staticmethod
@@ -801,15 +845,15 @@ class Map2dWidget(QOpenGLWidget):
         self.objectPositions.clear()
         self.groundTracks.clear()
         self.footprints.clear()
-        for norad in visibleNorads:
-            if norad not in mapData['OBJECTS']:
+        for noradIndex in visibleNorads:
+            if noradIndex not in mapData['OBJECTS']:
                 continue
-            obj = mapData['OBJECTS'][norad]
-            self.objectPositions[norad] = obj
+            obj = mapData['OBJECTS'][noradIndex]
+            self.objectPositions[noradIndex] = obj
             if 'GROUND_TRACK' in obj:
-                self.groundTracks[norad] = obj['GROUND_TRACK']
+                self.groundTracks[noradIndex] = obj['GROUND_TRACK']
             if 'VISIBILITY' in obj:
-                self.footprints[norad] = obj['VISIBILITY']
+                self.footprints[noradIndex] = obj['VISIBILITY']
         self.update()
 
     def wheelEvent(self, event):
