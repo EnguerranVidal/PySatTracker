@@ -60,4 +60,18 @@ conda activate pysattracker
 python3 main.py
 ```
 
+## ROADMAP
+
+| Feature | Description | Status |
+|-------|-------------|--------|
+| 2D Map Shading | Adding night shadow shader copying the 3D View rendition | Testing |
+| 2D Map Optimization | Optimize 2D Map rendition for GPU usage | In Progress |
+| Line Plots | Adding line plots able to graph wanted calculated values | In Progress |
+| Polar Plots | Adding polar plots able to graph wanted calculated values | Planned |
+| Orbit Coverage | Predict visible satellite ground coverage | Planned |
+| Pass Predictions | Predict visible satellite passes for observers | Planned |
+| 3D View Optimization | Optimize 3D View rendition for GPU usage | Planned |
+| Orbital Calculations Optimization | Optimize orbital calculations for GPU usage | Planned |
+| Object Grouping | Adding the ability to group visible objects | Planned |
+
 <p align="left">(<a href="#readme-top">back to top</a>)</p>
