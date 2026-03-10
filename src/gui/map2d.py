@@ -1,12 +1,10 @@
-import os
 import numpy as np
 import imageio
-import pyqtgraph as pg
 from OpenGL.GL import *
-from OpenGL.GL.shaders import compileProgram, compileShader
 from OpenGL.GLU import *
+from OpenGL.GL.shaders import compileProgram, compileShader
 from OpenGL.GLUT import *
-from pyqtgraph import GraphicsLayoutWidget
+from OpenGL.arrays import vbo
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
 from PyQt5.QtWidgets import *
@@ -14,7 +12,6 @@ from PyQt5.QtWidgets import *
 
 class Map2dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
-    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
     def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg', nightImagePath='src/assets/earth/earth_lights.jpg'):
         super().__init__(parent)
@@ -52,6 +49,7 @@ class Map2dWidget(QOpenGLWidget):
         glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
         glutInit()
+        # EARTH DAY TEXTURE
         self.earthTexture = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.earthTexture)
         mapImage = self.earthTextureData
@@ -60,6 +58,7 @@ class Map2dWidget(QOpenGLWidget):
         glGenerateMipmap(GL_TEXTURE_2D)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        # EARTH NIGHT TEXTURE
         self.nightTexture = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.nightTexture)
         img = self.nightTextureData
@@ -68,6 +67,7 @@ class Map2dWidget(QOpenGLWidget):
         glGenerateMipmap(GL_TEXTURE_2D)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        # EARTH SHADER LOADING
         try:
             with open("src/assets/earth/map.vert") as f:
                 vertSource = f.read()

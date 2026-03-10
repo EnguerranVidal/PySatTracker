@@ -20,7 +20,6 @@ class LoadingScreen(QSplashScreen):
         self.progress = QProgressBar(self)
         self.progress.setGeometry(20, pixmap.height() - 60, pixmap.width() - 40, 20)
         self.progress.setValue(0)
-
         self.mainWindow = None
 
     def setProgress(self, value):
@@ -49,7 +48,7 @@ class TimelineWidget(QWidget):
         self.referenceTime = datetime.utcnow()
         self.ignoreSlider = False
         self.isRunning = False
-        self.allowedSpeeds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+        self.allowedSpeeds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
         self.speedIndex = self.allowedSpeeds.index(1)
         self.displayMode = 0
 
