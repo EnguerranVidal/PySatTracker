@@ -93,7 +93,7 @@ class OrbitWorker(QObject):
                 print(f"Worker error {noradIndex}: {e}")
         # SUN POSITION AND TERMINATOR CALCULATION
         sunLongitude, sunLatitude, sunDistance = self.engine.subSolarPoint(simulationTime, radians=False)
-        terminatorLongitudes, terminatorLatitudes = self.engine.terminatorCurve(simulationTime, nbPoints=361, radians=False)
+        terminatorLongitudes, terminatorLatitudes = self.engine.terminatorCurve(simulationTime, nbPoints=721, radians=False)
         vernalLongitude, vernalLatitude = self.engine.getVernalSubPoint(simulationTime, radians=False)
         map2dResults['SUN'] = {'LONGITUDE': sunLongitude, 'LATITUDE': sunLatitude, 'DISTANCE': sunDistance}
         map2dResults['NIGHT'] = {'LONGITUDE': terminatorLongitudes, 'LATITUDE': terminatorLatitudes}

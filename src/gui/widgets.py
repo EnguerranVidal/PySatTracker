@@ -49,7 +49,7 @@ class TimelineWidget(QWidget):
         self.referenceTime = datetime.utcnow()
         self.ignoreSlider = False
         self.isRunning = False
-        self.allowedSpeeds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
+        self.allowedSpeeds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
         self.speedIndex = self.allowedSpeeds.index(1)
         self.displayMode = 0
 
@@ -168,7 +168,7 @@ class TimelineWidget(QWidget):
             remaining %= 60
             seconds = int(remaining)
             fraction = int((remaining - seconds) * 100)
-            text = f"Δ {sign}{years:04}-{months:02}-{days:02}-{hours:02}-{minutes:02}-{seconds:02}.{fraction:02}"
+            text = f"Δ  {sign} {years:04}-{months:02}-{days:02}-{hours:02}-{minutes:02}-{seconds:02}.{fraction:02}"
         self.timeButton.setText(text)
         if not self.timeSlider.slider.isSliderDown():
             self.ignoreSlider = True

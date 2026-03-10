@@ -1,57 +1,86 @@
 import os
-
 import numpy as np
 import imageio
 import pyqtgraph as pg
+from OpenGL.GL import *
+from OpenGL.GL.shaders import compileProgram, compileShader
+from OpenGL.GLU import *
+from OpenGL.GLUT import *
 from pyqtgraph import GraphicsLayoutWidget
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSignalBlocker
 from PyQt5.QtWidgets import *
 
 
-class Map2dWidget(QWidget):
+class Map2dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
     ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
 
-    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg'):
+    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg', nightImagePath='src/assets/earth/earth_lights.jpg'):
         super().__init__(parent)
-        self.mapImagePath = mapImagePath
-        self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
-        self.objectLabels = {}
-        self._lastMouseScenePos = None
-        self.selectedObject, self.hoveredObject, self.hoverRadius, self.displayConfiguration = None, None, 15, {}
-        self.sunIndicator, self.nightLayer, self.vernalIndicator = None, None, None
-        self._setupMap()
+        self.mapImagePath, self.nightImagePath = mapImagePath, nightImagePath
+        self.zoom, self.offset, self.lastMousePos = 1.0, np.array([0.0, 0.0]), None
+        self.selectedObject, self.hoveredObject, self.hoverRadius = None, None, 20
+        self.displayConfiguration = {}
+        self.objectPositions, self.groundTracks, self.footprints = {}, {}, {}
+        self.sunLongitude, self.sunLatitude = None, None
+        self.earthTexture, self.nightTexture, self.earthShader = None, None, None
+        self.terminator = None
+        self.vernal = None
+        self.setMouseTracking(True)
+        self._loadEarthTextures()
 
-    def _setupMap(self):
+    def _loadEarthTextures(self):
         if not os.path.exists(self.mapImagePath):
-            raise FileNotFoundError(f'Map image not found at {self.mapImagePath}')
-        img = imageio.imread(self.mapImagePath)
-        img = np.rot90(img, k=-1)
-        self.mapImage = pg.ImageItem(img)
-        self.mapWidth, self.mapHeight = self.mapImage.width(), self.mapImage.height()
-        # SETUP WORLD MAP VIEW
-        self.view = GraphicsLayoutWidget()
-        self.view.setBackground('#202124')
-        self.plot = self.view.addPlot()
-        self.plot.addItem(self.mapImage)
-        self.plot.setAspectLocked(True)
-        self.plot.hideAxis('bottom')
-        self.plot.hideAxis('left')
-        self.plot.scene().sigMouseMoved.connect(self._onMouseMoved)
-        self.view.setMouseTracking(True)
-        self.view.viewport().setMouseTracking(True)
+            raise FileNotFoundError(self.mapImagePath)
+        mapImage = imageio.imread(self.mapImagePath)
+        mapImage = mapImage[::-1]
+        self.mapHeight, self.mapWidth = mapImage.shape[:2]
+        self.earthTextureData = mapImage.astype(np.uint8)
+        if not os.path.exists(self.nightImagePath):
+            raise FileNotFoundError(self.nightImagePath)
+        nightImage = imageio.imread(self.nightImagePath)
+        nightImage = nightImage[::-1]
+        self.nightHeight, self.nightWidth = nightImage.shape[:2]
+        self.nightTextureData = nightImage.astype(np.uint8)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.view)
+    def initializeGL(self):
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_LINE_SMOOTH)
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
+        glEnable(GL_POINT_SMOOTH)
+        glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
+        glutInit()
+        self.earthTexture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        mapImage = self.earthTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mapImage.shape[1], mapImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, mapImage)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        self.nightTexture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.nightTexture)
+        img = self.nightTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.shape[1], img.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, img)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        try:
+            with open("src/assets/earth/map.vert") as f:
+                vertSource = f.read()
+            with open("src/assets/earth/map.frag") as f:
+                fragSource = f.read()
+            self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
+        except Exception as e:
+            self.earthShader = None
+            raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
 
     def _lonlatToCartesian(self, longitude, latitude):
         longitude, latitude = np.asarray(longitude), np.asarray(latitude)
         return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
-
-    @staticmethod
-    def _arrowAngle(x0, y0, x1, y1):
-        return np.degrees(np.arctan2(y1 - y0, x1 - x0)) + 180
 
     @staticmethod
     def _splitWrapSegment(longitudes, latitudes, threshold=180):
@@ -87,202 +116,330 @@ class Map2dWidget(QWidget):
             latitudeSegments[k + 1] = np.insert(latitudeSegments[k + 1], 0, latitudeBorder)
         return list(zip(longitudeSegments, latitudeSegments))
 
+    def _computeViewRect(self):
+        widgetAspectRatio = self.width() / self.height()
+        mapAspectRatio = self.mapWidth / self.mapHeight
+        viewWidth, viewHeight = self.mapWidth * self.zoom, self.mapHeight * self.zoom
+        if widgetAspectRatio > mapAspectRatio:
+            viewWidth = viewHeight * widgetAspectRatio
+        else:
+            viewHeight = viewWidth / widgetAspectRatio
+        xCenter, yCenter = self.mapWidth / 2 - self.offset[0], self.mapHeight / 2 - self.offset[1]
+        left, right, bottom, top = xCenter - viewWidth / 2, xCenter + viewWidth / 2, yCenter - viewHeight / 2, yCenter + viewHeight / 2
+        return left, right, bottom, top
+
+    def _screenCoordinateToWorld(self, xScreen, yScreen):
+        left, right, bottom, top = self._computeViewRect()
+        xWorld, yWorld = left + (xScreen / self.width()) * (right - left), bottom + (1 - yScreen / self.height()) * (top - bottom)
+        return xWorld, yWorld
+
+    def _worldCoordinateToScreen(self, xWorld, yWorld):
+        left, right, bottom, top = self._computeViewRect()
+        nx = (xWorld - left) / (right - left)
+        ny = (yWorld - bottom) / (top - bottom)
+        xScreen = nx * self.width()
+        yScreen = (1 - ny) * self.height()
+        return xScreen, yScreen
+
+    def _pixelToWorldDistance(self, pixelDistance):
+        left, right, bottom, top = self._computeViewRect()
+        worldWidth = right - left
+        worldHeight = top - bottom
+        return pixelDistance * worldWidth / self.width(), pixelDistance * worldHeight / self.height()
+
+    def _pickSatellite(self, xMouse, yMouse):
+        closest = None
+        closestDistance = float("inf")
+        for noradIndex, pos in self.objectPositions.items():
+            lon = pos['POSITION']['LONGITUDE']
+            lat = pos['POSITION']['LATITUDE']
+            xWorld, yWorld = self._lonlatToCartesian(lon, lat)
+            xScreen, yScreen = self._worldCoordinateToScreen(xWorld, yWorld)
+            dx = xScreen - xMouse
+            dy = yScreen - yMouse
+            distance = np.hypot(dx, dy)
+            cfg = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if distance < self.hoverRadius and distance < closestDistance:
+                closest = noradIndex
+                closestDistance = distance
+        return closest
+
+    def paintGL(self):
+        glClearColor(0.12, 0.13, 0.14, 1)
+        glClear(GL_COLOR_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        left, right, bottom, top = self._computeViewRect()
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        glOrtho(left, right, bottom, top, -1, 1)
+        self._drawEarth()
+        if self.displayConfiguration.get('SHOW_TERMINATOR', False):
+            self._drawTerminator()
+        if self.displayConfiguration.get('SHOW_GROUND_TRACK', False):
+            self._drawGroundTracks()
+        if self.displayConfiguration.get('SHOW_FOOTPRINT', False):
+            self._drawFootprints()
+        self._drawObjects()
+        if self.displayConfiguration.get('SHOW_SUN', False):
+            self._drawSun()
+        if self.displayConfiguration.get('SHOW_VERNAL', False):
+            self._drawVernal()
+        self._drawLabels()
+
+    def _drawEarth(self):
+        correctShaderLoading = self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None
+        if self.displayConfiguration.get('SHOW_NIGHT', False) and correctShaderLoading:
+            glUseProgram(self.earthShader)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+            glUniform1i(glGetUniformLocation(self.earthShader, "dayTexture"), 0)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.nightTexture)
+            glUniform1i(glGetUniformLocation(self.earthShader, "nightTexture"), 1)
+            glUniform1f(glGetUniformLocation(self.earthShader, "sunLongitudeRadians"), np.radians(self.sunLongitude))
+            glUniform1f(glGetUniformLocation(self.earthShader, "sunLatitudeRadians"), np.radians(self.sunLatitude))
+            glUniform1f(glGetUniformLocation(self.earthShader, "twilightWidth"), 0.15)
+        else:
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        glColor4f(1, 1, 1, 1)
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0)
+        glVertex2f(0, 0)
+        glTexCoord2f(1, 0)
+        glVertex2f(self.mapWidth, 0)
+        glTexCoord2f(1, 1)
+        glVertex2f(self.mapWidth, self.mapHeight)
+        glTexCoord2f(0, 1)
+        glVertex2f(0, self.mapHeight)
+        glEnd()
+        if self.displayConfiguration.get('SHOW_NIGHT', False) and correctShaderLoading:
+            glUseProgram(0)
+            glActiveTexture(GL_TEXTURE1)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glActiveTexture(GL_TEXTURE0)
+        glDisable(GL_TEXTURE_2D)
+
     @staticmethod
-    def _shouldRender(mode: str, isSelected: bool, isToggled: bool = True):
-        if not isToggled:
-            return False
+    def _shouldRender(mode: str, isSelected: bool):
         if mode == "ALWAYS":
             return True
         if mode == "WHEN_SELECTED":
             return isSelected
         return False  # NEVER
 
-    def _updateSunAndNight(self, mapData, showSun=True, showNight=True, showVernal=True):
-        if showNight:
-            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
-            longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
-            x, y = self._lonlatToCartesian(longitudes, latitudes)
-            fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
-            if self.nightLayer is None:
-                self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
-                self.nightLayer.setZValue(self.ELEMENTS_Z_VALUES['NIGHT'])
-                self.plot.addItem(self.nightLayer)
+    def _drawGroundTracks(self):
+        glColor3f(0.2, 0.8, 1)
+        for noradIndex, track in self.groundTracks.items():
+            isSelected = (noradIndex == self.selectedObject)
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected):
+                color, width = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+                glLineWidth(width)
+                segments = self._splitWrapSegment(track['LONGITUDE'], track['LATITUDE'])
+                for segLon, segLat in segments:
+                    glBegin(GL_LINE_STRIP)
+                    for lon, lat in zip(segLon, segLat):
+                        x, y = self._lonlatToCartesian(lon, lat)
+                        glVertex2f(x, y)
+                    glEnd()
+                lastLon, lastLat = segments[-1]
+                if len(lastLon) >= 2:
+                    x0, y0 = self._lonlatToCartesian(lastLon[-2], lastLat[-2])
+                    x1, y1 = self._lonlatToCartesian(lastLon[-1], lastLat[-1])
+                    self._drawGroundTrackArrow(x0, y0, x1, y1, color)
+
+    def _drawFootprints(self):
+        for noradIndex, footprint in self.footprints.items():
+            isSelected = (noradIndex == self.selectedObject)
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected):
+                color, width = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+                glLineWidth(width)
+                segments = self._splitWrapSegment(footprint['LONGITUDE'], footprint['LATITUDE'])
+                for segLon, segLat in segments:
+                    glBegin(GL_LINE_STRIP)
+                    for lon, lat in zip(segLon, segLat):
+                        x, y = self._lonlatToCartesian(lon, lat)
+                        glVertex2f(x, y)
+                    glEnd()
+
+    def _drawObjects(self):
+        for noradIndex, position in self.objectPositions.items():
+            noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
+            color, size = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
+            x, y = self._lonlatToCartesian(position['POSITION']['LONGITUDE'], position['POSITION']['LATITUDE'])
+            glPointSize(size)
+            if noradIndex == self.selectedObject:
+                glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
             else:
-                self.nightLayer.setData(x, y)
-                self.nightLayer.setFillLevel(fillLevel)
+                glColor3f(1, 1, 1)
+            glBegin(GL_POINTS)
+            glVertex2f(x, y)
+            glEnd()
 
-        else:
-            if self.nightLayer is not None:
-                self.plot.removeItem(self.nightLayer)
-                self.nightLayer = None
-        if showSun:
-            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
-            xSun, ySun = self._lonlatToCartesian(subPointLongitude, subPointLatitude)
-            if self.sunIndicator is None:
-                self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
-                self.sunIndicator.setZValue(self.ELEMENTS_Z_VALUES['SUN'])
-                self.plot.addItem(self.sunIndicator)
-            self.sunIndicator.setData([xSun], [ySun])
-        else:
-            if self.sunIndicator is not None:
-                self.plot.removeItem(self.sunIndicator)
-                self.sunIndicator = None
-        if showVernal:
-            vernalLongitude, vernalLatitude = mapData['VERNAL']['LONGITUDE'], mapData['VERNAL']['LATITUDE']
-            xVernal, yVernal = self._lonlatToCartesian(vernalLongitude, vernalLatitude)
-            if self.vernalIndicator is None:
-                self.vernalIndicator = pg.ScatterPlotItem(size=15, brush=pg.mkBrush(0, 200, 0), pen=pg.mkPen(0, 255, 0, width=2), symbol="+",)
-                self.vernalIndicator.setZValue(self.ELEMENTS_Z_VALUES['VERNAL'])
-                self.plot.addItem(self.vernalIndicator)
-            self.vernalIndicator.setData([xVernal], [yVernal])
-        else:
-            if self.vernalIndicator is not None:
-                self.plot.removeItem(self.vernalIndicator)
-                self.vernalIndicator = None
+    def _drawLabels(self):
+        viewPort = (GLint * 4)()
+        glGetIntegerv(GL_VIEWPORT, viewPort)
+        for noradIndex, position in self.objectPositions.items():
+            isSelected = (noradIndex == self.selectedObject)
+            isHovered = (noradIndex == self.hoveredObject)
+            isActive = isSelected or isHovered
+            if not isActive:
+                continue
+            xWorld, yWorld = self._lonlatToCartesian(position['POSITION']['LONGITUDE'], position['POSITION']['LATITUDE'])
+            xScreen, yScreen = self._worldCoordinateToScreen(xWorld, yWorld)
+            glMatrixMode(GL_PROJECTION)
+            glPushMatrix()
+            glLoadIdentity()
+            glOrtho(0, viewPort[2], 0, viewPort[3], -1, 1)
+            glMatrixMode(GL_MODELVIEW)
+            glPushMatrix()
+            glLoadIdentity()
+            glActiveTexture(GL_TEXTURE1)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glActiveTexture(GL_TEXTURE0)
+            glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor4f(1, 1, 1, 1)
+            glRasterPos2f(xScreen + 5, viewPort[3] - yScreen + 5)
+            objectName = position.get("NAME", str(noradIndex))
+            for char in objectName:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
+            glPopMatrix()
 
-    def updateMap(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
-        self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
-        # REMOVING EVERYTHING NOT VISIBLE
-        for noradIndex in list(self.objectSpots.keys()):
-            if noradIndex not in visibleNorads:
-                self._removeItems(self.objectSpots.pop(noradIndex))
-                self._removeItems(self.objectGroundTracks.pop(noradIndex, None))
-                self._removeItems(self.objectFootprints.pop(noradIndex, None))
-                self._removeItems(self.objectArrows.pop(noradIndex, None))
-                self._removeItems(self.objectLabels.pop(noradIndex, None))
-        # NIGHT LAYER AND SUN POSITION
-        self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'], self.displayConfiguration['SHOW_VERNAL'])
-        # UPDATING/ADDING VISIBLE OBJECTS
+    def _drawGroundTrackArrow(self, x0, y0, x1, y1, color):
+        xDifference, yDifference = x1 - x0, y1 - y0
+        length = np.hypot(xDifference, yDifference)
+        if length < 1e-9:
+            return
+        ux, uy = xDifference / length, yDifference / length
+        xPixels, yPixels = -uy, ux
+        arrowLength, arrowWidth, maxLen = 1.2 * length, 0.7 * length, 0.04 * self.mapWidth
+        arrowLength, arrowWidth = min(arrowLength, maxLen), min(arrowWidth, maxLen * 0.6)
+        xArrowTip, yArrowTip = x1, y1
+        xArrowBase, yArrowBase = x1 - ux * arrowLength, y1 - uy * arrowLength
+        xLeft, yLeft = xArrowBase + xPixels * arrowWidth, yArrowBase + yPixels * arrowWidth
+        xRight, yRight = xArrowBase - xPixels * arrowWidth, yArrowBase - yPixels * arrowWidth
+        glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
+        glBegin(GL_TRIANGLES)
+        glVertex2f(xArrowTip, yArrowTip)
+        glVertex2f(xLeft, yLeft)
+        glVertex2f(xRight, yRight)
+        glEnd()
+
+    def _drawSun(self):
+        x, y = self._lonlatToCartesian(self.sunLongitude, self.sunLatitude)
+        innerRadiusPx = 6
+        outerRadiusPx = 9
+        innerRadiusX, innerRadiusY = self._pixelToWorldDistance(innerRadiusPx)
+        outerRadiusX, outerRadiusY = self._pixelToWorldDistance(outerRadiusPx)
+        segments = 32
+        glColor3f(1.0, 0.7, 0.0)
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(x, y)
+        for a in np.linspace(0, 2 * np.pi, segments):
+            glVertex2f(x + outerRadiusX * np.cos(a), y + outerRadiusY * np.sin(a))
+        glEnd()
+        glColor3f(1.0, 1.0, 0.2)
+        glBegin(GL_TRIANGLE_FAN)
+        glVertex2f(x, y)
+        for a in np.linspace(0, 2 * np.pi, segments):
+            glVertex2f(x + innerRadiusX * np.cos(a), y + innerRadiusY * np.sin(a))
+        glEnd()
+
+    def _drawVernal(self):
+        x, y = self._lonlatToCartesian(self.vernal['LONGITUDE'], self.vernal['LATITUDE'])
+        sizePx = 10
+        sizeX, sizeY = self._pixelToWorldDistance(sizePx)
+        glLineWidth(2)
+        glColor3f(0.0, 1.0, 0.0)
+        glBegin(GL_LINES)
+        glVertex2f(x - sizeX, y)
+        glVertex2f(x + sizeX, y)
+        glVertex2f(x, y - sizeY)
+        glVertex2f(x, y + sizeY)
+        glEnd()
+
+    def _drawTerminator(self):
+        if self.terminator is None:
+            return
+        longitudes, latitudes = np.array(self.terminator['LONGITUDE']), np.array(self.terminator['LATITUDE'])
+        longitudes = (longitudes + 180) % 360 - 180
+        segments = self._splitWrapSegment(longitudes, latitudes)
+        glColor4f(1.0, 0.0, 0.0, 0.5)
+        glLineWidth(2.0)
+        for segLon, segLat in segments:
+            glBegin(GL_LINE_STRIP)
+            for lon, lat in zip(segLon, segLat):
+                x, y = self._lonlatToCartesian(lon, lat)
+                glVertex2f(x, y)
+            glEnd()
+
+    def updateMap(self, positions, visibleNorads, selectedNorad, displayConfiguration):
+        self.selectedObject = selectedNorad
+        self.displayConfiguration = displayConfiguration
+        mapData = positions['2D_MAP']
+        self.sunLongitude, self.sunLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
+        self.vernal = mapData['VERNAL']
+        self.terminator = mapData['NIGHT']
+        self.objectPositions.clear()
+        self.groundTracks.clear()
+        self.footprints.clear()
         for noradIndex in visibleNorads:
-            if noradIndex not in positions['2D_MAP']['OBJECTS']:
+            if noradIndex not in mapData['OBJECTS']:
                 continue
-            self._updateObjectDisplay(noradIndex, positions['2D_MAP']['OBJECTS'][noradIndex])
+            obj = mapData['OBJECTS'][noradIndex]
+            self.objectPositions[noradIndex] = obj
+            if 'GROUND_TRACK' in obj:
+                self.groundTracks[noradIndex] = obj['GROUND_TRACK']
+            if 'VISIBILITY' in obj:
+                self.footprints[noradIndex] = obj['VISIBILITY']
+        self.update()
 
-    def _updateObjectDisplay(self, noradIndex, noradPosition):
-        isSelected = (noradIndex == self.selectedObject)
-        isHovered = (noradIndex == self.hoveredObject)
-        isActive = isSelected or isHovered
-        noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
-        # GROUND TRACKS
-        groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected, self.displayConfiguration['SHOW_GROUND_TRACK']):
-            groundLongitudes, groundLatitudes = noradPosition['GROUND_TRACK']['LONGITUDE'], noradPosition['GROUND_TRACK']['LATITUDE']
-            groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
-            for item in self.objectGroundTracks.get(noradIndex, []):
-                self.plot.removeItem(item)
-            self.objectGroundTracks[noradIndex] = []
-            for segmentLongitudes, segmentLatitudes in groundSegments:
-                gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen(groundTrackColor, width=groundTrackWidth))
-                curve.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
-                self.objectGroundTracks[noradIndex].append(curve)
-                self.plot.addItem(self.objectGroundTracks[noradIndex][-1])
-            # GROUND TRACK ARROW
-            lastLongitude, lastLatitude = groundSegments[-1]
-            x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
-            x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
-            length = np.hypot(x1 - x0, y1 - y0)
-            angle = self._arrowAngle(x0, y0, x1, y1)
-            if noradIndex not in self.objectArrows:
-                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(groundTrackColor), brush=pg.mkBrush(groundTrackColor), pxMode=False)
-                arrow.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
-                self.objectArrows[noradIndex] = arrow
-                self.plot.addItem(self.objectArrows[noradIndex])
-            self.objectArrows[noradIndex].setStyle(angle=angle)
-            self.objectArrows[noradIndex].setPos(x1, y1)
+    def wheelEvent(self, event):
+        xBefore, yBefore = self._screenCoordinateToWorld(event.x(), event.y())
+        if event.angleDelta().y() > 0:
+            self.zoom *= 0.9
         else:
-            self._removeItems(self.objectGroundTracks.get(noradIndex))
-            self._removeItems(self.objectArrows.get(noradIndex))
-            self.objectGroundTracks.pop(noradIndex, None)
-            self.objectArrows.pop(noradIndex, None)
-        # VISIBILITY FOOTPRINT
-        footColor, footWidth = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected, self.displayConfiguration['SHOW_FOOTPRINT']):
-            footLongitudes, footLatitudes = noradPosition['VISIBILITY']['LONGITUDE'], noradPosition['VISIBILITY']['LATITUDE']
-            footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
-            for item in self.objectFootprints.get(noradIndex, []):
-                self.plot.removeItem(item)
-            self.objectFootprints[noradIndex] = []
-            for segmentLongitudes, segmentLatitudes in footSegments:
-                fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen(footColor, width=footWidth))
-                curve.setZValue(self.ELEMENTS_Z_VALUES['FOOTPRINT'])
-                self.objectFootprints[noradIndex].append(curve)
-                self.plot.addItem(self.objectFootprints[noradIndex][-1])
-        else:
-            self._removeItems(self.objectFootprints.get(noradIndex))
-            self.objectFootprints.pop(noradIndex, None)
-        # OBJECT POSITIONS
-        spotColor = tuple(noradObjectConfiguration['SPOT']['COLOR']) if isActive else (150, 150, 150)
-        x, y = self._lonlatToCartesian(noradPosition['POSITION']['LONGITUDE'], noradPosition['POSITION']['LATITUDE'])
-        if noradIndex not in self.objectSpots:
-            spot = pg.ScatterPlotItem(size=noradObjectConfiguration['SPOT']['SIZE'], brush=pg.mkBrush(*spotColor))
-            spot.sigClicked.connect(self._onObjectClicked)
-            spot.setZValue(self.ELEMENTS_Z_VALUES['SPOT'])
-            self.objectSpots[noradIndex] = spot
-            self.plot.addItem(self.objectSpots[noradIndex])
-        self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*spotColor), pen=None)
-        self.objectSpots[noradIndex].setSize(noradObjectConfiguration['SPOT']['SIZE'])
-        if noradIndex not in self.objectLabels:
-            label = pg.TextItem(text=noradPosition['NAME'], anchor=(0.5, 1.2), color=(255, 255, 255))
-            label.setZValue(self.ELEMENTS_Z_VALUES['LABEL'])
-            label.hide()
-            self.objectLabels[noradIndex] = label
-            self.plot.addItem(label)
-        self.objectLabels[noradIndex].setPos(x, y)
-        if isActive:
-            self.objectLabels[noradIndex].show()
-        else:
-            self.objectLabels[noradIndex].hide()
-        if self._lastMouseScenePos is not None:
-            self._onMouseMoved(self._lastMouseScenePos)
+            self.zoom *= 1.1
+        xAfter, yAfter = self._screenCoordinateToWorld(event.x(), event.y())
+        self.offset[0] += xAfter - xBefore
+        self.offset[1] += yAfter - yBefore
+        self.update()
 
-    def _onObjectClicked(self, plot, points):
-        if not points:
-            return
-        noradIndex = points[0].data()
-        if noradIndex is None:
-            return
-        self.objectSelected.emit([noradIndex])
+    def mousePressEvent(self, event):
+        self.lastMousePos = event.pos()
 
-    def _onMouseMoved(self, scenePos):
-        self._lastMouseScenePos = scenePos
-        self.hoverRadius = 15 * self.plot.vb.viewPixelSize()[0]
-        if not self.objectSpots:
+    def mouseMoveEvent(self, event):
+        hovered = self._pickSatellite(event.x(), event.y())
+        if hovered != self.hoveredObject:
+            self.hoveredObject = hovered
+            self.update()
+        if self.lastMousePos is None:
             return
-        closestNorad, closestDist = None, float("inf")
-        mouseViewPos = self.plot.vb.mapSceneToView(scenePos)
-        for noradIndex, spot in self.objectSpots.items():
-            pts = spot.points()
-            if not pts:
-                continue
-            spotViewPos = pts[0].pos()
-            dist = np.sqrt((spotViewPos.x() - mouseViewPos.x()) ** 2 + (spotViewPos.y() - mouseViewPos.y()) ** 2)
-            if dist < self.hoverRadius and dist < closestDist:
-                closestNorad, closestDist = noradIndex, dist
-        if closestNorad is not None and self.hoveredObject is None:
-            self.hoveredObject = closestNorad
-            if closestNorad in self.objectLabels:
-                self.objectLabels[closestNorad].show()
-        elif closestNorad is None and self.hoveredObject is not None:
-            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
-                self.objectLabels[self.hoveredObject].hide()
-            self.hoveredObject = None
-        elif closestNorad is not None and closestNorad != self.hoveredObject:
-            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
-                self.objectLabels[self.hoveredObject].hide()
-            self.hoveredObject = closestNorad
-            if closestNorad in self.objectLabels:
-                self.objectLabels[closestNorad].show()
+        dx = (event.x() - self.lastMousePos.x()) / self.width() * self.mapWidth
+        dy = (event.y() - self.lastMousePos.y()) / self.height() * self.mapHeight
+        self.offset[0] += dx * self.zoom
+        self.offset[1] -= dy * self.zoom
+        self.lastMousePos = event.pos()
+        self.update()
 
-    def _removeItems(self, items):
-        if not items:
-            return
-        if isinstance(items, list):
-            for item in items:
-                self.plot.removeItem(item)
-        else:
-            self.plot.removeItem(items)
+    def mouseReleaseEvent(self, event):
+        picked = self._pickSatellite(event.x(), event.y())
+        if picked is not None:
+            self.selectedObject = picked
+            self.objectSelected.emit([picked])
+            self.update()
+        self.lastMousePos = None
 
 
 class Object2dMapConfigDockWidget(QDockWidget):
