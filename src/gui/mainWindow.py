@@ -126,7 +126,7 @@ class MainWindow(QMainWindow):
         self.showMap2dTerminatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP SUN INDICATOR
         self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
-        self.sunIndicatorAction.setIcon(self.icons['SOLAR_CROSS'])
+        self.sunIndicatorAction.setIcon(self.icons['SUN'])
         self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
         self.sunIndicatorAction.setStatusTip('Show 2D Map Sun Indicator')
         self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
         self.icons['ECEF'] = QIcon(os.path.join(self.iconPath, 'ecef.png'))
         self.icons['RESET_VIEW'] = QIcon(os.path.join(self.iconPath, 'reset-view.png'))
         self.icons['SHADOW'] = QIcon(os.path.join(self.iconPath, 'shadow.png'))
-        self.icons['SOLAR_CROSS'] = QIcon(os.path.join(self.iconPath, 'solar-cross.png'))
+        self.icons['SUN'] = QIcon(os.path.join(self.iconPath, 'sun.png'))
         self.icons['SUNSET'] = QIcon(os.path.join(self.iconPath, 'sunset.png'))
         self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
         self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
