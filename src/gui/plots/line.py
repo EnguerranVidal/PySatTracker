@@ -1,15 +1,18 @@
+import random
 from datetime import datetime
-
 from pyqtgraph import PlotWidget, mkPen
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
-from gui.objects import SetTimeDialog
 from src.core.orbitalEngine import OrbitalMechanicsEngine
+
 
 class LinePlot(QWidget):
     visibleNoradsChanged = pyqtSignal()
+    dataRequestCreated = pyqtSignal(int, dict)
+    dataRequestUpdated = pyqtSignal(int, dict)
+    dataRequestDestroyed = pyqtSignal(int)
 
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
@@ -22,6 +25,7 @@ class LinePlot(QWidget):
         self.visibleNorads = set()
         self.configuration = {'LINES': [], 'TIME': {'MODE': 'REAL', 'BEFORE': 30.0, 'BEFORE_UNIT': 'minutes', 'AFTER': 30.0, 'AFTER_UNIT': 'minutes', 'START': None, 'END': None}}
         self.plotItems = []
+        self.requestId = random.randint(100000, 999999)
 
     def addLine(self, name=None, color='#ffffff', width=1, style=Qt.SolidLine):
         if name is None:
@@ -52,6 +56,26 @@ class LinePlot(QWidget):
         if self.visibleNorads != visibleNorads:
             self.visibleNorads = visibleNorads
             self.visibleNoradsChanged.emit()
+
+    def _buildDataRequest(self):
+        timeConfiguration = self.configuration['TIME']
+        lines = [{'X': {'OBJECT': line['X_OBJECT'], 'VARIABLE': line['X_VARIABLE']}, 'Y': {'OBJECT': line['Y_OBJECT'], 'VARIABLE': line['Y_VARIABLE']}} for line in self.configuration['LINES']]
+        return {'TIME': timeConfiguration, 'LINES': lines}
+
+    def createDataRequest(self):
+        request = self.buildDataRequest()
+        self.dataRequestCreated.emit(self.requestId, request)
+
+    def updateDataRequest(self):
+        request = self.buildDataRequest()
+        self.dataRequestUpdated.emit(self.requestId, request)
+
+    def destroyDataRequest(self):
+        self.dataRequestDestroyed.emit(self.requestId)
+
+    def closeEvent(self, event):
+        self.destroyDataRequest()
+        super().closeEvent(event)
 
 
 class LinePlotSettingsWidget(QWidget):
@@ -86,9 +110,13 @@ class LinePlotSettingsWidget(QWidget):
         self.timeGroup = QGroupBox("Time Settings")
         self.realTimeRadio = QRadioButton("Real Time")
         self.fixedTimeRadio = QRadioButton("Fixed Time")
-        timeMode = self.linePlot.configuration['TIME']['MODE']
-        self.realTimeRadio.setChecked(timeMode == 'REAL')
-        self.fixedTimeRadio.setChecked(timeMode == 'FIXED')
+        if self.linePlot.configuration['TIME']['MODE'] == 'REAL':
+            self.realTimeRadio.setChecked(True)
+        elif self.linePlot.configuration['TIME']['MODE'] == 'FIXED':
+            self.fixedTimeRadio.setChecked(True)
+        else:
+            self.linePlot.configuration['TIME']['MODE'] = 'REAL'
+            self.realTimeRadio.setChecked(True)
         self.realTimeRadio.toggled.connect(self.setTimeMode)
         timeModeLayout = QHBoxLayout()
         timeModeLayout.addWidget(self.realTimeRadio)
@@ -97,11 +125,11 @@ class LinePlotSettingsWidget(QWidget):
         self.beforeRealTimeSpinBox.setRange(0, 1e6)
         self.beforeRealTimeSpinBox.setDecimals(2)
         self.beforeRealTimeSpinBox.setValue(self.linePlot.configuration['TIME']['BEFORE'])
-        self.beforeRealTimeSpinBox.valueChanged.connect(lambda value: self.linePlot.configuration['TIME'].update({'BEFORE': value}))
+        self.beforeRealTimeSpinBox.valueChanged.connect(self._beforeChanged)
         self.beforeRealTimeUnitComboBox = QComboBox()
         self.beforeRealTimeUnitComboBox.addItems(["seconds", "minutes", "hours", "days", "orbital periods"])
         self.beforeRealTimeUnitComboBox.setCurrentText(self.linePlot.configuration['TIME']['BEFORE_UNIT'])
-        self.beforeRealTimeUnitComboBox.currentTextChanged.connect(lambda text: self.linePlot.configuration['TIME'].update({'BEFORE_UNIT': text}))
+        self.beforeRealTimeUnitComboBox.currentTextChanged.connect(self._beforeUnitChanged)
         beforeRealTimeLayout = QHBoxLayout()
         beforeRealTimeLayout.addWidget(self.beforeRealTimeSpinBox)
         beforeRealTimeLayout.addWidget(self.beforeRealTimeUnitComboBox)
@@ -109,11 +137,11 @@ class LinePlotSettingsWidget(QWidget):
         self.afterRealTimeSpinBox.setRange(0, 1e6)
         self.afterRealTimeSpinBox.setDecimals(2)
         self.afterRealTimeSpinBox.setValue(self.linePlot.configuration['TIME']['AFTER'])
-        self.afterRealTimeSpinBox.valueChanged.connect(lambda value: self.linePlot.configuration['TIME'].update({'AFTER': value}))
+        self.afterRealTimeSpinBox.valueChanged.connect(self._afterChanged)
         self.afterRealTimeUnitComboBox = QComboBox()
         self.afterRealTimeUnitComboBox.addItems(["seconds", "minutes", "hours", "days", "orbital periods"])
         self.afterRealTimeUnitComboBox.setCurrentText(self.linePlot.configuration['TIME']['AFTER_UNIT'])
-        self.afterRealTimeUnitComboBox.currentTextChanged.connect(lambda text: self.linePlot.configuration['TIME'].update({'AFTER_UNIT': text}))
+        self.afterRealTimeUnitComboBox.currentTextChanged.connect(self._afterUnitChanged)
         afterRealTimeLayout = QHBoxLayout()
         afterRealTimeLayout.addWidget(self.afterRealTimeSpinBox)
         afterRealTimeLayout.addWidget(self.afterRealTimeUnitComboBox)
@@ -146,6 +174,7 @@ class LinePlotSettingsWidget(QWidget):
         self.timeStackedWidget = QStackedWidget()
         self.timeStackedWidget.addWidget(self.realTimeWidget)
         self.timeStackedWidget.addWidget(self.fixedTimeWidget)
+        self.timeStackedWidget.setCurrentIndex(0 if self.realTimeRadio.isChecked() else 1)
         timeLayout = QVBoxLayout(self.timeGroup)
         timeLayout.addLayout(timeModeLayout)
         timeLayout.addWidget(self.timeStackedWidget)
@@ -166,6 +195,7 @@ class LinePlotSettingsWidget(QWidget):
     def addNewLine(self):
         self.linePlot.addLine()
         self.updateLinesList()
+        self.linePlot.updateRequest()
 
     def removeSelectedLine(self):
         row = self.listWidget.currentRow()
@@ -175,6 +205,7 @@ class LinePlotSettingsWidget(QWidget):
         item = self.linePlot.plotItems.pop(row)
         self.linePlot.plot.removeItem(item)
         self.updateLinesList()
+        self.linePlot.updateRequest()
 
     def updateLinesList(self):
         self.listWidget.clear()
@@ -209,6 +240,31 @@ class LinePlotSettingsWidget(QWidget):
     def setTimeMode(self, mode):
         self.linePlot.configuration['TIME']['MODE'] = 'REAL' if self.realTimeRadio.isChecked() else 'FIXED'
         self.timeStackedWidget.setCurrentIndex(0 if self.realTimeRadio.isChecked() else 1)
+        self.linePlot.updateRequest()
+
+    def _beforeChanged(self, value):
+        self.linePlot.configuration['TIME']['BEFORE'] = value
+        self.linePlot.updateDataRequest()
+
+    def _beforeUnitChanged(self, text):
+        self.linePlot.configuration['TIME']['BEFORE_UNIT'] = text
+        self.linePlot.updateDataRequest()
+
+    def _afterChanged(self, value):
+        self.linePlot.configuration['TIME']['AFTER'] = value
+        self.linePlot.updateDataRequest()
+
+    def _afterUnitChanged(self, text):
+        self.linePlot.configuration['TIME']['AFTER_UNIT'] = text
+        self.linePlot.updateDataRequest()
+
+    def startChanged(self, dt):
+        self.linePlot.configuration['TIME']['START'] = dt.toString(Qt.ISODate)
+        self.linePlot.updateRequest()
+
+    def _endChanged(self, dt):
+        self.linePlot.configuration['TIME']['END'] = dt.toString(Qt.ISODate)
+        self.linePlot.updateRequest()
 
 
 class LineSettingsPage(QWidget):
@@ -259,8 +315,8 @@ class LineSettingsPage(QWidget):
         self.xVariableComboBox = QComboBox()
         self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         self.xVariableComboBox.setCurrentText(self.line['X_VARIABLE'])
-        self.xVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'X_VARIABLE': text}))
-        self.xObjectComboBox.currentTextChanged.connect(lambda: self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox))
+        self.xVariableComboBox.currentTextChanged.connect(self._updateVariableX)
+        self.xObjectComboBox.currentTextChanged.connect(self._updateObjectX)
         xLayout = QFormLayout(self.xGroup)
         xLayout.addRow("Object:", self.xObjectComboBox)
         xLayout.addRow("Variable:", self.xVariableComboBox)
@@ -272,8 +328,8 @@ class LineSettingsPage(QWidget):
         self.yVariableComboBox = QComboBox()
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         self.yVariableComboBox.setCurrentText(self.line['Y_VARIABLE'])
-        self.yVariableComboBox.currentTextChanged.connect(lambda text: self.line.update({'Y_VARIABLE': text}))
-        self.yObjectComboBox.currentTextChanged.connect(lambda: self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox))
+        self.yVariableComboBox.currentTextChanged.connect(self._updateVariableY)
+        self.yObjectComboBox.currentTextChanged.connect(self._updateObjectY)
         yLayout = QFormLayout(self.yGroup)
         yLayout.addRow("Object:", self.yObjectComboBox)
         yLayout.addRow("Variable:", self.yVariableComboBox)
@@ -374,3 +430,21 @@ class LineSettingsPage(QWidget):
         yVariable = self.yVariableComboBox.currentText()
         self.xVariableComboBox.setCurrentText(yVariable)
         self.yVariableComboBox.setCurrentText(xVariable)
+
+    def _updateObjectX(self, text):
+        self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
+        self.line['X_OBJECT'] = text
+        self.linePlot.updateRequest()
+
+    def _updateObjectY(self, text):
+        self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
+        self.line['Y_OBJECT'] = text
+        self.linePlot.updateRequest()
+
+    def _updateVariableX(self, text):
+        self.line['X_VARIABLE'] = text
+        self.linePlot.updateRequest()
+
+    def _updateVariableY(self, text):
+        self.line['Y_VARIABLE'] = text
+        self.linePlot.updateRequest()
