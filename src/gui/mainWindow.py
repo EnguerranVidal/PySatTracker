@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import *
 
 from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
 from gui.plots.general import PlotViewTabWidget
+from gui.plots.line import LinePlot
 from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, SetTimeDialog
@@ -642,7 +643,7 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.plotViewWidget.closeAllTabs()
 
     def _addLinePlot(self):
-        self.centralViewWidget.plotViewWidget.addNewLinePlot()
+        self.centralViewWidget.addLinePlot()
 
     def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
         self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
@@ -1020,6 +1021,20 @@ class CentralViewWidget(QWidget):
         now = datetime.utcnow()
         self.timeline.setTime(now)
         self.clock.setDateTime(now)
+
+    def _onPlotDataRequestCreated(self, requestId: int, request: dict):
+        pass
+
+    def _onPlotDataRequestUpdated(self, requestId: int, request: dict):
+        pass
+
+    def _onPlotDataRequestDestroyed(self, requestId: int):
+        pass
+
+    def addLinePlot(self):
+        linePlot = LinePlot(self)
+        # TODO : Add signal connections for data requests.
+        self.plotViewWidget.addNewPlot(widget=linePlot)
 
     def closeEvent(self, event):
         self.orbitWorker.stop()

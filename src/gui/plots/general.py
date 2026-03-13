@@ -72,13 +72,13 @@ class PlotViewTabWidget(QMainWindow):
         for dockWidget in dockWidgets:
             self.settingsDockWidget.updateSettingsTabTitle(dockWidget)
 
-    def addNewLinePlot(self):
+    def addNewPlot(self, widget):
         currentTabIndex = self.tabWidget.currentIndex()
         if currentTabIndex == -1:
             self.addNewTab()
             currentTabIndex = 0
         currentWidgetChildren = self.tabWidget.widget(currentTabIndex).findChildren(QDockWidget)
-        dockWidget = PlotDockWidget(parent=self, title=f'Plot {len(currentWidgetChildren)}', widget=LinePlot(self), currentDir=self.currentDir)
+        dockWidget = PlotDockWidget(parent=self, title=f'Plot {len(currentWidgetChildren)}', widget=widget, currentDir=self.currentDir)
         dockWidget.showSettingsRequested.connect(self.handleShowSettings)
         dockWidget.closed.connect(self.settingsDockWidget.removeSettingsForDock)
         area = self.dockAreaCycler.next()

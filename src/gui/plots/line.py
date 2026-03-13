@@ -63,11 +63,11 @@ class LinePlot(QWidget):
         return {'TIME': timeConfiguration, 'LINES': lines}
 
     def createDataRequest(self):
-        request = self.buildDataRequest()
+        request = self._buildDataRequest()
         self.dataRequestCreated.emit(self.requestId, request)
 
     def updateDataRequest(self):
-        request = self.buildDataRequest()
+        request = self._buildDataRequest()
         self.dataRequestUpdated.emit(self.requestId, request)
 
     def destroyDataRequest(self):
@@ -240,7 +240,7 @@ class LinePlotSettingsWidget(QWidget):
     def setTimeMode(self, mode):
         self.linePlot.configuration['TIME']['MODE'] = 'REAL' if self.realTimeRadio.isChecked() else 'FIXED'
         self.timeStackedWidget.setCurrentIndex(0 if self.realTimeRadio.isChecked() else 1)
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def _beforeChanged(self, value):
         self.linePlot.configuration['TIME']['BEFORE'] = value
@@ -260,11 +260,11 @@ class LinePlotSettingsWidget(QWidget):
 
     def startChanged(self, dt):
         self.linePlot.configuration['TIME']['START'] = dt.toString(Qt.ISODate)
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def _endChanged(self, dt):
         self.linePlot.configuration['TIME']['END'] = dt.toString(Qt.ISODate)
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
 
 class LineSettingsPage(QWidget):
@@ -434,16 +434,16 @@ class LineSettingsPage(QWidget):
     def _updateObjectX(self, text):
         self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         self.line['X_OBJECT'] = text
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def _updateObjectY(self, text):
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         self.line['Y_OBJECT'] = text
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def _updateVariableX(self, text):
         self.line['X_VARIABLE'] = text
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def _updateVariableY(self, text):
         self.line['Y_VARIABLE'] = text
