@@ -25,17 +25,19 @@ class LinePlot(QWidget):
         self.visibleNorads = set()
         self.configuration = {'LINES': [], 'TIME': {'MODE': 'REAL', 'BEFORE': 30.0, 'BEFORE_UNIT': 'minutes', 'AFTER': 30.0, 'AFTER_UNIT': 'minutes', 'START': None, 'END': None}}
         self.plotItems = []
-        self.requestId = random.randint(100000, 999999)
+        self.requestIndexProvider = None
 
     def addLine(self, name=None, color='#ffffff', width=1, style=Qt.SolidLine):
         if name is None:
             name = f"Line {len(self.configuration['LINES']) + 1}"
         colorName = QColor(color).name() if isinstance(color, str) else color.name()
-        lineConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'TIME', 'X_VARIABLE': '', 'Y_OBJECT': 'TIME', 'Y_VARIABLE': ''}
+        xRequestIndex, yRequestIndex = self.requestIndexProvider(), self.requestIndexProvider()
+        lineConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': 'TIME', 'X_VARIABLE': '', 'Y_OBJECT': 'TIME', 'Y_VARIABLE': '', 'RESOLUTION': 361, 'X_REQUEST_ID': xRequestIndex, 'Y_REQUEST_ID': yRequestIndex}
         self.configuration['LINES'].append(lineConfiguration)
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
         self.plotItems.append(item)
+        # TODO : Add the data request creation
 
     def setConfiguration(self, config):
         for item in self.plotItems:
@@ -57,21 +59,30 @@ class LinePlot(QWidget):
             self.visibleNorads = visibleNorads
             self.visibleNoradsChanged.emit()
 
-    def _buildDataRequest(self):
+    def _buildDataRequest(self, objectIndex, variable):
         timeConfiguration = self.configuration['TIME']
-        lines = [{'X': {'OBJECT': line['X_OBJECT'], 'VARIABLE': line['X_VARIABLE']}, 'Y': {'OBJECT': line['Y_OBJECT'], 'VARIABLE': line['Y_VARIABLE']}} for line in self.configuration['LINES']]
-        return {'TIME': timeConfiguration, 'LINES': lines}
+        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable}
 
     def createDataRequest(self):
-        request = self._buildDataRequest()
-        self.dataRequestCreated.emit(self.requestId, request)
+        for line in self.configuration["LINES"]:
+            request = self._buildDataRequest(line.get("X_OBJECT"), line.get("X_VARIABLE"))
+            self.dataRequestCreated.emit(line.get("X_REQUEST_ID"), request)
+            request = self._buildDataRequest(line.get("Y_OBJECT"), line.get("Y_VARIABLE"))
+            self.dataRequestCreated.emit(line.get("Y_REQUEST_ID"), request)
 
     def updateDataRequest(self):
-        request = self._buildDataRequest()
-        self.dataRequestUpdated.emit(self.requestId, request)
+        for line in self.configuration["LINES"]:
+            request = self._buildDataRequest(line.get("X_OBJECT"), line.get("X_VARIABLE"))
+            self.dataRequestUpdated.emit(line.get("X_REQUEST_ID"), request)
+            request = self._buildDataRequest(line.get("Y_OBJECT"), line.get("Y_VARIABLE"))
+            self.dataRequestUpdated.emit(line.get("Y_REQUEST_ID"), request)
 
     def destroyDataRequest(self):
-        self.dataRequestDestroyed.emit(self.requestId)
+        for line in self.configuration["LINES"]:
+            if line.get("X_REQUEST_ID"):
+                self.dataRequestDestroyed.emit(line.get("X_REQUEST_ID"))
+            if line.get("Y_REQUEST_ID"):
+                self.dataRequestDestroyed.emit(line.get("Y_REQUEST_ID"))
 
     def closeEvent(self, event):
         self.destroyDataRequest()

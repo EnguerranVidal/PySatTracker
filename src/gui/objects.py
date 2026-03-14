@@ -122,6 +122,19 @@ class OrbitWorker(QObject):
         # RESULTS EMISSION
         self.positionsReady.emit(results)
 
+    def buildRequestTimeArray(self, request: dict, simulationTime: datetime):
+        satObject = self.database.getSatrec(request['OBJECT'])
+        timeScales = {'seconds': 1, 'minutes': 60, 'hours': 3600, 'days': 84600, 'orbital periods': self.engine.orbitalPeriod(satObject)}
+        if request['TIME']['MODE'] == 'FIXED':
+            startDateTime, endDateTime = request['TIME']['START'], request['TIME']['END']
+        else:
+            beforeDuration, beforeDurationUnit = request['TIME']['BEFORE'], request['TIME']['AFTER']
+            afterDuration, afterDurationUnit = request['TIME']['AFTER'], request['TIME']['AFTER']
+            startDateTime = simulationTime - timedelta(seconds=beforeDuration * timeScales[beforeDurationUnit])
+            endDateTime = simulationTime + timedelta(seconds=afterDuration * timeScales[afterDurationUnit])
+        dt = (endDateTime - startDateTime) / (request["RESOLUTION"] - 1)
+        return [startDateTime + i * dt for i in range(request["RESOLUTION"])]
+
 
 class AddObjectDialog(QDialog):
     def __init__(self, database, parent=None):

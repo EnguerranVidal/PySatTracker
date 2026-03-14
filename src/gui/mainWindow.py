@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QUr
 from PyQt5.QtWidgets import *
 
 from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
-from gui.plots.general import PlotViewTabWidget
+from gui.plots.general import PlotViewTabWidget, PlotRequestRegistry
 from gui.plots.line import LinePlot
 from gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
@@ -900,6 +900,10 @@ class CentralViewWidget(QWidget):
         self.orbitWorker.moveToThread(self.workerThread)
         self.workerThread.start()
 
+        # DATA REQUEST SYSTEM
+        self.requestCounter = 100000
+        self.requestRegistry = PlotRequestRegistry()
+
         # TIMELINE WIDGET
         self.timeline = TimelineWidget(self, self.currentDir)
         self.timeline.displayMode = getKeyFromValue(self.TIMELINE_MODES, timeLineMode)
@@ -1022,18 +1026,30 @@ class CentralViewWidget(QWidget):
         self.timeline.setTime(now)
         self.clock.setDateTime(now)
 
-    def _onPlotDataRequestCreated(self, requestId: int, request: dict):
-        pass
+    def generateRequestIndex(self):
+        self._requestCounter += 1
+        return self._requestCounter
 
-    def _onPlotDataRequestUpdated(self, requestId: int, request: dict):
-        pass
+    def _onPlotDataRequestCreated(self, requestIndex: int, request: dict):
+        self.requestRegistry.create(requestIndex, request)
+        print(self.requestRegistry.get(requestIndex))
+        # self.orbitWorker.addRequest(requestIndex, request)
 
-    def _onPlotDataRequestDestroyed(self, requestId: int):
-        pass
+    def _onPlotDataRequestUpdated(self, requestIndex: int, request: dict):
+        self.requestRegistry.update(requestIndex, request)
+        print(self.requestRegistry.get(requestIndex))
+        # self.orbitWorker.updateRequest(requestIndex, request)
+
+    def _onPlotDataRequestDestroyed(self, requestIndex: int):
+        self.requestRegistry.remove(requestIndex)
+        # self.orbitWorker.removeRequest(requestId)
 
     def addLinePlot(self):
         linePlot = LinePlot(self)
-        # TODO : Add signal connections for data requests.
+        linePlot.requestIndexProvider = self.generateRequestIndex
+        linePlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
+        linePlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
+        linePlot.dataRequestDestroyed.connect(self._onPlotDataRequestDestroyed)
         self.plotViewWidget.addNewPlot(widget=linePlot)
 
     def closeEvent(self, event):

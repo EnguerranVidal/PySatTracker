@@ -239,3 +239,24 @@ class PlotSettingsDockWidget(QDockWidget):
                 plotDockWidgetName = dockWidget.windowTitle()
                 title = f"{plotTabName} > {plotDockWidgetName}"
                 self.tabWidget.setTabText(index, title)
+
+
+class PlotRequestRegistry:
+    def __init__(self):
+        self._requests = {}
+
+    def create(self, requestIndex: int, request: dict):
+        self._requests[requestIndex] = request
+
+    def update(self, requestIndex: int, request: dict):
+        if requestIndex in self._requests:
+            self._requests[requestIndex] = request
+        else:
+            self._requests[requestIndex] = request
+
+    def remove(self, requestIndex: int):
+        if requestIndex in self._requests:
+            del self._requests[requestIndex]
+
+    def get(self, requestIndex: int):
+        return self._requests.get(requestIndex)
