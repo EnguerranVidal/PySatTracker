@@ -1031,14 +1031,14 @@ class CentralViewWidget(QWidget):
         return self._requestCounter
 
     def _onPlotDataRequestCreated(self, requestIndex: int, request: dict):
-        self.requestRegistry.create(requestIndex, request)
-        print(requestIndex, self.requestRegistry.get(requestIndex))
-        # self.orbitWorker.addRequest(requestIndex, request)
+        if self.requestRegistry.get(requestIndex, None) is None:
+            self.requestRegistry.create(requestIndex, request)
+            # self.orbitWorker.addRequest(requestIndex, request)
 
     def _onPlotDataRequestUpdated(self, requestIndex: int, request: dict):
-        self.requestRegistry.update(requestIndex, request)
-        print(requestIndex, self.requestRegistry.get(requestIndex))
-        # self.orbitWorker.updateRequest(requestIndex, request)
+        if self.requestRegistry.get(requestIndex) != request:
+            self.requestRegistry.update(requestIndex, request)
+            # self.orbitWorker.updateRequest(requestIndex, request)
 
     def _onPlotDataRequestDestroyed(self, requestIndex: int):
         self.requestRegistry.remove(requestIndex)

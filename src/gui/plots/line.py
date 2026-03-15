@@ -9,7 +9,7 @@ from src.core.orbitalEngine import OrbitalMechanicsEngine
 
 
 class LinePlot(QWidget):
-    visibleNoradsChanged = pyqtSignal()
+    visibleObjectsChanged = pyqtSignal()
     dataRequestCreated = pyqtSignal(int, dict)
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
@@ -22,7 +22,7 @@ class LinePlot(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
         self.lastPositions = None
-        self.visibleNorads = set()
+        self.visibleObjects = set()
         self.configuration = {'LINES': [], 'TIME': {'MODE': 'REAL', 'BEFORE': 30.0, 'BEFORE_UNIT': 'minutes', 'AFTER': 30.0, 'AFTER_UNIT': 'minutes', 'START': None, 'END': None}}
         self.plotItems = []
         self.requestIndexProvider = None
@@ -53,11 +53,11 @@ class LinePlot(QWidget):
             item = self.plot.plot([], [], pen=pen, name=name)
             self.plotItems.append(item)
 
-    def updateData(self, positions: dict, visibleNorads: set[int]):
+    def updateData(self, positions: dict, visibleObjects: set[int]):
         self.lastPositions = positions
-        if self.visibleNorads != visibleNorads:
-            self.visibleNorads = visibleNorads
-            self.visibleNoradsChanged.emit()
+        if self.visibleObjects != visibleObjects:
+            self.visibleObjects = visibleObjects
+            self.visibleObjectsChanged.emit()
 
     def _buildDataRequest(self, objectIndex, variable):
         timeConfiguration = self.configuration['TIME']
@@ -93,7 +93,7 @@ class LinePlotSettingsWidget(QWidget):
     def __init__(self, linePlot: LinePlot, dockWidget=None, parent=None):
         super().__init__(parent)
         self.linePlot = linePlot
-        self.linePlot.visibleNoradsChanged.connect(self.refreshObjectCombos)
+        self.linePlot.visibleObjectsChanged.connect(self.refreshObjectCombos)
         self.dockWidget = dockWidget
 
         # PLOT NAME EDITOR
@@ -403,7 +403,7 @@ class LineSettingsPage(QWidget):
         combo.addItem("TIME")
         if self.linePlot.lastPositions:
             activeObjects = self.linePlot.lastPositions.get('PLOT_VIEW', {}).get('OBJECTS', {})
-            objectNames = {norad: activeObjects[norad]['NAME'] for norad in self.linePlot.visibleNorads if norad in activeObjects}
+            objectNames = {norad: activeObjects[norad]['NAME'] for norad in self.linePlot.visibleObjects if norad in activeObjects}
             if objectNames:
                 combo.insertSeparator(combo.count())
                 for noradIndex, name in sorted(objectNames.items(), key=lambda kv: kv[1].lower()):

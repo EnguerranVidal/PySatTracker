@@ -258,5 +258,5 @@ class PlotRequestRegistry:
         if requestIndex in self._requests:
             del self._requests[requestIndex]
 
-    def get(self, requestIndex: int):
-        return self._requests.get(requestIndex)
+    def get(self, requestIndex: int, default=None):
+        return self._requests.get(requestIndex, default)
