@@ -8,10 +8,10 @@ from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QUrl
 from PyQt5.QtWidgets import *
 
-from gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
-from gui.plots.general import PlotViewTabWidget, PlotRequestRegistry
-from gui.plots.line import LinePlot
-from gui.widgets import TimelineWidget
+from src.gui.map2d import Map2dWidget, Object2dMapConfigDockWidget
+from src.gui.plots.general import PlotViewTabWidget, PlotRequestRegistry
+from src.gui.plots.line import LinePlot
+from src.gui.widgets import TimelineWidget
 from src.gui.view3d import View3dWidget, Object3dViewConfigDockWidget
 from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, SetTimeDialog
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
@@ -901,7 +901,7 @@ class CentralViewWidget(QWidget):
         self.workerThread.start()
 
         # DATA REQUEST SYSTEM
-        self.requestCounter = 100000
+        self._requestCounter = 100000
         self.requestRegistry = PlotRequestRegistry()
 
         # TIMELINE WIDGET
@@ -1032,12 +1032,12 @@ class CentralViewWidget(QWidget):
 
     def _onPlotDataRequestCreated(self, requestIndex: int, request: dict):
         self.requestRegistry.create(requestIndex, request)
-        print(self.requestRegistry.get(requestIndex))
+        print(requestIndex, self.requestRegistry.get(requestIndex))
         # self.orbitWorker.addRequest(requestIndex, request)
 
     def _onPlotDataRequestUpdated(self, requestIndex: int, request: dict):
         self.requestRegistry.update(requestIndex, request)
-        print(self.requestRegistry.get(requestIndex))
+        print(requestIndex, self.requestRegistry.get(requestIndex))
         # self.orbitWorker.updateRequest(requestIndex, request)
 
     def _onPlotDataRequestDestroyed(self, requestIndex: int):

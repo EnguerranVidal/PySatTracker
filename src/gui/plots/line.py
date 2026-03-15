@@ -206,7 +206,7 @@ class LinePlotSettingsWidget(QWidget):
     def addNewLine(self):
         self.linePlot.addLine()
         self.updateLinesList()
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def removeSelectedLine(self):
         row = self.listWidget.currentRow()
@@ -216,7 +216,7 @@ class LinePlotSettingsWidget(QWidget):
         item = self.linePlot.plotItems.pop(row)
         self.linePlot.plot.removeItem(item)
         self.updateLinesList()
-        self.linePlot.updateRequest()
+        self.linePlot.updateDataRequest()
 
     def updateLinesList(self):
         self.listWidget.clear()

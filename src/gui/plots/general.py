@@ -7,9 +7,9 @@ from pyqtgraph import GraphicsLayoutWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
-from gui.objects import AreaCycler
-from gui.plots.line import LinePlot, LinePlotSettingsWidget
-from gui.widgets import SquareIconButton
+from src.gui.objects import AreaCycler
+from src.gui.plots.line import LinePlot, LinePlotSettingsWidget
+from src.gui.widgets import SquareIconButton
 
 
 class PlotViewTabWidget(QMainWindow):
