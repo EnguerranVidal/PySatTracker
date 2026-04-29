@@ -13,8 +13,6 @@
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-31019/)
 
-<img width="937" height="858" alt="PySatTracker" src="https://github.com/user-attachments/assets/8fd88d61-2180-4c93-b83f-378102c3993e" />
-
 ## SUMMARY
 
 <div style="text-align: justify"> PySatTracker is an interactive satellite tracking and visualization tool featuring a 2D Earth map and a 3D OpengGL space view. The system renders satellites and orbits by combining a SGP4 orbital propagation with physically accurate Earth and Sun geometry. The project focuses on implementing clear frame separation, correct astronomical transformations and orbital mechanics, in a clear rendering architecture. </div>
