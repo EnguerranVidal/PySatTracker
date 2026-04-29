@@ -283,6 +283,52 @@ class OrbitalMechanicsEngine:
         sunDirection = np.stack([x, y, z], axis=1)
         norm = np.linalg.norm(sunDirection, axis=1)
         return self._maybeScalar(sunDirection if not normed else sunDirection / norm[:, None], scalar)
+
+    def lunarDirectionEci(self, fullJulianDates, normed=True):
+        fullJulianDates, scalar = self._ensureArray(fullJulianDates)
+        T = self.julianDateToJulianCenturies(fullJulianDates)
+        L_prime = 218.3164591 + 481267.88134236 * T - 0.0013268 * T ** 2 + T ** 3 / 538841.0 - T ** 4 / 65194000.0
+        D = 297.8502042 + 445267.1115168 * T - 0.0016300 * T ** 2 + T ** 3 / 545868.0 - T ** 4 / 113065000.0
+        M_prime = 134.9634114 + 477198.8676313 * T + 0.0089970 * T ** 2 + T ** 3 / 69699.0 - T ** 4 / 14712000.0
+        M = 357.5291092 + 35999.0502909 * T - 0.0001536 * T ** 2 + T ** 3 / 24490000.0
+        F = 93.2720993 + 483202.0175273 * T - 0.0034029 * T ** 2 - T ** 3 / 3526000.0 + T ** 4 / 863310000.0
+        d, mp, m, f = np.radians(D), np.radians(M_prime), np.radians(M), np.radians(F)
+        longitude = (L_prime + 6.28875 *  np.sin(mp) + 1.27402 *  np.sin(2 * d - mp) + 0.65831 *  np.sin(2 * d) + 0.21362 *  np.sin(2 * mp)
+                     - 0.18560 *  np.sin(m) - 0.11434 *  np.sin(2 * f) + 0.05879 *  np.sin(2 * d - 2 * mp) + 0.05721 *  np.sin(2 * d - mp - m)
+                     + 0.05332 *  np.sin(2 * d + mp) - 0.04587 *  np.sin(mp + m) - 0.04102 *  np.sin(mp - m) - 0.03472 *  np.sin(2 * d - 2 * f)
+                     - 0.03038 *  np.sin(2 * d + mp - m) + 0.01533 *  np.sin(2 * d - mp + m))
+        latitude = (5.12819 *  np.sin(f) + 0.28061 *  np.sin(mp + f) + 0.27769 *  np.sin(mp - f) + 0.17324 *  np.sin(2 * d - f) + 0.05541 *  np.sin(2 * d + f - mp)
+                    + 0.04627 *  np.sin(2 * d - f - mp) + 0.03235 *  np.sin(2 * d + f) + 0.01798 *  np.sin(2 * mp + f) - 0.01667 *  np.sin(mp - m - f))
+        parallax = 0.95072 + 0.05182 * np.cos(mp) + 0.00953 * np.cos(2 * d - mp) + 0.00727 * np.cos(2 * d) + 0.00286 * np.cos(2 * mp)
+        omega = np.deg2rad(125.04452 - 1934.136261 * T + 0.0020708 * T ** 2 + T ** 3 / 450000.0)
+        eclipticObliquity = np.deg2rad(23 + (26 + (21.448 - T * (46.8150 + T * (0.00059 - T * 0.001813))) / 60) / 60 + 0.00256 * np.cos(omega))
+        moonDistance = 6378.14 / np.sin(np.deg2rad(parallax))
+        longitudeRadians, latitudeRadians, obliquityRadians = np.deg2rad(longitude), np.deg2rad(latitude), np.deg2rad(eclipticObliquity)
+        xEcliptic = moonDistance * np.cos(latitudeRadians) * np.cos(longitudeRadians)
+        yEcliptic = moonDistance * np.cos(latitudeRadians) * np.sin(longitudeRadians)
+        zEcliptic = moonDistance * np.sin(latitudeRadians)
+        x = xEcliptic
+        y = yEcliptic * np.cos(obliquityRadians) - zEcliptic * np.sin(obliquityRadians)
+        z = yEcliptic * np.sin(obliquityRadians) + zEcliptic * np.cos(obliquityRadians)
+        moonDirectionEci = np.stack([x, y, z], axis=1)
+        norm = np.linalg.norm(moonDirectionEci, axis=1)
+        return self._maybeScalar(moonDirectionEci if not normed else moonDirectionEci / norm[:, None], scalar)
+
+    def moonRotationAngle(self, fullJulianDates, radians=True):
+        fullJulianDates, scalar = self._ensureArray(fullJulianDates)
+        D = fullJulianDates - 2451545.0
+        meanRotationAngle = 38.3213 + 13.17635815 * D
+        E1, E2 = np.deg2rad(125.045 - 0.0529921 * D), np.deg2rad(250.089 - 0.1059842 * D),
+        E3, E4 = np.deg2rad(260.008 + 13.0120009 * D), np.deg2rad(176.625 + 13.3407154 * D)
+        E5, E6 = np.deg2rad(357.529 + 0.9856003 * D), np.deg2rad(311.589 + 26.4057084 * D)
+        E7, E8 = np.deg2rad(134.963 + 13.0649930 * D), np.deg2rad(276.617 + 0.3287146 * D)
+        libration = 3.5610 * np.sin(E1) + 0.1208 * np.sin(E2) - 0.0642 * np.sin(E3) + 0.0158 * np.sin(E4) + 0.0252 * np.sin(E5) - 0.0066 * np.sin(E6) - 0.0047 * np.sin(E7) - 0.0046 * np.sin(E8)
+        rotationAngle = (meanRotationAngle + libration) % 360.0
+        if radians:
+            return self._maybeScalar(np.deg2rad(rotationAngle), scalar)
+        else:
+            return self._maybeScalar(rotationAngle, scalar)
+
     def terminatorCurve(self, fullJulianDate, nbPoints=361, radians=True):
         sunLongitude, sunLatitude, _ = self.subSolarPoint(fullJulianDate, radians=True)
         longitudes = np.linspace(-np.pi, np.pi, nbPoints)
