@@ -5,13 +5,15 @@ import qdarktheme
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QThread
 
-from src.core.tleDatabase import TLELoaderWorker
-from src.gui.widgets import LoadingScreen
+from src.core.database.general import DatabaseLoaderWorker
+from src.gui.common import LoadingScreen
 from src.gui.mainWindow import MainWindow
+
 
 def main():
     qdarktheme.enable_hi_dpi()
     app = QApplication(sys.argv)
+    qdarktheme.setup_theme('dark', additional_qss='QToolTip {color: black;}')
     currentDirectory = os.path.dirname(os.path.realpath(__file__))
     dataDir = os.path.join(currentDirectory, 'data')
     splash = LoadingScreen()
@@ -19,23 +21,26 @@ def main():
 
     # LOADING WORKER THREAD
     thread = QThread()
-    loader = TLELoaderWorker(dataDir)
-    loader.moveToThread(thread)
-    thread.started.connect(loader.run)
-    loader.progress.connect(splash.setProgress)
-    loader.status.connect(splash.setStatus)
+    databaseLoader = DatabaseLoaderWorker(dataDir)
+    databaseLoader.moveToThread(thread)
+    thread.started.connect(databaseLoader.run)
+    databaseLoader.progress.connect(splash.setProgress)
+    databaseLoader.status.connect(splash.setStatus)
 
-    def onFinished(db):
+    def onFinished(databases):
+        tleDatabase, starDatabase = databases
+        splash.setToMaximumProgress()
         window = MainWindow(currentDirectory)
-        window.setDatabase(db)
+        window.setDatabases(tleDatabase, starDatabase)
         splash.launchMainWindow(window)
         thread.quit()
-        loader.deleteLater()
+        databaseLoader.deleteLater()
         thread.deleteLater()
 
-    loader.finished.connect(onFinished)
+    databaseLoader.finished.connect(onFinished)
     thread.start()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()

@@ -1,149 +1,245 @@
 import copy
 import os
 from datetime import datetime
-
-import numpy as np
-import qdarktheme
 import time
-import imageio
-import pyqtgraph as pg
-from PyQt5.QtGui import QDesktopServices, QIcon
-from pyqtgraph import GraphicsLayoutWidget
 
-from PyQt5.QtCore import Qt, QDateTime, QTimer, QPoint, pyqtSignal, QThread, QSignalBlocker, QUrl
+from PyQt5.QtGui import QDesktopServices, QIcon
+from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QThread, QUrl, Q_ARG, QMetaObject
 from PyQt5.QtWidgets import *
 
-from gui.earth3D import View3dWidget, Object3dViewConfigDockWidget
-from src.gui.objects import SimulationClock, AddObjectDialog, OrbitWorker, TimelineWidget
+from src.core.objects import ActiveObjectsEditorWidget, ActiveObjectsModel, ObjectInfoDockWidget, ObjectViewConfigDockWidget
+from src.gui.map2d import Map2dWidget
+from src.gui.plots.general import PlotViewTabWidget
+from src.gui.plots.requests import PlotRequestRegistryWindow, PlotRequestManager
+from src.gui.plots.line import LinePlot
+from src.gui.plots.time import TimeSeriesPlot
+from src.gui.plots.polar import PolarPlot
+from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog
+from src.gui.view3d import View3dWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
+from src.core.quantities import VariableRegistry
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, currentDIr: str):
+    def __init__(self, currentDir: str):
         super().__init__()
         self.settings = {}
         self.icons = {}
         # FOLDER PATHS & SETTINGS
-        self.currentDir = currentDIr
+        self.currentDir = currentDir
         self.settingsPath = os.path.join(self.currentDir, 'settings.json')
         self.dataPath = os.path.join(self.currentDir, 'data')
         self.noradPath = os.path.join(self.dataPath, 'norad')
         self._checkEnvironment()
         self.loadSettings()
 
-        # APPEARANCE
-        qdarktheme.setup_theme('dark', additional_qss='QToolTip {color: black;}')
-
         # CENTRAL VISUALIZATION WIDGET
-        self.activeObjects, self.selectedObject = list(self.settings['VISUALIZATION']['ACTIVE_OBJECTS']), None
-        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir)
+        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings['TIMELINE_MODE'])
         self.setCentralWidget(self.centralViewWidget)
+        self.centralViewWidget.view3dWidget.zoom = self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM']
+        self.centralViewWidget.view3dWidget.rotX = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X']
+        self.centralViewWidget.view3dWidget.rotY = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y']
+        self.centralViewWidget.view3dWidget.cameraChanged.connect(self._change3dViewCameraSettings)
 
         # SATELLITE LIST WIDGET
-        self.objectListDock = ObjectListDockWidget(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.objectListDock)
-        self.objectListDock.objectSelected.connect(self.onObjectSelected)
-        self.objectListDock.addObject.connect(self.addObjects)
-        self.objectListDock.removeObject.connect(self.removeSelectedObjects)
-        self.centralViewWidget.map2dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
-        self.centralViewWidget.view3dWidget.objectSelected.connect(self.objectListDock.selectNoradIndex)
+        self.activeObjectsDock = ActiveObjectsEditorWidget(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.activeObjectsDock)
+        self.activeObjectsDock.activeObjectsChanged.connect(self._onActiveObjectsChanged)
+        self.centralViewWidget.map2dWidget.objectSelected.connect(self.activeObjectsDock.outsideObjectSelection)
+        self.centralViewWidget.view3dWidget.objectSelected.connect(self.activeObjectsDock.outsideObjectSelection)
+        self.centralViewWidget.timeLineModeChanged.connect(self._timelineModeChanged)
 
         # OBJECT DOCK WIDGETS
         self.objectInfoDock = ObjectInfoDockWidget(self)
-        self.object2dMapConfigDock = Object2dMapConfigDockWidget(self)
-        self.object3dViewConfigDock = Object3dViewConfigDockWidget(self)
-        self.object2dMapConfigDock.configChanged.connect(self._on2dMapObjectConfigChanged)
-        self.object3dViewConfigDock.configChanged.connect(self._on3dViewObjectConfigChanged)
+        self.objectViewConfigDock = ObjectViewConfigDockWidget(self)
+        self.objectViewConfigDock.objectConfigChanged.connect(self._onObjectViewConfigChanged)
+        self.objectViewConfigDock.groupConfigChanged.connect(self._onGroupViewConfigChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.objectInfoDock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.object2dMapConfigDock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.object3dViewConfigDock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.objectViewConfigDock)
 
-        self.tleDatabase = None
+        self.tleDatabase, self.starDatabase, self.registryWindow = None, None, None
         self._createIcons()
         self._createActions()
+        self._createToolBars()
         self._createMenuBar()
         self._setupStatusBar()
-        self._restoreWindow()
         self._updateActionStates()
 
-    def _updateTabs(self, tabIndex):
-        self.settings['VISUALIZATION']['CURRENT_TAB'] = self.centralViewWidget.TABS[tabIndex]
+    def _updateStackedWidget(self, widgetIndex):
+        self.settings['CURRENT_TAB'] = self.centralViewWidget.TABS[widgetIndex]
+        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings['VIEW_CONFIG']), self.settings['CURRENT_TAB'])
         self.setObjectConfigWidgetsVisibility()
+        self._manageToolBarVisibility(self.centralViewWidget.TABS[widgetIndex])
+
+    def _timelineModeChanged(self, mode):
+        self.settings['TIMELINE_MODE'] = mode
+        self.saveSettings()
 
     def _createActions(self):
         self._selectionDependentActions = []
-        # RESET 2D MAP CONFIGURATION
-        self.set2dMapConfigAsDefaultAction = QAction('&Set as Default', self)
-        self.set2dMapConfigAsDefaultAction.setStatusTip('Set Current Object\'s 2D Map Configuration as Default')
-        self.set2dMapConfigAsDefaultAction.triggered.connect(self._setObject2dMapConfigAsDefault)
-        self._selectionDependentActions.append(self.set2dMapConfigAsDefaultAction)
-        # RESET 2D MAP CONFIGURATION
-        self.reset2dMapConfigAction = QAction('&Reset Configuration', self)
-        self.reset2dMapConfigAction.setStatusTip('Reset Object\'s 2D Map Configuration to Default')
-        self.reset2dMapConfigAction.triggered.connect(self._resetObject2dMapConfig)
-        self._selectionDependentActions.append(self.reset2dMapConfigAction)
+        # OPEN 2D MAP
+        self.open2dMapAction = QAction('&Open 2D Map', self, checkable=True)
+        self.open2dMapAction.setChecked(self.settings['CURRENT_TAB'] == '2D_MAP')
+        self.open2dMapAction.setIcon(self.icons['MAP'])
+        self.open2dMapAction.setStatusTip('Open 2D Map')
+        self.open2dMapAction.triggered.connect(self._open2dMap)
+        # OPEN 3D VIEW
+        self.open3dViewAction = QAction('&Open 3D View', self, checkable=True)
+        self.open3dViewAction.setChecked(self.settings['CURRENT_TAB'] == '3D_VIEW')
+        self.open3dViewAction.setIcon(self.icons['SATELLITE_GLOBE'])
+        self.open3dViewAction.setStatusTip('Open 3D View')
+        self.open3dViewAction.triggered.connect(self._open3dView)
+        # OPEN PLOT VIEW
+        self.openPlotViewAction = QAction('&Open Plot View', self, checkable=True)
+        self.openPlotViewAction.setChecked(self.settings['CURRENT_TAB'] == 'PLOT_VIEW')
+        self.openPlotViewAction.setIcon(self.icons['PLOT'])
+        self.openPlotViewAction.setStatusTip('Open Plot View')
+        self.openPlotViewAction.triggered.connect(self._openPlotView)
+        # SET AS DEFAULT VIEW CONFIGURATION
+        self.setViewConfigAsDefaultAction = QAction('&Set as Default', self)
+        self.setViewConfigAsDefaultAction.setStatusTip('Set Current Object\'s View Configuration as Default')
+        self.setViewConfigAsDefaultAction.triggered.connect(self._setObjectViewConfigAsDefault)
+        self._selectionDependentActions.append(self.setViewConfigAsDefaultAction)
+        # RESET VIEW CONFIGURATION
+        self.resetViewConfigAction = QAction('&Reset Configuration', self)
+        self.resetViewConfigAction.setStatusTip('Reset Object\'s View Configuration to Default')
+        self.resetViewConfigAction.triggered.connect(self._resetObjectViewConfig)
+        self._selectionDependentActions.append(self.resetViewConfigAction)
+
+        # SHOW 2D MAP GROUND TRACKS
+        self.showGroundTracks2dAction = QAction('Show Ground Tracks', self, checkable=True)
+        self.showGroundTracks2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GROUND_TRACKS'])
+        self.showGroundTracks2dAction.toggled.connect(self._toggleGroundTracks2d)
+        self.showGroundTracks2dAction.setIconVisibleInMenu(False)
+        # SHOW 2D MAP FOOTPRINTS
+        self.showFootprints2dAction = QAction('Show Footprints', self, checkable=True)
+        self.showFootprints2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_FOOTPRINTS'])
+        self.showFootprints2dAction.toggled.connect(self._toggleFootprints2d)
+        self.showFootprints2dAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP NIGHT LAYER ACTION
         self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
-        self.showNightLayerAction.setChecked(self.settings['2D_MAP']['SHOW_NIGHT'])
+        self.showNightLayerAction.setIcon(self.icons['SHADOW'])
+        self.showNightLayerAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_NIGHT'])
         self.showNightLayerAction.setStatusTip('Show 2D Map Night Layer')
         self.showNightLayerAction.toggled.connect(self._checkNightLayer)
+        self.showNightLayerAction.setIconVisibleInMenu(False)
+        # SHOW 2D MAP GRID
+        self.showGrid2dAction = QAction('&Show Grid', self, checkable=True)
+        self.showGrid2dAction.setIcon(self.icons['MAP_GRID'])
+        self.showGrid2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GRID'])
+        self.showGrid2dAction.setStatusTip('Show 2D Map Grid')
+        self.showGrid2dAction.toggled.connect(self._check2dGrid)
+        self.showGrid2dAction.setIconVisibleInMenu(False)
+        # SHOW 2D MAP TERMINATOR LINE
+        self.showMap2dTerminatorAction = QAction('&Show Terminator Line', self, checkable=True)
+        self.showMap2dTerminatorAction.setIcon(self.icons['SUNSET'])
+        self.showMap2dTerminatorAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_TERMINATOR'])
+        self.showMap2dTerminatorAction.setStatusTip('Show 2D Map Terminator')
+        self.showMap2dTerminatorAction.toggled.connect(self._checkMap2dTerminator)
+        self.showMap2dTerminatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP SUN INDICATOR
         self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
-        self.sunIndicatorAction.setChecked(self.settings['2D_MAP']['SHOW_SUN'])
+        self.sunIndicatorAction.setIcon(self.icons['SUN'])
+        self.sunIndicatorAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_SUN'])
         self.sunIndicatorAction.setStatusTip('Show 2D Map Sun Indicator')
         self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
+        self.sunIndicatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP VERNAL POINT
         self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
-        self.vernalPointAction.setChecked(self.settings['2D_MAP']['SHOW_VERNAL'])
+        self.vernalPointAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_VERNAL'])
         self.vernalPointAction.setStatusTip('Show 2D Map Vernal Point')
         self.vernalPointAction.toggled.connect(self._checkVernalPoint)
-        # SHOW 2D MAP GROUND TRACKS
-        self.showGroundTracksAction = QAction('&Show Ground Tracks', self, checkable=True)
-        self.showGroundTracksAction.setChecked(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
-        self.showGroundTracksAction.setStatusTip('Allow showing 2D Map Ground Tracks')
-        self.showGroundTracksAction.toggled.connect(self._checkGroundTracks)
-        # SHOW 2D MAP VISIBILITY FOOTPRINTS
-        self.showFootprintsAction = QAction('&Show Footprints', self, checkable=True)
-        self.showFootprintsAction.setChecked(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
-        self.showFootprintsAction.setStatusTip('Allow showing 2D Map Visibility Footprints')
-        self.showFootprintsAction.toggled.connect(self._checkFootprints)
+        # RESET 2D CAMERA VIEW
+        self.reset2dCameraViewAction = QAction('&Reset Camera View', self)
+        self.reset2dCameraViewAction.setIcon(self.icons['RESET_VIEW'])
+        self.reset2dCameraViewAction.setStatusTip('Reset 2D View to Default Zoom and Center')
+        self.reset2dCameraViewAction.triggered.connect(self._reset2dCameraView)
 
-        # RESET 3D VIEW CONFIGURATION
-        self.set3dViewConfigAsDefaultAction = QAction('&Set as Default', self)
-        self.set3dViewConfigAsDefaultAction.setStatusTip('Set Current Object\'s 3D View Configuration as Default')
-        self.set3dViewConfigAsDefaultAction.triggered.connect(self._setObject3dViewConfigAsDefault)
-        self._selectionDependentActions.append(self.set3dViewConfigAsDefaultAction)
-        # RESET 3D VIEW CONFIGURATION
-        self.reset3dViewConfigAction = QAction('&Reset Configuration', self)
-        self.reset3dViewConfigAction.setStatusTip('Reset Object\'s 3D View Configuration to Default')
-        self.reset3dViewConfigAction.triggered.connect(self._resetObject3dViewConfig)
-        self._selectionDependentActions.append(self.reset3dViewConfigAction)
+        # SHOW 3D VIEW ORBIT PATHS
+        self.showOrbitPaths3dAction = QAction('Show Orbit Paths', self, checkable=True)
+        self.showOrbitPaths3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'])
+        self.showOrbitPaths3dAction.toggled.connect(self._toggleOrbitPaths3d)
+        self.showOrbitPaths3dAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH MODEL
         self.showEarthAction = QAction('&Show Earth', self, checkable=True)
-        self.showEarthAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthAction.setIcon(self.icons['EARTH'])
         self.showEarthAction.setStatusTip('Show 3D View Earth Model')
         self.showEarthAction.toggled.connect(self._checkEarth)
+        self.showEarthAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH GRID
         self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
-        self.showEarthGridAction.setChecked(self.settings['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showEarthGridAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showEarthGridAction.setIcon(self.icons['EARTH_GRID'])
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
+        self.showEarthGridAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECI AXIS
         self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
-        self.showEciAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECI_AXES'])
+        self.showEciAxesAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECI_AXES'])
+        self.showEciAxesAction.setIcon(self.icons['ECI'])
         self.showEciAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
         self.showEciAxesAction.toggled.connect(self._checkEciAxes)
+        self.showEciAxesAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECEF AXIS
         self.showEcefAxesAction = QAction('&Show ECEF Reference Frame', self, checkable=True)
-        self.showEcefAxesAction.setChecked(self.settings['3D_VIEW']['SHOW_ECEF_AXES'])
+        self.showEcefAxesAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECEF_AXES'])
+        self.showEcefAxesAction.setIcon(self.icons['ECEF'])
         self.showEcefAxesAction.setStatusTip('Show 3D View ECEF Reference Frame Axes')
         self.showEcefAxesAction.toggled.connect(self._checkEcefAxes)
-        # SHOW 3D VIEW ORBITAL PATHS
-        self.showOrbitalPathsAction = QAction('&Show Orbital Paths', self, checkable=True)
-        self.showOrbitalPathsAction.setChecked(self.settings['3D_VIEW']['SHOW_ORBITS'])
-        self.showOrbitalPathsAction.setStatusTip('Allow showing 3D View Orbital Paths')
-        self.showOrbitalPathsAction.toggled.connect(self._checkOrbitalPaths)
+        self.showEcefAxesAction.setIconVisibleInMenu(False)
+        # RESET CAMERA VIEW
+        self.reset3dCameraViewAction = QAction('&Reset Camera View', self)
+        self.reset3dCameraViewAction.setIcon(self.icons['RESET_VIEW'])
+        self.reset3dCameraViewAction.setStatusTip('Reset 3D View Camera to Default Zoom and Rotation')
+        self.reset3dCameraViewAction.triggered.connect(self._reset3dCameraView)
 
+        # TOGGLE PLAY/PAUSE
+        self.playPauseAction = QAction('&Pause Simulation', self)
+        self.playPauseAction.setIcon(self.icons['PAUSE'])
+        self.playPauseAction.setStatusTip('Pause Simulation')
+        self.playPauseAction.triggered.connect(self._togglePlayPause)
+        # SET SIMULATION TIME
+        self.setSimulationTimeAction = QAction('&Set Simulation DateTime', self)
+        self.setSimulationTimeAction.setIcon(self.icons['TIME'])
+        self.setSimulationTimeAction.setStatusTip('Set Simulation DateTime')
+        self.setSimulationTimeAction.triggered.connect(self._setSimulationTime)
+
+        # ADD PLOT TAB
+        self.addPlotTabAction = QAction('&Add Plot Tab', self)
+        self.addPlotTabAction.setIcon(self.icons['ADD_TAB'])
+        self.addPlotTabAction.setStatusTip('Add a new Plot Tab')
+        self.addPlotTabAction.triggered.connect(self._addPlotTab)
+        # REMOVE PLOT TAB
+        self.removePlotTabAction = QAction('&Remove Current Plot Tab', self)
+        self.removePlotTabAction.setIcon(self.icons['CLOSE_TAB'])
+        self.removePlotTabAction.setStatusTip('Remove the Current Plot Tab')
+        self.removePlotTabAction.triggered.connect(self._removePlotTab)
+        # REMOVE ALL PLOT TABS
+        self.removeAllPlotTabsAction = QAction('&Remove All Plot Tabs', self)
+        self.removeAllPlotTabsAction.setIcon(self.icons['CLOSE_ALL_TABS'])
+        self.removeAllPlotTabsAction.setStatusTip('Remove All Plot Tabs')
+        self.removeAllPlotTabsAction.triggered.connect(self._removeAllPlotTabs)
+        # ADD LINE PLOT
+        self.addLinePlotAction = QAction('&Add Line Plot', self)
+        self.addLinePlotAction.setIcon(self.icons['LINE_PLOT'])
+        self.addLinePlotAction.setStatusTip('Add a Line Plot to the Current Plot Tab')
+        self.addLinePlotAction.triggered.connect(self._addLinePlot)
+        # ADD TIME SERIES PLOT
+        self.addTimeSeriesAction = QAction('&Add Time Series', self)
+        self.addTimeSeriesAction.setIcon(self.icons['TIME_SERIES'])
+        self.addTimeSeriesAction.setStatusTip('Add a Time Series to the Current Plot Tab')
+        self.addTimeSeriesAction.triggered.connect(self._addTimeSeriesPlot)
+        # ADD POLAR PLOT
+        self.addPolarPlotAction = QAction('&Add Polar Plot', self)
+        self.addPolarPlotAction.setIcon(self.icons['POLAR'])
+        self.addPolarPlotAction.setStatusTip('Add a Polar Plot to the Current Plot Tab')
+        self.addPolarPlotAction.triggered.connect(self._addPolarPlot)
+
+        # OPEN DATA ENGINE REQUESTS REGISTRY
+        self.openEngineRegistryAction = QAction('&Data Registry', self)
+        self.openEngineRegistryAction.setStatusTip('Open Orbital Engine Data Registry')
+        self.openEngineRegistryAction.triggered.connect(self._openRegistryInspector)
         # VISIT GITHUB
         self.githubAction = QAction('&Visit GitHub', self)
         self.githubAction.setIcon(self.icons['GITHUB'])
@@ -154,101 +250,194 @@ class MainWindow(QMainWindow):
         self.reportIssueAction.setIcon(self.icons['BUG'])
         self.reportIssueAction.setStatusTip('Report an Issue')
         self.reportIssueAction.triggered.connect(self._reportIssue)
+        # QUIT APPLICATION
+        self.quitAction = QAction('&Quit', self)
+        self.quitAction.setStatusTip('Quit Application')
+        self.quitAction.triggered.connect(self.close)
 
     def _createMenuBar(self):
         self.menuBar = self.menuBar()
-        self._selectionDependentActions = []
-
+        ### FILE MENU ###
+        self.fileMenu = self.menuBar.addMenu('&File')
+        self.fileMenu.addAction(self.quitAction)
         ### VIEW MENU ###
         self.viewMenu = self.menuBar.addMenu('&View')
+        self.viewMenu.addAction(self.resetViewConfigAction)
+        self.viewMenu.addAction(self.setViewConfigAsDefaultAction)
+        self.viewMenu.addSeparator()
         # 2D MAP MENU
         self.map2dMenu = self.viewMenu.addMenu('&2D Map')
-        self.map2dMenu.addAction(self.reset2dMapConfigAction)
-        self.map2dMenu.addAction(self.set2dMapConfigAsDefaultAction)
-        self.map2dMenu.addSeparator()
+        self.map2dMenu.addAction(self.showGrid2dAction)
         self.map2dMenu.addAction(self.showNightLayerAction)
         self.map2dMenu.addAction(self.sunIndicatorAction)
+        self.map2dMenu.addAction(self.showMap2dTerminatorAction)
         self.map2dMenu.addAction(self.vernalPointAction)
         self.map2dMenu.addSeparator()
-        self.map2dMenu.addAction(self.showGroundTracksAction)
-        self.map2dMenu.addAction(self.showFootprintsAction)
+        self.map2dMenu.addAction(self.showGroundTracks2dAction)
+        self.map2dMenu.addAction(self.showFootprints2dAction)
+        self.map2dMenu.addSeparator()
+        self.map2dMenu.addAction(self.reset2dCameraViewAction)
         # 3D VIEW MENU
         self.view3dMenu = self.viewMenu.addMenu('&3D View')
-        self.view3dMenu.addAction(self.reset3dViewConfigAction)
-        self.view3dMenu.addAction(self.set3dViewConfigAsDefaultAction)
-        self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showEarthAction)
         self.view3dMenu.addAction(self.showEarthGridAction)
         self.view3dMenu.addAction(self.showEciAxesAction)
         self.view3dMenu.addAction(self.showEcefAxesAction)
         self.view3dMenu.addSeparator()
-        self.view3dMenu.addAction(self.showOrbitalPathsAction)
-
+        self.view3dMenu.addAction(self.showOrbitPaths3dAction)
+        self.view3dMenu.addSeparator()
+        self.view3dMenu.addAction(self.reset3dCameraViewAction)
+        # PLOT VIEW MENU
+        self.plotMenu = self.viewMenu.addMenu('&Plots')
+        self.plotTabMenu = self.plotMenu.addMenu('&Tabs')
+        self.plotTabMenu.addAction(self.addPlotTabAction)
+        self.plotTabMenu.addAction(self.removePlotTabAction)
+        self.plotTabMenu.addAction(self.removeAllPlotTabsAction)
+        self.plotMenu.addSeparator()
+        self.plotMenu.addAction(self.addTimeSeriesAction)
+        self.plotMenu.addAction(self.addLinePlotAction)
+        self.plotMenu.addAction(self.addPolarPlotAction)
+        ### TOOLS MENU ###
+        self.toolsMenu = self.menuBar.addMenu('&Tools')
+        self.simulationMenu = self.toolsMenu.addMenu('&Simulation')
+        self.simulationMenu.addAction(self.playPauseAction)
+        self.simulationMenu.addAction(self.setSimulationTimeAction)
         ### HELP MENU ###
         self.helpMenu = self.menuBar.addMenu('&Help')
+        self.helpMenu.addAction(self.openEngineRegistryAction)
+        self.helpMenu.addSeparator()
         self.helpMenu.addAction(self.githubAction)
         self.helpMenu.addAction(self.reportIssueAction)
 
+    def _createToolBars(self):
+        # MAIN TOOLBAR
+        self.mainToolBar = QToolBar('Main Toolbar', self)
+        self.mainToolBar.setMovable(False)
+        self.mainToolBar.addAction(self.open3dViewAction)
+        self.mainToolBar.addAction(self.open2dMapAction)
+        self.mainToolBar.addAction(self.openPlotViewAction)
+        # 3D VIEW TOOLBAR
+        self.view3dToolBar = QToolBar('3D View Toolbar', self)
+        self.view3dToolBar.addAction(self.showEarthAction)
+        self.view3dToolBar.addAction(self.showEarthGridAction)
+        self.view3dToolBar.addAction(self.showEciAxesAction)
+        self.view3dToolBar.addAction(self.showEcefAxesAction)
+        self.view3dToolBar.addSeparator()
+        self.view3dToolBar.addAction(self.reset3dCameraViewAction)
+        # 2D MAP TOOLBAR
+        self.map2dToolBar = QToolBar('2D Map Toolbar', self)
+        self.map2dToolBar.addAction(self.showGrid2dAction)
+        self.map2dToolBar.addAction(self.sunIndicatorAction)
+        self.map2dToolBar.addAction(self.showNightLayerAction)
+        self.map2dToolBar.addAction(self.showMap2dTerminatorAction)
+        self.map2dToolBar.addSeparator()
+        self.map2dToolBar.addAction(self.reset2dCameraViewAction)
+        # PLOT VIEW TOOLBAR
+        self.plotViewToolBar = QToolBar('Plot View Toolbar', self)
+        self.plotViewToolBar.addAction(self.addPlotTabAction)
+        self.plotViewToolBar.addSeparator()
+        self.plotViewToolBar.addAction(self.addTimeSeriesAction)
+        self.plotViewToolBar.addAction(self.addLinePlotAction)
+        self.plotViewToolBar.addAction(self.addPolarPlotAction)
+
+        # ADDING ALL TOOLBARS TO THE MAIN WINDOW
+        self.addToolBar(self.mainToolBar)
+        self.addToolBar(self.view3dToolBar)
+        self.addToolBar(self.map2dToolBar)
+        self.addToolBar(self.plotViewToolBar)
+
+    def _manageToolBarVisibility(self, tabName):
+        if tabName == '2D_MAP':
+            self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(True)
+            self.plotViewToolBar.setVisible(False)
+        elif tabName == '3D_VIEW':
+            self.view3dToolBar.setVisible(True)
+            self.map2dToolBar.setVisible(False)
+            self.plotViewToolBar.setVisible(False)
+        elif tabName == 'PLOT_VIEW':
+            self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(False)
+            self.plotViewToolBar.setVisible(True)
+        else:
+            self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(False)
+            self.plotViewToolBar.setVisible(False)
+
     def _createIcons(self):
         self.iconPath = os.path.join(self.currentDir, f'src/assets/icons')
+        self.icons['SATELLITE_GLOBE'] = QIcon(os.path.join(self.iconPath, 'satellite-globe.png'))
+        self.icons['MAP'] = QIcon(os.path.join(self.iconPath, 'map.png'))
+        self.icons['PLOT'] = QIcon(os.path.join(self.iconPath, 'plot.png'))
+        self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
+        self.icons['EARTH_GRID'] = QIcon(os.path.join(self.iconPath, 'earth-grid.png'))
+        self.icons['ECI'] = QIcon(os.path.join(self.iconPath, 'eci.png'))
+        self.icons['ECEF'] = QIcon(os.path.join(self.iconPath, 'ecef.png'))
+        self.icons['RESET_VIEW'] = QIcon(os.path.join(self.iconPath, 'reset-view.png'))
+        self.icons['MAP_GRID'] = QIcon(os.path.join(self.iconPath, 'map-grid.png'))
+        self.icons['SHADOW'] = QIcon(os.path.join(self.iconPath, 'shadow.png'))
+        self.icons['SUN'] = QIcon(os.path.join(self.iconPath, 'sun.png'))
+        self.icons['SUNSET'] = QIcon(os.path.join(self.iconPath, 'sunset.png'))
+        self.icons['ADD_TAB'] = QIcon(os.path.join(self.iconPath, 'add-tab.png'))
+        self.icons['CLOSE_TAB'] = QIcon(os.path.join(self.iconPath, 'close-tab.png'))
+        self.icons['CLOSE_ALL_TABS'] = QIcon(os.path.join(self.iconPath, 'close-all-tabs.png'))
+        self.icons['LINE_PLOT'] = QIcon(os.path.join(self.iconPath, 'line-plot.png'))
+        self.icons['TIME_SERIES'] = QIcon(os.path.join(self.iconPath, 'time-series.png'))
+        self.icons['POLAR'] = QIcon(os.path.join(self.iconPath, 'polar.png'))
         self.icons['PLAY'] = QIcon(os.path.join(self.iconPath, 'play.png'))
         self.icons['PAUSE'] = QIcon(os.path.join(self.iconPath, 'pause.png'))
         self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
         self.icons['SLOW_DOWN'] = QIcon(os.path.join(self.iconPath, 'slow-down.png'))
         self.icons['RESUME'] = QIcon(os.path.join(self.iconPath, 'resume.png'))
+        self.icons['TIME'] = QIcon(os.path.join(self.iconPath, 'time.png'))
         self.icons['BUG'] = QIcon(os.path.join(self.iconPath, 'bug.png'))
         self.icons['GITHUB'] = QIcon(os.path.join(self.iconPath, 'github.png'))
 
-    def _resetObject3dViewConfig(self):
-        if self.selectedObject is None:
-            return
-        self.settings['3D_VIEW']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['3D_VIEW']['DEFAULT_CONFIG'])
-        self.saveSettings()
-        self.object3dViewConfigDock.setSelectedObject(self.selectedObject, self.settings['3D_VIEW']['OBJECTS'])
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+    def _togglePlayPause(self):
+        if self.centralViewWidget.timeline.isRunning:
+            self.centralViewWidget.timeline.toggleRequested.emit()
+            self.playPauseAction.setIcon(self.icons['PLAY'])
+            self.playPauseAction.setText('&Play Simulation')
+            self.playPauseAction.setStatusTip('Play Simulation')
+        else:
+            self.centralViewWidget.timeline.toggleRequested.emit()
+            self.playPauseAction.setIcon(self.icons['PAUSE'])
+            self.playPauseAction.setText('&Pause Simulation')
+            self.playPauseAction.setStatusTip('Pause Simulation')
 
-    def _setObject3dViewConfigAsDefault(self):
-        if self.selectedObject is None:
-            return
-        self.settings['3D_VIEW']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['3D_VIEW']['OBJECTS'][str(self.selectedObject)])
-        self.saveSettings()
+    def _setSimulationTime(self):
+        currentDatetime = self.centralViewWidget.clock.getDateTime()
+        dialog = SetTimeDialog(currentDatetime, parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            newDatetime = dialog.getDatetime().toPyDateTime()
+            self.centralViewWidget.clock.setDateTime(newDatetime)
+            self.centralViewWidget.timeline.setTime(newDatetime)
 
     def _checkEarth(self, checked):
-        self.settings['3D_VIEW']['SHOW_EARTH'] = checked
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH'] = checked
         self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkEarthGrid(self, checked):
-        self.settings['3D_VIEW']['SHOW_EARTH_GRID'] = checked
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH_GRID'] = checked
         self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkEciAxes(self, checked):
-        self.settings['3D_VIEW']['SHOW_ECI_AXES'] = checked
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECI_AXES'] = checked
         self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkEcefAxes(self, checked):
-        self.settings['3D_VIEW']['SHOW_ECEF_AXES'] = checked
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECEF_AXES'] = checked
         self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
-    def _checkOrbitalPaths(self, checked):
-        self.settings['3D_VIEW']['SHOW_ORBITS'] = checked
-        self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
+    def _reset3dCameraView(self):
+        self.centralViewWidget.view3dWidget.resetView()
 
-    def _checkGroundTracks(self, checked):
-        self.settings['2D_MAP']['SHOW_GROUND_TRACK'] = checked
-        self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.object2dMapConfigDock.enableGroundTrackConfig(self.settings['2D_MAP']['SHOW_GROUND_TRACK'])
-
-    def _checkFootprints(self, checked):
-        self.settings['2D_MAP']['SHOW_FOOTPRINT'] = checked
-        self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.object2dMapConfigDock.enableFootprintConfig(self.settings['2D_MAP']['SHOW_FOOTPRINT'])
+    def _reset2dCameraView(self):
+        self.centralViewWidget.map2dWidget.resetView()
 
     @staticmethod
     def _openGithub():
@@ -279,18 +468,51 @@ class MainWindow(QMainWindow):
         self.statusDateTimer.timeout.connect(self._updateStatus)
         self.statusDateTimer.start(1000)
 
-    def _updateActionStates(self):
-        hasSelection = self.selectedObject is not None
+    def _updateActionStates(self, model: ActiveObjectsModel | None = None):
+        if model is None:
+            model = self.activeObjectsDock.getActiveObjectsModel()
+        canConfigure = (len(model.selectedObjects) == 1 and not model.isGroupSelected)
         for action in self._selectionDependentActions:
-            action.setEnabled(hasSelection)
+            action.setEnabled(canConfigure)
+        self._updateObjectConfigDocks(model)
+
+    def _updateObjectConfigDocks(self, model: ActiveObjectsModel | None = None):
+        if model is None:
+            model = self.activeObjectsDock.getActiveObjectsModel()
+        hasSingleObject = len(model.selectedObjects) == 1 and not model.isGroupSelected
+        hasGroup = model.isGroupSelected and model.selectedGroupName is not None
+        if hasSingleObject:
+            obj = next(iter(model.selectedObjects))
+            self.objectViewConfigDock.setActiveObjects(model)
+            self.objectViewConfigDock.setSelectedObject(obj.noradIndex, self.settings['VIEW_CONFIG']['OBJECTS'])
+        elif hasGroup:
+            groupName = model.selectedGroupName
+            self.objectViewConfigDock.setActiveObjects(model)
+            self.objectViewConfigDock.setSelectedGroup(groupName)
+        else:
+            self.objectViewConfigDock.setActiveObjects(model)
+            self.objectViewConfigDock.setSelectedObject(None, self.settings['VIEW_CONFIG']['OBJECTS'])
+
+    def _updateObjectInfoDock(self, model: ActiveObjectsModel | None = None):
+        if model is None:
+            model = self.activeObjectsDock.getActiveObjectsModel()
+        canConfigure = (len(model.selectedObjects) == 1 and not model.isGroupSelected)
+        if canConfigure:
+            noradIndex = next(iter(model.selectedObjects))
+            if self.tleDatabase is None:
+                return
+            row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame['NORAD_CAT_ID'] == noradIndex]
+            self.objectInfoDock.setObject(row.iloc[0] if not row.empty else None)
+        else:
+            self.objectInfoDock.clear()
 
     def _restoreWindow(self):
         self.setWindowTitle('Satellite Tracker')
         if self.settings['WINDOW']['MAXIMIZED']:
             self.showMaximized()
         else:
-            g = self.settings['WINDOW']['GEOMETRY']
-            self.setGeometry(g['X'], g['Y'], g['WIDTH'], g['HEIGHT'])
+            windowGeometry = self.settings['WINDOW']['GEOMETRY']
+            self.setGeometry(windowGeometry['X'], windowGeometry['Y'], windowGeometry['WIDTH'], windowGeometry['HEIGHT'])
 
     def _updateStatus(self):
         self.datetime = QDateTime.currentDateTime()
@@ -309,26 +531,32 @@ class MainWindow(QMainWindow):
         if not os.path.exists(self.noradPath):
             os.mkdir(self.noradPath)
 
-    def setDatabase(self, database):
-        self.tleDatabase = database
-        self.centralViewWidget.setDatabase(database)
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
-        self.objectListDock.populate(self.tleDatabase, self.activeObjects)
-        self.centralViewWidget.setActiveObjects(self.activeObjects)
+    def setDatabases(self, tleDatabase, starDatabase):
+        self.tleDatabase, self.starDatabase = tleDatabase, starDatabase
+        self.centralViewWidget.setDatabases(self.tleDatabase, starDatabase)
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings['VIEW_CONFIG']), self.settings['CURRENT_TAB'])
+        self.activeObjectsDock.populate(self.tleDatabase, self.settings.get('ACTIVE_OBJECTS_MODEL', {}))
+        self.centralViewWidget.setActiveObjects(self.activeObjectsDock.getActiveObjectsModel())
+        self.centralViewWidget.requestManager.submitAllFixed()
         self.centralViewWidget.start()
         self._updateActionStates()
-        self.centralViewWidget.tabWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['VISUALIZATION']['CURRENT_TAB']))
-        self.centralViewWidget.tabChanged.connect(self._updateTabs)
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['CURRENT_TAB']))
+        self.centralViewWidget.stackedChanged.connect(self._updateStackedWidget)
+        self.centralViewWidget.setPlotViewLayoutConfiguration(self.settings['PLOT_VIEW'])
         self.setObjectConfigWidgetsVisibility()
+        self._manageToolBarVisibility(self.settings['CURRENT_TAB'])
+        self._restoreWindow()
 
     def setObjectConfigWidgetsVisibility(self):
-        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '2D_MAP':
-            self.object2dMapConfigDock.setVisible(True)
-            self.object3dViewConfigDock.setVisible(False)
-        if self.settings['VISUALIZATION']['CURRENT_TAB'] == '3D_VIEW':
-            self.object2dMapConfigDock.setVisible(False)
-            self.object3dViewConfigDock.setVisible(True)
+        if self.settings['CURRENT_TAB'] == '2D_MAP':
+            self.objectViewConfigDock.setVisible(True)
+            self.objectViewConfigDock.setViewMode('2D')
+        if self.settings['CURRENT_TAB'] == '3D_VIEW':
+            self.objectViewConfigDock.setVisible(True)
+            self.objectViewConfigDock.setViewMode('3D')
+        if self.settings['CURRENT_TAB'] == 'PLOT_VIEW':
+            self.objectViewConfigDock.setVisible(False)
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -336,840 +564,379 @@ class MainWindow(QMainWindow):
     def saveSettings(self):
         saveSettingsJson(self.settingsPath, self.settings)
 
-    def addObjects(self, noradIndices: list[int]):
-        for noradIndex in noradIndices:
-            if noradIndex in self.activeObjects:
-                continue
-            self.activeObjects.append(noradIndex)
-            if str(noradIndex) not in self.settings['2D_MAP']['OBJECTS']:
-                self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
-            if str(noradIndex) not in self.settings['3D_VIEW']['OBJECTS']:
-                self.settings['3D_VIEW']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['3D_VIEW']['DEFAULT_CONFIG'])
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+    def _onActiveObjectsChanged(self):
+        model = self.activeObjectsDock.getActiveObjectsModel()
+        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
+        for noradIndex in model.allNoradIndices():
+            if str(noradIndex) not in self.settings['VIEW_CONFIG']['OBJECTS']:
+                self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'])
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setActiveObjects(model)
         self.saveSettings()
-        self.objectListDock.populate(self.tleDatabase, self.activeObjects)
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
-        self.centralViewWidget.setActiveObjects(self.activeObjects)
         self._updateActionStates()
+        self._updateObjectInfoDock()
 
-    def removeSelectedObjects(self, noradIndices: list[int]):
-        for noradIndex in noradIndices:
-            if noradIndex in self.activeObjects:
-                self.activeObjects.remove(noradIndex)
-            if self.selectedObject == noradIndex:
-                self.selectedObject = None
-                self.objectInfoDock.clear()
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+    def _open2dMap(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '2D_MAP'))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.open2dMapAction.setChecked(True)
+        self.open3dViewAction.setChecked(False)
+        self.openPlotViewAction.setChecked(False)
+
+    def _open3dView(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.open2dMapAction.setChecked(False)
+        self.open3dViewAction.setChecked(True)
+        self.openPlotViewAction.setChecked(False)
+
+    def _openPlotView(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, 'PLOT_VIEW'))
+        self.open2dMapAction.setChecked(False)
+        self.open3dViewAction.setChecked(False)
+        self.openPlotViewAction.setChecked(True)
+
+    def _addPlotTab(self):
+        self.centralViewWidget.plotViewWidget.addNewTab()
+
+    def _removePlotTab(self):
+        self.centralViewWidget.plotViewWidget.closeCurrentTab()
+
+    def _removeAllPlotTabs(self):
+        self.centralViewWidget.plotViewWidget.closeAllTabs()
+
+    def _addLinePlot(self):
+        self.centralViewWidget.addLinePlot()
+
+    def _addTimeSeriesPlot(self):
+        self.centralViewWidget.addTimeSeriesPlot()
+
+    def _addPolarPlot(self):
+        self.centralViewWidget.addPolarPlot()
+
+    def _onObjectViewConfigChanged(self, noradIndex, newConfiguration):
+        self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
-        self.objectListDock.populate(self.tleDatabase, self.activeObjects)
-        self.centralViewWidget.setActiveObjects(self.activeObjects)
-        self.centralViewWidget.setSelectedObject(self.selectedObject)
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
-        self._updateActionStates()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
-    def onObjectSelected(self, noradIndex):
-        if noradIndex is None:
-            noradIndex = []
-        if isinstance(noradIndex, list):
-            if len(noradIndex) == 0:
-                self.selectedObject = None
-                self.objectInfoDock.clear()
-                self.centralViewWidget.setSelectedObject(None)
-                self._updateActionStates()
-                return
-            noradIndex = noradIndex[0]
-        try:
-            self.selectedObject = int(noradIndex)
-        except (TypeError, ValueError):
-            self.selectedObject = None
-            self.objectInfoDock.clear()
-            self.centralViewWidget.setSelectedObject(None)
-            self._updateActionStates()
+    def _onGroupViewConfigChanged(self, groupName, config):
+        model = self.activeObjectsDock.getActiveObjectsModel()
+        model.setGroupConfig(groupName, config)
+        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
+        self.saveSettings()
+        self.centralViewWidget.setActiveObjects(model)
+
+    def _resetObjectViewConfig(self):
+        model = self.activeObjectsDock.getActiveObjectsModel()
+        if len(model.selectedObjects) != 1 or model.isGroupSelected:
             return
-        row = self.tleDatabase.dataFrame.loc[self.tleDatabase.dataFrame['NORAD_CAT_ID'].astype(int) == self.selectedObject]
-        if not row.empty:
-            self.objectInfoDock.setObject(row.iloc[0])
-        else:
-            self.objectInfoDock.clear()
-        self.centralViewWidget.setSelectedObject(self.selectedObject)
-        self.object2dMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
-        self.object3dViewConfigDock.setSelectedObject(self.selectedObject, self.settings['3D_VIEW']['OBJECTS'])
-        self._updateActionStates()
-
-    def _on2dMapObjectConfigChanged(self, noradIndex, newConfiguration):
-        self.settings['2D_MAP']['OBJECTS'][str(noradIndex)] = newConfiguration
+        noradIndex = next(iter(model.selectedObjects))
+        self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'])
         self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.objectViewConfigDock.setSelectedObject(noradIndex, self.settings['VIEW_CONFIG']['OBJECTS'])
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
-    def _on3dViewObjectConfigChanged(self, noradIndex, newConfiguration):
-        self.settings['3D_VIEW']['OBJECTS'][str(noradIndex)] = newConfiguration
-        self.saveSettings()
-        self.centralViewWidget.set3dViewConfiguration(copy.deepcopy(self.settings['3D_VIEW']))
-
-    def _resetObject2dMapConfig(self):
-        if self.selectedObject is None:
+    def _setObjectViewConfigAsDefault(self):
+        model = self.activeObjectsDock.getActiveObjectsModel()
+        if len(model.selectedObjects) != 1 or model.isGroupSelected:
             return
-        self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)] = copy.deepcopy(self.settings['2D_MAP']['DEFAULT_CONFIG'])
+        noradIndex = next(iter(model.selectedObjects))
+        self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)])
         self.saveSettings()
-        self.object2dMapConfigDock.setSelectedObject(self.selectedObject, self.settings['2D_MAP']['OBJECTS'])
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
 
-    def _setObject2dMapConfigAsDefault(self):
-        if self.selectedObject is None:
-            return
-        self.settings['2D_MAP']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['2D_MAP']['OBJECTS'][str(self.selectedObject)])
+    def _check2dGrid(self, checked):
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GRID'] = checked
         self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkNightLayer(self, checked):
-        self.settings['2D_MAP']['SHOW_NIGHT'] = checked
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_NIGHT'] = checked
         self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkSunIndicator(self, checked):
-        self.settings['2D_MAP']['SHOW_SUN'] = checked
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_SUN'] = checked
         self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _checkVernalPoint(self, checked):
-        self.settings['2D_MAP']['SHOW_VERNAL'] = checked
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_VERNAL'] = checked
         self.saveSettings()
-        self.centralViewWidget.set2dMapConfiguration(copy.deepcopy(self.settings['2D_MAP']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+
+    def _checkMap2dTerminator(self, checked):
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_TERMINATOR'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+
+    def _change3dViewCameraSettings(self):
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM'] = self.centralViewWidget.view3dWidget.zoom
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X'] = self.centralViewWidget.view3dWidget.rotX
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y'] = self.centralViewWidget.view3dWidget.rotY
+        self.saveSettings()
+
+    def _toggleGroundTracks2d(self, checked):
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GROUND_TRACKS'] = checked
+        self.saveSettings()
+        self._updateGlobalVisibility()
+
+    def _toggleFootprints2d(self, checked):
+        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_FOOTPRINTS'] = checked
+        self.saveSettings()
+        self._updateGlobalVisibility()
+
+    def _toggleOrbitPaths3d(self, checked):
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'] = checked
+        self.saveSettings()
+        self._updateGlobalVisibility()
+
+    def _updateGlobalVisibility(self):
+        viewConfiguration = copy.deepcopy(self.settings['VIEW_CONFIG'])
+        self.centralViewWidget.setDisplayConfiguration(viewConfiguration)
+        self.objectViewConfigDock.applyGlobalVisibility(viewConfiguration, self.settings['CURRENT_TAB'])
+
+    def _openRegistryInspector(self):
+        self.registryWindow = PlotRequestRegistryWindow(self.centralViewWidget.requestManager)
+        self.registryWindow.show()
 
     def closeEvent(self, event):
         self.centralViewWidget.close()
-        # SAVING SETTINGS
+        if self.registryWindow is not None:
+            self.registryWindow.close()
+        self.settings['PLOT_VIEW']  = self.centralViewWidget.plotViewWidget.getLayoutConfiguration()
         self.settings['WINDOW']['MAXIMIZED'] = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
             self.settings['WINDOW']['GEOMETRY'] = {'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()}
-        self.settings['VISUALIZATION']['ACTIVE_OBJECTS'] = self.activeObjects
+        model = self.activeObjectsDock.getActiveObjectsModel()
+        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
         self.saveSettings()
         event.accept()
 
 
-class Map2dWidget(QWidget):
-    objectSelected = pyqtSignal(list)
-    ELEMENTS_Z_VALUES = {'SPOT': 30, 'LABEL': 40, 'FOOTPRINT': 20, 'GROUND_TRACK': 10, 'SUN': 50, 'NIGHT': 5, 'VERNAL': 100}
-
-    def __init__(self, parent=None, mapImagePath='src/assets/earth/world_map.png'):
-        super().__init__(parent)
-        self.mapImagePath = mapImagePath
-        self.objectSpots, self.objectGroundTracks, self.objectFootprints, self.objectArrows = {}, {}, {}, {}
-        self.objectLabels = {}
-        self._lastMouseScenePos = None
-        self.selectedObject, self.hoveredObject, self.hoverRadius, self.displayConfiguration = None, None, 15, {}
-        self.sunIndicator, self.nightLayer, self.vernalIndicator = None, None, None
-        self._setupMap()
-
-    def _setupMap(self):
-        if not os.path.exists(self.mapImagePath):
-            raise FileNotFoundError(f'Map image not found at {self.mapImagePath}')
-        img = imageio.imread(self.mapImagePath)
-        img = np.rot90(img, k=-1)
-        self.mapImage = pg.ImageItem(img)
-        self.mapWidth, self.mapHeight = self.mapImage.width(), self.mapImage.height()
-        # SETUP WORLD MAP VIEW
-        self.view = GraphicsLayoutWidget()
-        self.view.setBackground('#202124')
-        self.plot = self.view.addPlot()
-        self.plot.addItem(self.mapImage)
-        self.plot.setAspectLocked(True)
-        self.plot.hideAxis('bottom')
-        self.plot.hideAxis('left')
-        self.plot.scene().sigMouseMoved.connect(self._onMouseMoved)
-        self.view.setMouseTracking(True)
-        self.view.viewport().setMouseTracking(True)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.view)
-
-    def _lonlatToCartesian(self, longitude, latitude):
-        longitude, latitude = np.asarray(longitude), np.asarray(latitude)
-        return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
-
-    @staticmethod
-    def _arrowAngle(x0, y0, x1, y1):
-        return np.degrees(np.arctan2(y1 - y0, x1 - x0)) + 180
-
-    @staticmethod
-    def _splitWrapSegment(longitudes, latitudes, threshold=180):
-        longitudes, latitudes = np.asarray(longitudes), np.asarray(latitudes)
-        if longitudes.size < 2:
-            return [(longitudes, latitudes)]
-        diffLongitudes = np.diff(longitudes)
-        jumps = np.abs(diffLongitudes) > threshold
-        if not np.any(jumps):
-            return [(longitudes, latitudes)]
-        splitIndices = np.where(jumps)[0] + 1
-        longitudeSegments = np.split(longitudes, splitIndices)
-        latitudeSegments = np.split(latitudes, splitIndices)
-        for k, index in enumerate(splitIndices):
-            # LINEAR INTERPOLATION
-            previousLongitude, nextLongitude = longitudes[index - 1], longitudes[index]
-            previousLatitude, nextLatitude = latitudes[index - 1], latitudes[index]
-            if previousLongitude > nextLongitude:
-                longitudeA, longitudeB = previousLongitude, nextLongitude + 360
-                latitudeA, latitudeB = previousLatitude, nextLatitude
-                borderA, borderB = 180, -180
-            else:
-                longitudeA, longitudeB = nextLongitude + 360, previousLongitude
-                latitudeA, latitudeB = nextLatitude, previousLatitude
-                borderA, borderB = -180, 180
-            a = (latitudeB - latitudeA) / (longitudeB - longitudeA)
-            b = latitudeA - a * longitudeA
-            latitudeBorder = a * 180 + b
-            # ADDING BORDER POINTS TO SEGMENTS
-            longitudeSegments[k] = np.append(longitudeSegments[k], borderA)
-            latitudeSegments[k] = np.append(latitudeSegments[k], latitudeBorder)
-            longitudeSegments[k + 1] = np.insert(longitudeSegments[k + 1], 0, borderB)
-            latitudeSegments[k + 1] = np.insert(latitudeSegments[k + 1], 0, latitudeBorder)
-        return list(zip(longitudeSegments, latitudeSegments))
-
-    @staticmethod
-    def _shouldRender(mode: str, isSelected: bool, isToggled: bool = True):
-        if not isToggled:
-            return False
-        if mode == "ALWAYS":
-            return True
-        if mode == "WHEN_SELECTED":
-            return isSelected
-        return False  # NEVER
-
-    def _updateSunAndNight(self, mapData, showSun=True, showNight=True, showVernal=True):
-        if showNight:
-            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
-            longitudes, latitudes = mapData['NIGHT']['LONGITUDE'], mapData['NIGHT']['LATITUDE']
-            x, y = self._lonlatToCartesian(longitudes, latitudes)
-            fillLevel = 0 if subPointLatitude > 0 else self.mapHeight
-            if self.nightLayer is None:
-                self.nightLayer = pg.PlotCurveItem(x, y, pen=None, fillLevel=fillLevel, brush=pg.mkBrush(0, 0, 0, 120))
-                self.nightLayer.setZValue(self.ELEMENTS_Z_VALUES['NIGHT'])
-                self.plot.addItem(self.nightLayer)
-            else:
-                self.nightLayer.setData(x, y)
-                self.nightLayer.setFillLevel(fillLevel)
-
-        else:
-            if self.nightLayer is not None:
-                self.plot.removeItem(self.nightLayer)
-                self.nightLayer = None
-        if showSun:
-            subPointLongitude, subPointLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']
-            xSun, ySun = self._lonlatToCartesian(subPointLongitude, subPointLatitude)
-            if self.sunIndicator is None:
-                self.sunIndicator = pg.ScatterPlotItem(size=14, brush=pg.mkBrush(255, 215, 0), pen=pg.mkPen(255, 200, 0, width=2), symbol="o",)
-                self.sunIndicator.setZValue(self.ELEMENTS_Z_VALUES['SUN'])
-                self.plot.addItem(self.sunIndicator)
-            self.sunIndicator.setData([xSun], [ySun])
-        else:
-            if self.sunIndicator is not None:
-                self.plot.removeItem(self.sunIndicator)
-                self.sunIndicator = None
-        if showVernal:
-            vernalLongitude, vernalLatitude = mapData['VERNAL']['LONGITUDE'], mapData['VERNAL']['LATITUDE']
-            xVernal, yVernal = self._lonlatToCartesian(vernalLongitude, vernalLatitude)
-            if self.vernalIndicator is None:
-                self.vernalIndicator = pg.ScatterPlotItem(size=15, brush=pg.mkBrush(0, 200, 0), pen=pg.mkPen(0, 255, 0, width=2), symbol="+",)
-                self.vernalIndicator.setZValue(self.ELEMENTS_Z_VALUES['VERNAL'])
-                self.plot.addItem(self.vernalIndicator)
-            self.vernalIndicator.setData([xVernal], [yVernal])
-        else:
-            if self.vernalIndicator is not None:
-                self.plot.removeItem(self.vernalIndicator)
-                self.vernalIndicator = None
-
-    def updateMap(self, positions: dict, visibleNorads: set[int], selectedNorad: int | None, displayConfiguration: dict):
-        self.selectedObject, self.displayConfiguration = selectedNorad, displayConfiguration
-        # REMOVING EVERYTHING NOT VISIBLE
-        for noradIndex in list(self.objectSpots.keys()):
-            if noradIndex not in visibleNorads:
-                self._removeItems(self.objectSpots.pop(noradIndex))
-                self._removeItems(self.objectGroundTracks.pop(noradIndex, None))
-                self._removeItems(self.objectFootprints.pop(noradIndex, None))
-                self._removeItems(self.objectArrows.pop(noradIndex, None))
-                self._removeItems(self.objectLabels.pop(noradIndex, None))
-        # NIGHT LAYER AND SUN POSITION
-        self._updateSunAndNight(positions['2D_MAP'], self.displayConfiguration['SHOW_SUN'], self.displayConfiguration['SHOW_NIGHT'], self.displayConfiguration['SHOW_VERNAL'])
-        # UPDATING/ADDING VISIBLE OBJECTS
-        for noradIndex in visibleNorads:
-            if noradIndex not in positions['2D_MAP']['OBJECTS']:
-                continue
-            self._updateObjectDisplay(noradIndex, positions['2D_MAP']['OBJECTS'][noradIndex])
-
-    def _updateObjectDisplay(self, noradIndex, noradPosition):
-        isSelected = (noradIndex == self.selectedObject)
-        isHovered = (noradIndex == self.hoveredObject)
-        isActive = isSelected or isHovered
-        noradObjectConfiguration = self.displayConfiguration['OBJECTS'][str(noradIndex)]
-        # GROUND TRACKS
-        groundTrackColor, groundTrackWidth = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected, self.displayConfiguration['SHOW_GROUND_TRACK']):
-            groundLongitudes, groundLatitudes = noradPosition['GROUND_TRACK']['LONGITUDE'], noradPosition['GROUND_TRACK']['LATITUDE']
-            groundSegments = self._splitWrapSegment(groundLongitudes, groundLatitudes)
-            for item in self.objectGroundTracks.get(noradIndex, []):
-                self.plot.removeItem(item)
-            self.objectGroundTracks[noradIndex] = []
-            for segmentLongitudes, segmentLatitudes in groundSegments:
-                gx, gy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(gx, gy, pen=pg.mkPen(groundTrackColor, width=groundTrackWidth))
-                curve.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
-                self.objectGroundTracks[noradIndex].append(curve)
-                self.plot.addItem(self.objectGroundTracks[noradIndex][-1])
-            # GROUND TRACK ARROW
-            lastLongitude, lastLatitude = groundSegments[-1]
-            x0, y0 = self._lonlatToCartesian(lastLongitude[-2], lastLatitude[-2])
-            x1, y1 = self._lonlatToCartesian(lastLongitude[-1], lastLatitude[-1])
-            length = np.hypot(x1 - x0, y1 - y0)
-            angle = self._arrowAngle(x0, y0, x1, y1)
-            if noradIndex not in self.objectArrows:
-                arrow = pg.ArrowItem(angle=angle, tipAngle=30, headLen=length, tailLen=0, tailWidth=0, pen=pg.mkPen(groundTrackColor), brush=pg.mkBrush(groundTrackColor), pxMode=False)
-                arrow.setZValue(self.ELEMENTS_Z_VALUES['GROUND_TRACK'])
-                self.objectArrows[noradIndex] = arrow
-                self.plot.addItem(self.objectArrows[noradIndex])
-            self.objectArrows[noradIndex].setStyle(angle=angle)
-            self.objectArrows[noradIndex].setPos(x1, y1)
-        else:
-            self._removeItems(self.objectGroundTracks.get(noradIndex))
-            self._removeItems(self.objectArrows.get(noradIndex))
-            self.objectGroundTracks.pop(noradIndex, None)
-            self.objectArrows.pop(noradIndex, None)
-        # VISIBILITY FOOTPRINT
-        footColor, footWidth = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
-        if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected, self.displayConfiguration['SHOW_FOOTPRINT']):
-            footLongitudes, footLatitudes = noradPosition['VISIBILITY']['LONGITUDE'], noradPosition['VISIBILITY']['LATITUDE']
-            footSegments = self._splitWrapSegment(footLongitudes, footLatitudes)
-            for item in self.objectFootprints.get(noradIndex, []):
-                self.plot.removeItem(item)
-            self.objectFootprints[noradIndex] = []
-            for segmentLongitudes, segmentLatitudes in footSegments:
-                fx, fy = self._lonlatToCartesian(segmentLongitudes, segmentLatitudes)
-                curve = pg.PlotCurveItem(fx, fy, pen=pg.mkPen(footColor, width=footWidth))
-                curve.setZValue(self.ELEMENTS_Z_VALUES['FOOTPRINT'])
-                self.objectFootprints[noradIndex].append(curve)
-                self.plot.addItem(self.objectFootprints[noradIndex][-1])
-        else:
-            self._removeItems(self.objectFootprints.get(noradIndex))
-            self.objectFootprints.pop(noradIndex, None)
-        # OBJECT POSITIONS
-        spotColor = tuple(noradObjectConfiguration['SPOT']['COLOR']) if isActive else (150, 150, 150)
-        x, y = self._lonlatToCartesian(noradPosition['POSITION']['LONGITUDE'], noradPosition['POSITION']['LATITUDE'])
-        if noradIndex not in self.objectSpots:
-            spot = pg.ScatterPlotItem(size=noradObjectConfiguration['SPOT']['SIZE'], brush=pg.mkBrush(*spotColor))
-            spot.sigClicked.connect(self._onObjectClicked)
-            spot.setZValue(self.ELEMENTS_Z_VALUES['SPOT'])
-            self.objectSpots[noradIndex] = spot
-            self.plot.addItem(self.objectSpots[noradIndex])
-        self.objectSpots[noradIndex].setData([{'pos': (x, y), 'data': noradIndex}], brush=pg.mkBrush(*spotColor), pen=None)
-        self.objectSpots[noradIndex].setSize(noradObjectConfiguration['SPOT']['SIZE'])
-        if noradIndex not in self.objectLabels:
-            label = pg.TextItem(text=noradPosition['NAME'], anchor=(0.5, 1.2), color=(255, 255, 255))
-            label.setZValue(self.ELEMENTS_Z_VALUES['LABEL'])
-            label.hide()
-            self.objectLabels[noradIndex] = label
-            self.plot.addItem(label)
-        self.objectLabels[noradIndex].setPos(x, y)
-        if isActive:
-            self.objectLabels[noradIndex].show()
-        else:
-            self.objectLabels[noradIndex].hide()
-        if self._lastMouseScenePos is not None:
-            self._onMouseMoved(self._lastMouseScenePos)
-
-    def _onObjectClicked(self, plot, points):
-        if not points:
-            return
-        noradIndex = points[0].data()
-        if noradIndex is None:
-            return
-        self.objectSelected.emit([noradIndex])
-
-    def _onMouseMoved(self, scenePos):
-        self._lastMouseScenePos = scenePos
-        self.hoverRadius = 15 * self.plot.vb.viewPixelSize()[0]
-        if not self.objectSpots:
-            return
-        closestNorad, closestDist = None, float("inf")
-        mouseViewPos = self.plot.vb.mapSceneToView(scenePos)
-        for noradIndex, spot in self.objectSpots.items():
-            pts = spot.points()
-            if not pts:
-                continue
-            spotViewPos = pts[0].pos()
-            dist = np.sqrt((spotViewPos.x() - mouseViewPos.x()) ** 2 + (spotViewPos.y() - mouseViewPos.y()) ** 2)
-            if dist < self.hoverRadius and dist < closestDist:
-                closestNorad, closestDist = noradIndex, dist
-        if closestNorad is not None and self.hoveredObject is None:
-            self.hoveredObject = closestNorad
-            if closestNorad in self.objectLabels:
-                self.objectLabels[closestNorad].show()
-        elif closestNorad is None and self.hoveredObject is not None:
-            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
-                self.objectLabels[self.hoveredObject].hide()
-            self.hoveredObject = None
-        elif closestNorad is not None and closestNorad != self.hoveredObject:
-            if self.hoveredObject in self.objectLabels and self.hoveredObject != self.selectedObject:
-                self.objectLabels[self.hoveredObject].hide()
-            self.hoveredObject = closestNorad
-            if closestNorad in self.objectLabels:
-                self.objectLabels[closestNorad].show()
-
-    def _removeItems(self, items):
-        if not items:
-            return
-        if isinstance(items, list):
-            for item in items:
-                self.plot.removeItem(item)
-        else:
-            self.plot.removeItem(items)
-
-
-class ObjectListDockWidget(QDockWidget):
-    addObject = pyqtSignal(list)
-    objectSelected = pyqtSignal(list)
-    toggleVisibility = pyqtSignal(list)
-    showObjectInfo = pyqtSignal(list)
-    removeObject = pyqtSignal(list)
-
-    def __init__(self, mainWindow, title='Active Objects'):
-        super().__init__(title, mainWindow)
-        self.mainWindow = mainWindow
-        container = QWidget()
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
-        self.setTitleBarWidget(QWidget())
-        self.setWidget(container)
-
-        topBar = QHBoxLayout()
-        self.searchBar = QLineEdit()
-        self.searchBar.setPlaceholderText('Search Active Objects…')
-        self.searchBar.textChanged.connect(self.filterObjectList)
-        self.addButton = QPushButton('+')
-        self.addButton.setFixedWidth(28)
-        self.addButton.setToolTip('Add Objects')
-        self.addButton.clicked.connect(self.openAddDialog)
-        topBar.addWidget(self.searchBar)
-        topBar.addWidget(self.addButton)
-
-        self.listWidget = QListWidget()
-        self.listWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.listWidget.customContextMenuRequested.connect(self.showContextMenu)
-        self.listWidget.itemSelectionChanged.connect(self.onSelectionChanged)
-
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.addLayout(topBar)
-        layout.addWidget(self.listWidget)
-        self._items = []
-        self.database = None
-
-    def populate(self, database, selectedNoradIds):
-        self.database = database
-        self.listWidget.clear()
-        for norad in selectedNoradIds:
-            row = database.dataFrame[database.dataFrame['NORAD_CAT_ID'] == norad]
-            if row.empty:
-                continue
-            row = row.iloc[0]
-            item = QListWidgetItem(row['OBJECT_NAME'])
-            item.setData(Qt.UserRole, norad)
-            self.listWidget.addItem(item)
-
-    def filterObjectList(self, text):
-        text = text.lower()
-        visibleCategories = set()
-        for item, category in self._items:
-            if category is None:
-                continue
-            match = text in item.text().lower()
-            item.setHidden(not match)
-            if match:
-                visibleCategories.add(category)
-        for item, category in self._items:
-            if category is None:
-                catName = item.text()[1:-1].lower()
-                item.setHidden(catName not in visibleCategories)
-
-    def showContextMenu(self, position: QPoint):
-        item = self.listWidget.itemAt(position)
-        if not item:
-            return
-        noradIndex = item.data(Qt.UserRole)
-        if noradIndex is None:
-            return
-        menu = QMenu(self)
-        actionToggle = menu.addAction('Toggle Visibility')
-        actionRemove = menu.addAction('Remove Object')
-        selectedAction = menu.exec_(self.listWidget.viewport().mapToGlobal(position))
-        if selectedAction == actionToggle:
-            self.toggleVisibility.emit([noradIndex])
-        elif selectedAction == actionRemove:
-            self.removeObject.emit([noradIndex])
-
-    def openAddDialog(self):
-        if self.database is None:
-            return
-        dialog = AddObjectDialog(self.database, self)
-        if dialog.exec_():
-            if dialog.selectedNoradIndices:
-                self.addObject.emit(dialog.selectedNoradIndices)
-
-    def addItems(self, database, noradIndices):
-        self.database = database
-        for norad in noradIndices:
-            if any(item.data(Qt.UserRole) == norad for item, _ in self._items):
-                continue
-            try:
-                row = database.dataFrame.loc[database.dataFrame['NORAD_CAT_ID'] == norad].iloc[0]
-            except IndexError:
-                continue
-            item = QListWidgetItem(row['OBJECT_NAME'])
-            item.setData(Qt.UserRole, norad)
-            self.listWidget.addItem(item)
-            self._items.append((item, None))
-
-    def onSelectionChanged(self):
-        items = self.listWidget.selectedItems()
-        if not items:
-            self.objectSelected.emit([])
-            return
-        noradId = items[0].data(Qt.UserRole)
-        self.objectSelected.emit([noradId])
-
-    def selectNoradIndex(self, noradIndex):
-        self.listWidget.blockSignals(True)
-        self.listWidget.clearSelection()
-        for i in range(self.listWidget.count()):
-            item = self.listWidget.item(i)
-            if item.data(Qt.UserRole) == noradIndex:
-                item.setSelected(True)
-                self.listWidget.setCurrentItem(item)
-                self.listWidget.scrollToItem(item)
-                break
-        self.listWidget.blockSignals(False)
-        if isinstance(noradIndex, list):
-            self.objectSelected.emit(noradIndex)
-        else:
-            self.objectSelected.emit([noradIndex])
-
-
-class ObjectInfoDockWidget(QDockWidget):
-    def __init__(self, parent=None):
-        super().__init__('Object Info', parent)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
-        self._labels = {}
-        self._setupUi()
-
-    def _setupUi(self):
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.addWidget(self._createGroup('Identification', [('Name', 'OBJECT_NAME'), ('NORAD ID', 'NORAD_CAT_ID'), ('COSPAR ID', 'OBJECT_ID'),]))
-        layout.addWidget(self._createGroup('Status', [("Object Type", "OBJECT_TYPE"), ('Owner', 'OWNER'), ('Operational Status', 'OPS_STATUS_CODE'),]))
-        layout.addWidget(self._createGroup('Orbit (TLE)', [('Inclination (deg)', 'INCLINATION'), ('Eccentricity', 'ECCENTRICITY'), ('Mean Motion (rev/day)', 'MEAN_MOTION'), ('B*', 'BSTAR'),]))
-        layout.addStretch()
-        self.setWidget(container)
-
-    def _createGroup(self, title, fields):
-        groupBox = QGroupBox(title)
-        formLayout = QFormLayout()
-        for labelText, fieldKey in fields:
-            label = QLabel("---")
-            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            formLayout.addRow(QLabel(labelText + ":"), label)
-            self._labels[fieldKey] = label
-        groupBox.setLayout(formLayout)
-        return groupBox
-
-    def clear(self):
-        for label in self._labels.values():
-            label.setText("---")
-
-    def setObject(self, row):
-        if row is None:
-            self.clear()
-            return
-        for key, label in self._labels.items():
-            value = row.get(key, None)
-            if value is None or value == "":
-                label.setText("—")
-            else:
-                label.setText(str(value))
-
-
-class Object2dMapConfigDockWidget(QDockWidget):
-    configChanged = pyqtSignal(int, dict)
-    MODES = {'Always': "ALWAYS", 'When Selected': "WHEN_SELECTED", 'Never': "NEVER"}
-
-    def __init__(self, parent=None):
-        super().__init__("Object Map Configuration", parent)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setFeatures(QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable)
-        self.noradIndex = None
-        self._currentConfig = None
-        self._setupUi()
-
-    def _setupUi(self):
-        self.editorWidget = QWidget()
-        self.editorWidget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        mainLayout = QVBoxLayout(self.editorWidget)
-        mainLayout.setSpacing(10)
-        mainLayout.setContentsMargins(6, 6, 6, 6)
-
-        # SPOT CONFIGURATION
-        self.spotGroup = self._groupBox("Spot")
-        self.spotColorButton = self._colorButton()
-        self.spotSizeSpin = QSpinBox()
-        self.spotSizeSpin.setRange(4, 30)
-        self.spotSizeSpin.setToolTip("Size")
-
-        self.spotGroup.layout().addWidget(self.spotColorButton, 0, 0)
-        self.spotGroup.layout().addWidget(self.spotSizeSpin, 0, 1)
-        mainLayout.addWidget(self.spotGroup)
-
-        # GROUND TRACK CONFIGURATION
-        self.groundTrackGroup = self._groupBox("Ground Track")
-        self.groundTrackModeCombo = QComboBox()
-        self.groundTrackModeCombo.addItems(list(self.MODES.keys()))
-        self.groundTrackColorButton = self._colorButton()
-        self.groundTrackWidthSpin = QSpinBox()
-        self.groundTrackWidthSpin.setRange(1, 5)
-        self.groundTrackWidthSpin.setToolTip("Width")
-
-        self.groundTrackGroup.layout().addWidget(self.groundTrackModeCombo, 0, 0)
-        self.groundTrackGroup.layout().addWidget(self.groundTrackColorButton, 0, 1)
-        self.groundTrackGroup.layout().addWidget(self.groundTrackWidthSpin, 0, 2)
-        mainLayout.addWidget(self.groundTrackGroup)
-
-        # VISIBILITY CONFIGURATION
-        self.footprintGroup = self._groupBox("Visibility Footprint")
-        self.footprintModeCombo = QComboBox()
-        self.footprintModeCombo.addItems(list(self.MODES.keys()))
-        self.footprintColorButton = self._colorButton()
-        self.footprintWidthSpin = QSpinBox()
-        self.footprintWidthSpin.setRange(1, 5)
-        self.footprintWidthSpin.setToolTip("Width")
-
-        self.footprintGroup.layout().addWidget(self.footprintModeCombo, 0, 0)
-        self.footprintGroup.layout().addWidget(self.footprintColorButton, 0, 1)
-        self.footprintGroup.layout().addWidget(self.footprintWidthSpin, 0, 2)
-        mainLayout.addWidget(self.footprintGroup)
-
-        self.editorWidget.setEnabled(False)
-        self.setWidget(self.editorWidget)
-        self.spotSizeSpin.valueChanged.connect(self._emitConfig)
-        self.groundTrackModeCombo.currentIndexChanged.connect(self._emitConfig)
-        self.groundTrackWidthSpin.valueChanged.connect(self._emitConfig)
-        self.footprintModeCombo.currentIndexChanged.connect(self._emitConfig)
-        self.footprintWidthSpin.valueChanged.connect(self._emitConfig)
-
-        self.spotColorButton.clicked.connect(lambda: self._pickColor('SPOT'))
-        self.groundTrackColorButton.clicked.connect(lambda: self._pickColor('GROUND_TRACK'))
-        self.footprintColorButton.clicked.connect(lambda: self._pickColor('FOOTPRINT'))
-
-    @staticmethod
-    def _colorButton():
-        btn = QPushButton()
-        btn.setFixedSize(24, 24)
-        btn.setStyleSheet("border: 1px solid #666;")
-        return btn
-
-    @staticmethod
-    def _groupBox(title: str):
-        box = QGroupBox(title)
-        box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        layout = QGridLayout(box)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(6)
-        layout.setContentsMargins(8, 12, 8, 8)
-        return box
-
-    @staticmethod
-    def _setButtonColor(btn, color):
-        btn.setStyleSheet(f"background-color: rgb({color[0]},{color[1]},{color[2]}); border: 1px solid #666;")
-
-    def _modeToLabel(self, mode):
-        for label, value in self.MODES.items():
-            if value == mode:
-                return label
-        return "Never"
-
-    def setSelectedObject(self, noradIndex: int | None, config: dict):
-        self.noradIndex = noradIndex
-        if noradIndex is None:
-            self.clear()
-            return
-        self.editorWidget.setEnabled(True)
-        self._currentConfig = config[str(noradIndex)]
-        blockers = [
-            QSignalBlocker(self.spotSizeSpin),
-            QSignalBlocker(self.groundTrackModeCombo),
-            QSignalBlocker(self.groundTrackWidthSpin),
-            QSignalBlocker(self.footprintModeCombo),
-            QSignalBlocker(self.footprintWidthSpin),
-        ]
-        self.spotSizeSpin.setValue(self._currentConfig['SPOT'].get('SIZE', 10))
-        self.groundTrackModeCombo.setCurrentText(self._modeToLabel(self._currentConfig['GROUND_TRACK']['MODE']))
-        self.groundTrackWidthSpin.setValue(self._currentConfig['GROUND_TRACK'].get('WIDTH', 1))
-        self.footprintModeCombo.setCurrentText(self._modeToLabel(self._currentConfig['FOOTPRINT']['MODE']))
-        self.footprintWidthSpin.setValue(self._currentConfig['FOOTPRINT'].get('WIDTH', 1))
-        self._setButtonColor(self.spotColorButton, self._currentConfig['SPOT']['COLOR'])
-        self._setButtonColor(self.groundTrackColorButton, self._currentConfig['GROUND_TRACK']['COLOR'])
-        self._setButtonColor(self.footprintColorButton, self._currentConfig['FOOTPRINT']['COLOR'])
-        del blockers
-
-    def enableFootprintConfig(self, enabled: bool):
-        self.footprintGroup.setEnabled(enabled)
-
-    def enableGroundTrackConfig(self, enabled: bool):
-        self.groundTrackGroup.setEnabled(enabled)
-
-    def clear(self):
-        self.noradIndex = None
-        self._currentConfig = None
-        self.editorWidget.setEnabled(False)
-
-    def _pickColor(self, section):
-        if self._currentConfig is None:
-            return
-        color = QColorDialog.getColor()
-        if not color.isValid():
-            return
-        button = {'SPOT': self.spotColorButton, 'GROUND_TRACK': self.groundTrackColorButton, 'FOOTPRINT': self.footprintColorButton}[section]
-        self._currentConfig[section]['COLOR'] = (color.red(), color.green(), color.blue())
-        self._setButtonColor(button, self._currentConfig[section]['COLOR'])
-        self._emitConfig()
-
-    def _emitConfig(self, *_):
-        if not self.editorWidget.isEnabled():
-            return
-        if self.noradIndex is None or self._currentConfig is None:
-            return
-        self._currentConfig['SPOT']['SIZE'] = self.spotSizeSpin.value()
-        self._currentConfig['GROUND_TRACK']['MODE'] = self.MODES[self.groundTrackModeCombo.currentText()]
-        self._currentConfig['GROUND_TRACK']['WIDTH'] = self.groundTrackWidthSpin.value()
-        self._currentConfig['FOOTPRINT']['MODE'] = self.MODES[self.footprintModeCombo.currentText()]
-        self._currentConfig['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
-        self.configChanged.emit(self.noradIndex, self._currentConfig)
-
-
 class CentralViewWidget(QWidget):
-    tabChanged = pyqtSignal(int)
-    TABS = {0: '2D_MAP', 1: '3D_VIEW'}
+    activeObjectsChanged = pyqtSignal(object)
+    stackedChanged = pyqtSignal(int)
+    timeLineModeChanged = pyqtSignal(str)
+    TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW'}
+    TIMELINE_MODES = {0: 'UTC', 1: 'LOCAL', 2: 'DELTA'}
 
-    def __init__(self, parent=None, icons=None, currentTab='2D_MAP', currentDir=None):
+    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None, timeLineMode='UTC'):
         super().__init__(parent)
         self.currentDir = currentDir
         self.icons = icons if icons is not None else {}
+        self.tleDatabase, self.starDatabase = None, None
+        # DATA REQUEST SYSTEM
+        self.variableRegistry = VariableRegistry()
+        self._requestCounter = 100000
+        self.requestManager = PlotRequestManager(tleDatabase=None, variableRegistry=self.variableRegistry)
+        self.requestManager.resultReady.connect(self._onPlotResultsReady)
         # CLOCK & ORBITS CALCULATIONS WORKER
         self.clock = SimulationClock()
         self.workerThread = QThread(self)
         self.orbitWorker = OrbitWorker(None)
         self.orbitWorker.moveToThread(self.workerThread)
-        self.clock.timeChanged.connect(self.orbitWorker.compute)
         self.workerThread.start()
 
         # TIMELINE WIDGET
         self.timeline = TimelineWidget(self, self.currentDir)
+        self.timeline.displayMode = getKeyFromValue(self.TIMELINE_MODES, timeLineMode)
         self.timeline.playRequested.connect(self.clock.play)
         self.timeline.pauseRequested.connect(self.clock.pause)
         self.timeline.toggleRequested.connect(self.clock.toggle)
         self.timeline.speedRequested.connect(self._onSpeedRequested)
-        self.timeline.timeRequested.connect(self.clock.setTime)
-        self.timeline.jumpToNowRequested.connect(self._jumpToNow)
+        self.timeline.timeRequested.connect(self.clock.setDateTime)
+        self.timeline.resumeRequested.connect(self._resume)
+        self.timeline.timeFormatChanged.connect(self._onTimeModeChanged)
         self.clock.timeChanged.connect(self._onClockTimeChanged)
         self.clock.stateChanged.connect(self.timeline.setRunning)
 
         # VISUALIZATION CONFIGURATION
-        self.activeObjects = set()
+        self.activeObjects: ActiveObjectsModel | None = None
         self.selectedObject = None
-        self.display2dMapConfiguration, self.display3dViewConfiguration = {}, {}
-        self.lastPositions = {}
+        self.displayConfiguration = {}
+        self.lastPositions = {'3D_VIEW': {}, '2D_MAP': {}, 'PLOT_VIEW': {}}
 
         # MAIN TABS
-        self.map2dWidget = Map2dWidget()
         self.view3dWidget = View3dWidget()
-        self.tabWidget = QTabWidget()
-        self.tabWidget.addTab(self.map2dWidget, '2D MAP')
-        self.tabWidget.addTab(self.view3dWidget, '3D VIEW')
-        self.tabWidget.setCurrentWidget(self.map2dWidget if currentTab == '2D_MAP' else self.view3dWidget)
+        self.map2dWidget = Map2dWidget()
+        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir)
+        self.stackedWidget = QStackedWidget()
+        self.stackedWidget.addWidget(self.view3dWidget)
+        self.stackedWidget.addWidget(self.map2dWidget)
+        self.stackedWidget.addWidget(self.plotViewWidget)
+        self.stackedWidget.setCurrentIndex(getKeyFromValue(self.TABS, currentTab))
 
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
-        self.tabWidget.currentChanged.connect(self._onTabChanged)
-        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
-        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
+        self.stackedWidget.currentChanged.connect(self._onTabChanged)
+        self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
+        self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
+        self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
 
         # MAIN LAYOUT
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.tabWidget)
-        layout.addWidget(self.timeline)
+        layout.addWidget(self.stackedWidget, 1)
+        layout.addWidget(self.timeline, 0)
 
     def _onTabChanged(self, index):
-        self.map2dVisible = (self.tabWidget.currentWidget() is self.map2dWidget)
-        self.view3dVisible = (self.tabWidget.currentWidget() is self.view3dWidget)
-        if self.map2dVisible:
+        self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
+        self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
+        self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
+        currentTime = self.clock.currentDateTime
+        if not self.clock.isRunning:
+            if self.map2dVisible or self.view3dVisible:
+                QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, currentTime), Q_ARG(dict, copy.deepcopy(self.displayConfiguration)))
+            if self.plotViewVisible:
+                self.requestManager.tick(currentTime)
+        if self.map2dVisible and self.lastPositions['2D_MAP']:
             self._refresh2dMap()
-        if self.view3dVisible:
+        if self.view3dVisible and self.lastPositions['3D_VIEW']:
             self._refresh3dView()
-        self.tabChanged.emit(index)
+        if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
+            self._refreshPlotView()
+        self.stackedChanged.emit(index)
 
     def _onPositionsReady(self, positions: dict):
-        self.lastPositions = positions
-        if self.map2dVisible:
+        if self.lastPositions is None:
+            self.lastPositions = {'3D_VIEW': {}, '2D_MAP': {}, 'PLOT_VIEW': {}}
+        self.lastPositions.update(positions)
+        if self.map2dVisible and self.lastPositions['2D_MAP']:
             self._refresh2dMap()
-        if self.view3dVisible:
+        if self.view3dVisible and self.lastPositions['3D_VIEW']:
             self._refresh3dView()
+        if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
+            self._refreshPlotView()
 
-    def setDatabase(self, database):
-        self.orbitWorker.database = database
+    def setDatabases(self, tleDatabase, starDatabase):
+        self.tleDatabase, self.starDatabase = tleDatabase, starDatabase
+        self.orbitWorker.tleDatabase = tleDatabase
+        self.requestManager.tleDatabase = tleDatabase
 
-    def setSelectedObject(self, noradIndex):
-        self.selectedObject = noradIndex
+    def setActiveObjects(self, activeObjects: ActiveObjectsModel):
+        self.activeObjects = activeObjects
+        self.orbitWorker.setActiveObjects(activeObjects)
+        self.view3dWidget.setActiveObjects(activeObjects)
+        self.map2dWidget.setActiveObjects(activeObjects)
+        self.activeObjectsChanged.emit(activeObjects)
+        if self.map2dVisible and self.lastPositions['2D_MAP']:
+            self._refresh2dMap()
+        if self.view3dVisible and self.lastPositions['3D_VIEW']:
+            self._refresh3dView()
+        if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
+            self._refreshPlotView()
+
+    def setDisplayConfiguration(self, displayConfiguration):
+        self.displayConfiguration = displayConfiguration
         self._refresh2dMap()
-
-    def setActiveObjects(self, noradIndices):
-        self.activeObjects = set(noradIndices)
-        self.orbitWorker.noradIndices = list(self.activeObjects)
-        self._refresh2dMap()
-        self._refresh3dView()
-
-    def set2dMapConfiguration(self, displayConfiguration):
-        self.display2dMapConfiguration = displayConfiguration
-        self._refresh2dMap()
-
-    def set3dViewConfiguration(self, displayConfiguration):
-        self.display3dViewConfiguration = displayConfiguration
         self._refresh3dView()
 
     def _refresh2dMap(self):
-        if self.map2dVisible and self.lastPositions:
-            self.map2dWidget.updateMap(self.lastPositions, self.activeObjects, self.selectedObject, self.display2dMapConfiguration)
+        if self.map2dVisible and self.lastPositions['2D_MAP']:
+            self.map2dWidget.updateMap({'2D_MAP': self.lastPositions['2D_MAP']}, self.displayConfiguration)
 
     def _refresh3dView(self):
-        if self.view3dVisible and self.lastPositions:
-            self.view3dWidget.updateData(self.lastPositions, self.activeObjects, self.selectedObject, self.display3dViewConfiguration)
+        if self.view3dVisible and self.lastPositions['3D_VIEW']:
+            self.view3dWidget.updateData({'3D_VIEW' : self.lastPositions['3D_VIEW']}, self.displayConfiguration)
+
+    def _refreshPlotView(self):
+        if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
+            self.plotViewWidget.updateData({'PLOT_VIEW' : self.lastPositions['PLOT_VIEW']})
 
     def start(self):
         self.clock.play()
 
     def _onClockTimeChanged(self, simTime: datetime):
         self.timeline.setTime(simTime)
+        if self.map2dVisible or self.view3dVisible:
+            QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, simTime), Q_ARG(dict, copy.deepcopy(self.displayConfiguration)))
+        if self.plotViewVisible:
+            self.requestManager.tick(simTime)
+
+    def _onTimeModeChanged(self, mode):
+        self.timeLineModeChanged.emit(self.TIMELINE_MODES[mode])
 
     def _onSpeedRequested(self, speed):
         self.clock.setSpeed(speed)
 
-    def _jumpToNow(self):
+    def _resume(self):
         now = datetime.utcnow()
-        self.timeline.resetReferenceTime(now)
-        self.clock.setTime(now)
+        self.timeline.setTime(now)
+        self.clock.setDateTime(now)
+
+    def generateRequestIndex(self):
+        self._requestCounter += 1
+        return self._requestCounter
+
+    def _onPlotDataRequestCreated(self, requestIndex, request):
+        self.requestManager.create(requestIndex, request)
+
+    def _onPlotDataRequestUpdated(self, requestIndex, request):
+        self.requestManager.update(requestIndex, request)
+
+    def _onPlotDataRequestDestroyed(self, requestIndex):
+        self.requestManager.remove(requestIndex)
+
+    def _onPlotResultsReady(self, data):
+        if self.lastPositions is None:
+            self.lastPositions = {'3D_VIEW': {}, '2D_MAP': {}, 'PLOT_VIEW': {}}
+        self.lastPositions['PLOT_VIEW'] = data
+        if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
+            self._refreshPlotView()
+
+    def setPlotViewLayoutConfiguration(self, layout):
+        self.plotViewWidget.closeAllTabs()
+        for tabConfiguration in layout.get("TABS", []):
+            self.plotViewWidget.addNewTab(tabConfiguration["NAME"])
+            for dockWidgetConfiguration in tabConfiguration["DOCKS"]:
+                title = dockWidgetConfiguration["TITLE"]
+                area = dockWidgetConfiguration["AREA"]
+                if dockWidgetConfiguration["PLOT_TYPE"] == "LINE":
+                    self.addLinePlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
+                if dockWidgetConfiguration["PLOT_TYPE"] == "TIME_SERIES":
+                    self.addTimeSeriesPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
+                if dockWidgetConfiguration["PLOT_TYPE"] == "POLAR":
+                    self.addPolarPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
+
+    def addLinePlot(self, configuration=None, title=None, area=None):
+        linePlot = LinePlot(self)
+        linePlot.requestIndexProvider = self.generateRequestIndex
+        linePlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
+        linePlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
+        linePlot.dataRequestDestroyed.connect(self._onPlotDataRequestDestroyed)
+        self.activeObjectsChanged.connect(linePlot.setActiveObjects)
+        linePlot.setActiveObjects(self.activeObjects)
+        if configuration is not None:
+            linePlot.setConfiguration(configuration)
+        self.plotViewWidget.addNewPlot(widget=linePlot, title=title, area=area)
+
+    def addTimeSeriesPlot(self, configuration=None, title=None, area=None):
+        timeSeriesPlot = TimeSeriesPlot(self)
+        timeSeriesPlot.requestIndexProvider = self.generateRequestIndex
+        timeSeriesPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
+        timeSeriesPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
+        timeSeriesPlot.dataRequestDestroyed.connect(self._onPlotDataRequestDestroyed)
+        self.activeObjectsChanged.connect(timeSeriesPlot.setActiveObjects)
+        timeSeriesPlot.setActiveObjects(self.activeObjects)
+        if configuration is not None:
+            timeSeriesPlot.setConfiguration(configuration)
+        self.plotViewWidget.addNewPlot(widget=timeSeriesPlot, title=title, area=area)
+
+    def addPolarPlot(self, configuration=None, title=None, area=None):
+        polarPlot = PolarPlot(self)
+        polarPlot.requestIndexProvider = self.generateRequestIndex
+        polarPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
+        polarPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
+        polarPlot.dataRequestDestroyed.connect(self._onPlotDataRequestDestroyed)
+        self.activeObjectsChanged.connect(polarPlot.setActiveObjects)
+        polarPlot.setActiveObjects(self.activeObjects)
+        if configuration is not None:
+            polarPlot.setConfiguration(configuration)
+        self.plotViewWidget.addNewPlot(widget=polarPlot, title=title, area=area)
 
     def closeEvent(self, event):
         self.orbitWorker.stop()
         self.workerThread.quit()
         self.workerThread.wait()
+        self.requestManager.pool.waitForDone()
         super().closeEvent(event)
