@@ -19,6 +19,7 @@ class View3dWidget(QOpenGLWidget):
     cameraChanged = pyqtSignal()
     EARTH_RADIUS = 6371
     EARTH_MOON_DISTANCE = 384400
+    MOON_RADIUS = 1737
     EARTH_SUN_DISTANCE = 149600000
     SUN_RADIUS = 696340
 
@@ -26,7 +27,7 @@ class View3dWidget(QOpenGLWidget):
         super().__init__(parent)
         glutInit()
         self.setMouseTracking(True)
-        self.minZoom, self.maxZoom = 1.25, self.EARTH_MOON_DISTANCE / self.EARTH_RADIUS * 1.15
+        self.minZoom, self.maxZoom = 1.25, self.EARTH_MOON_DISTANCE / self.EARTH_RADIUS * 2
         self.activeObjects: ActiveObjectsModel | None = None
         self.objectSpotData, self.objectOrbitData, self.objectNameData = {}, {}, {}
         self.hoveredObject, self.displayConfiguration = None, {}
@@ -36,7 +37,8 @@ class View3dWidget(QOpenGLWidget):
         self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTextures = 0, 0, []
         self.gmstAngle = 0
         self.sunDirectionEcef, self.sunDirectionEci = np.array([1, 0, 0], dtype=float), np.array([1, 0, 0], dtype=float)
-        self.sphere = None
+        self.moonTextureIndex, self.moonPositionEci, self.moonRotationMatrix = 0, np.array([self.EARTH_MOON_DISTANCE, 0, 0], dtype=float), np.eye(3, dtype=float)
+        self.sphere, self.moonQuadric = None, None
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
@@ -66,7 +68,7 @@ class View3dWidget(QOpenGLWidget):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, 0)
-            print("Earth earthTexture loaded successfully")
+            print("Earth texture loaded successfully")
         except Exception as e:
             print("Failed to load earth.jpg:", e)
             self.earthTextureIndex = 0
@@ -82,7 +84,7 @@ class View3dWidget(QOpenGLWidget):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glGenerateMipmap(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, 0)
-            print("Earth lights earthTexture loaded successfully")
+            print("Earth lights texture loaded successfully")
         except Exception as e:
             print("Failed to load earth_lights.jpg:", e)
             self.lightsTextureIndex = 0
@@ -95,6 +97,25 @@ class View3dWidget(QOpenGLWidget):
             self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
         except Exception as e:
             raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
+        # LOADING MOON TEXTURE
+        self.moonQuadric = gluNewQuadric()
+        gluQuadricNormals(self.moonQuadric, GLU_SMOOTH)
+        try:
+            img = Image.open("src/assets/moon/moon.jpg")  # ← Put your texture here
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            imageData = np.array(img.convert("RGB"), dtype=np.uint8)
+            width, height = img.size
+            self.moonTextureIndex = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, self.moonTextureIndex)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glGenerateMipmap(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            print("Moon texture loaded successfully")
+        except Exception as e:
+            print("Failed to load moon.jpg:", e)
+            self.moonTextureIndex = 0
         # LOADING SKYBOX TEXTURES
         self.skyboxTextures = self._loadSkyBoxTextures([
             "src/assets/skybox/posx.png",
@@ -121,7 +142,7 @@ class View3dWidget(QOpenGLWidget):
         glDisable(GL_TEXTURE_2D)
         glLoadIdentity()
 
-        # CAMERA
+        # CAMERA SETUP
         glTranslatef(0, 0, -self.zoom)
         glRotatef(self.rotX, 1, 0, 0)
         glRotatef(self.rotY, 0, 1, 0)
@@ -145,9 +166,10 @@ class View3dWidget(QOpenGLWidget):
         originalModelView = list(modelView)
         modelView[12] = modelView[13] = modelView[14] = 0.0
         glLoadMatrixd(modelView)
-        self.drawSkybox(size=500)
+        # self.drawSkybox(size=500)
         self.drawSun()
         glLoadMatrixd(originalModelView)
+        self.drawMoon()
         try:
             glUseProgram(0)
             glDisable(GL_LIGHTING)
@@ -343,6 +365,8 @@ class View3dWidget(QOpenGLWidget):
         self.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
         self.sunDirectionEcef = positions['3D_VIEW']['SUN_DIRECTION_ECEF']
         self.sunDirectionEci = positions['3D_VIEW']['SUN_DIRECTION_ECI']
+        self.moonPositionEci = positions['3D_VIEW'].get('MOON_DIRECTION_ECI', np.array([self.EARTH_MOON_DISTANCE, 0, 0]))
+        self.moonRotationMatrix = positions['3D_VIEW'].get('MOON_ORIENTATION', np.eye(3))
         self.objectSpotData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['POSITION']['R_ECI'] for noradIndex in self.activeObjects.allNoradIndices() if noradIndex in positions['3D_VIEW']['OBJECTS']}
         self.objectOrbitData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['ORBIT_PATH'] for noradIndex in self.activeObjects.allNoradIndices() if noradIndex in positions['3D_VIEW']['OBJECTS']}
         self.objectNameData = {str(noradIndex): positions['3D_VIEW']['OBJECTS'][noradIndex]['NAME'] for noradIndex in self.activeObjects.allNoradIndices() if noradIndex in positions['3D_VIEW']['OBJECTS']}
@@ -500,21 +524,19 @@ class View3dWidget(QOpenGLWidget):
         sunRadius = simulationSunDistance * (self.SUN_RADIUS / self.EARTH_SUN_DISTANCE)
         sunDirection = self.sunDirectionEci / np.linalg.norm(self.sunDirectionEci)
         sunPosition = sunDirection * simulationSunDistance
-        glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glPushMatrix()
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
         originalModelView = list(modelView)
         modelView[12] = modelView[13] = modelView[14] = 0.0
         glLoadMatrixd(modelView)
-        right = np.array([modelView[0], modelView[4], modelView[8]])
-        up = np.array([modelView[1], modelView[5], modelView[9]])
-        glPushMatrix()
         glTranslatef(sunPosition[0], sunPosition[1], sunPosition[2])
         glDisable(GL_LIGHTING)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        glEnable(GL_DEPTH_TEST)
         glDepthMask(GL_FALSE)
+        right = np.array([modelView[0], modelView[4], modelView[8]])
+        up = np.array([modelView[1], modelView[5], modelView[9]])
 
         def drawDisk(radius, color):
             glColor4f(*color)
@@ -534,9 +556,29 @@ class View3dWidget(QOpenGLWidget):
         drawDisk(sunRadius * 5.0, (1.0, 0.5, 0.2, 0.03))
         drawDisk(sunRadius * 8.0, (1.0, 0.3, 0.1, 0.01))
         glDepthMask(GL_TRUE)
-        glPopMatrix()
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glLoadMatrixd(originalModelView)
-        glPopAttrib()
+        glPopMatrix()
+
+    def drawMoon(self):
+        if self.moonTextureIndex == 0:
+            return
+        moonVisualPosition = self.moonPositionEci / self.EARTH_RADIUS
+        moonVisualRadius = self.MOON_RADIUS / self.EARTH_RADIUS
+        glPushMatrix()
+        glTranslatef(moonVisualPosition[0], moonVisualPosition[1], moonVisualPosition[2])
+        rotationMatrix = np.eye(4, dtype=np.float32)
+        rotationMatrix[:3, :3] = self.moonRotationMatrix
+        glRotatef(90, 0, 0, 1)
+        glMultMatrixf(rotationMatrix.T.flatten())
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, self.moonTextureIndex)
+        gluQuadricTexture(self.moonQuadric, GL_TRUE)
+        glColor4f(1, 1, 1, 1)
+        gluSphere(self.moonQuadric, moonVisualRadius, 64, 64)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glDisable(GL_TEXTURE_2D)
+        glPopMatrix()
 
     def drawSkybox(self, size=500.0):
         glDisable(GL_DEPTH_TEST)

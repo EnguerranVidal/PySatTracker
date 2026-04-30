@@ -314,20 +314,31 @@ class OrbitalMechanicsEngine:
         norm = np.linalg.norm(moonDirectionEci, axis=1)
         return self._maybeScalar(moonDirectionEci if not normed else moonDirectionEci / norm[:, None], scalar)
 
-    def moonRotationAngle(self, fullJulianDates, radians=True):
-        fullJulianDates, scalar = self._ensureArray(fullJulianDates)
-        D = fullJulianDates - 2451545.0
+    def moonRotationMatrixEci(self, fullJulianDate):
+        D = fullJulianDate - 2451545.0
+        T = self.julianDateToJulianCenturies(fullJulianDate)
         meanRotationAngle = 38.3213 + 13.17635815 * D
-        E1, E2 = np.deg2rad(125.045 - 0.0529921 * D), np.deg2rad(250.089 - 0.1059842 * D),
+        E1, E2 = np.deg2rad(125.045 - 0.0529921 * D), np.deg2rad(250.089 - 0.1059842 * D)
         E3, E4 = np.deg2rad(260.008 + 13.0120009 * D), np.deg2rad(176.625 + 13.3407154 * D)
         E5, E6 = np.deg2rad(357.529 + 0.9856003 * D), np.deg2rad(311.589 + 26.4057084 * D)
         E7, E8 = np.deg2rad(134.963 + 13.0649930 * D), np.deg2rad(276.617 + 0.3287146 * D)
         libration = 3.5610 * np.sin(E1) + 0.1208 * np.sin(E2) - 0.0642 * np.sin(E3) + 0.0158 * np.sin(E4) + 0.0252 * np.sin(E5) - 0.0066 * np.sin(E6) - 0.0047 * np.sin(E7) - 0.0046 * np.sin(E8)
-        rotationAngle = (meanRotationAngle + libration) % 360.0
-        if radians:
-            return self._maybeScalar(np.deg2rad(rotationAngle), scalar)
-        else:
-            return self._maybeScalar(rotationAngle, scalar)
+        alpha0 = 269.9949 + 0.0031 * T - 3.8787 * np.sin(E1) - 0.1204 * np.sin(E2) + 0.0700 * np.sin(E3) - 0.0172 * np.sin(E4) + 0.0072 * np.sin(E5) - 0.0052 * np.sin(E7) + 0.0043 * np.sin(E8)
+        delta0 = 66.5392 + 0.0130 * T + 1.5419 * np.cos(E1) + 0.0239 * np.cos(E2) - 0.0278 * np.cos(E3) + 0.0068 * np.cos(E4) - 0.0029 * np.cos(E5) + 0.0009 * np.cos(E6)
+        rotation0 = (meanRotationAngle + libration) % 360.0
+        alpha, delta, rotationAngle = np.deg2rad(alpha0), np.deg2rad(delta0), np.deg2rad(rotation0)
+        sinAlpha, cosAlpha, sinDelta, cosDelta, sinRot, cosRot = np.sin(alpha), np.cos(alpha), np.sin(delta), np.cos(delta), np.sin(rotationAngle), np.cos(rotationAngle)
+        R = np.empty((3, 3))
+        R[0, 0] = cosRot * cosAlpha * sinDelta - sinRot * sinAlpha
+        R[0, 1] = cosRot * sinAlpha * sinDelta + sinRot * cosAlpha
+        R[0, 2] = -cosRot * cosDelta
+        R[1, 0] = -sinRot * cosAlpha * sinDelta - cosRot * sinAlpha
+        R[1, 1] = -sinRot * sinAlpha * sinDelta + cosRot * cosAlpha
+        R[1, 2] = sinRot * cosDelta
+        R[2, 0] = cosAlpha * cosDelta
+        R[2, 1] = sinAlpha * cosDelta
+        R[2, 2] = sinDelta
+        return R
 
     def terminatorCurve(self, fullJulianDate, nbPoints=361, radians=True):
         sunLongitude, sunLatitude, _ = self.subSolarPoint(fullJulianDate, radians=True)
