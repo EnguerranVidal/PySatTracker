@@ -33,7 +33,7 @@ class View3dWidget(QOpenGLWidget):
         self.hoveredObject, self.displayConfiguration = None, {}
         self.lastPosX, self.lastPosY = 0, 0
         self.zoom, self.rotX, self.rotY = 5, 45, 225
-        self.earthShader = None
+        self.earthShader, self.moonShader = None, None
         self.earthTextureIndex, self.lightsTextureIndex, self.skyboxTextures = 0, 0, []
         self.gmstAngle = 0
         self.sunDirectionEcef, self.sunDirectionEci = np.array([1, 0, 0], dtype=float), np.array([1, 0, 0], dtype=float)
@@ -116,6 +116,15 @@ class View3dWidget(QOpenGLWidget):
         except Exception as e:
             print("Failed to load moon.jpg:", e)
             self.moonTextureIndex = 0
+        # LOADING MOON SHADER
+        try:
+            with open("src/assets/moon/moon.vert") as f:
+                vertSource = f.read()
+            with open("src/assets/moon/moon.frag") as f:
+                fragSource = f.read()
+            self.moonShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
+        except Exception as e:
+            raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
         # LOADING SKYBOX TEXTURES
         self.skyboxTextures = self._loadSkyBoxTextures([
             "src/assets/skybox/posx.png",
@@ -146,6 +155,7 @@ class View3dWidget(QOpenGLWidget):
         glTranslatef(0, 0, -self.zoom)
         glRotatef(self.rotX, 1, 0, 0)
         glRotatef(self.rotY, 0, 1, 0)
+
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH_GRID', False):
             glPushMatrix()
             glRotatef(-90, 1, 0, 0)
@@ -161,44 +171,46 @@ class View3dWidget(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE0)
         glDisable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, 0)
+
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
         originalModelView = list(modelView)
         modelView[12] = modelView[13] = modelView[14] = 0.0
         glLoadMatrixd(modelView)
-        # self.drawSkybox(size=500)
         self.drawSun()
         glLoadMatrixd(originalModelView)
         self.drawMoon()
-        try:
-            glUseProgram(0)
-            glDisable(GL_LIGHTING)
-            glDisable(GL_TEXTURE_2D)
-            glColor4f(1, 1, 1, 1)
-            # DRAWING OBJECTS AND AXES
-            if self.displayConfiguration.get('OBJECTS'):
-                for noradIndex in self.activeObjects.allNoradIndices():
-                    if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
-                        self._drawObject(noradIndex)
-            if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECI_AXES', False):
-                redColor, greenColor, blueColor = (1, 0, 0), (0, 1, 0), (0, 0, 1)
-                self._drawAxes(redColor, greenColor, blueColor)
-            if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECEF_AXES', False):
-                glPushMatrix()
-                glRotatef(self.gmstAngle, 0, 0, 1)
-                redColor, greenColor, blueColor = (1, 0, 1), (1, 1, 0), (0, 1, 1)
-                self._drawAxes(redColor, greenColor, blueColor)
-                glPopMatrix()
-        finally:
-            if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
-                self._drawNorthSouthAxis()
-                glPushMatrix()
-                glRotatef(self.gmstAngle, 0, 0, 1)
-                glRotatef(90, 0, 0, 1)
-                glEnable(GL_TEXTURE_2D)
-                if not self.earthShader:
-                    glPopMatrix()
-                    return
+
+        # DRAWING OBJECTS AND AXES
+        glUseProgram(0)
+        glDisable(GL_LIGHTING)
+        glDisable(GL_TEXTURE_2D)
+        glColor4f(1, 1, 1, 1)
+
+        if self.displayConfiguration.get('OBJECTS'):
+            for noradIndex in self.activeObjects.allNoradIndices():
+                if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
+                    self._drawObject(noradIndex)
+
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECI_AXES', False):
+            redColor, greenColor, blueColor = (1, 0, 0), (0, 1, 0), (0, 0, 1)
+            self._drawAxes(redColor, greenColor, blueColor)
+
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECEF_AXES', False):
+            glPushMatrix()
+            glRotatef(self.gmstAngle, 0, 0, 1)
+            redColor, greenColor, blueColor = (1, 0, 1), (1, 1, 0), (0, 1, 1)
+            self._drawAxes(redColor, greenColor, blueColor)
+            glPopMatrix()
+
+        # EARTH RENDERING
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
+            self._drawNorthSouthAxis()
+            glPushMatrix()
+            glRotatef(self.gmstAngle, 0, 0, 1)
+            glRotatef(90, 0, 0, 1)
+            glEnable(GL_TEXTURE_2D)
+            if self.earthShader:
                 glUseProgram(self.earthShader)
                 glActiveTexture(GL_TEXTURE0)
                 glBindTexture(GL_TEXTURE_2D, self.earthTextureIndex)
@@ -220,7 +232,7 @@ class View3dWidget(QOpenGLWidget):
                 glActiveTexture(GL_TEXTURE0)
                 glDisable(GL_TEXTURE_2D)
                 glBindTexture(GL_TEXTURE_2D, 0)
-                glPopMatrix()
+            glPopMatrix()
 
     @staticmethod
     def _drawAxes(redColor, greenColor, blueColor):
@@ -525,60 +537,103 @@ class View3dWidget(QOpenGLWidget):
         sunDirection = self.sunDirectionEci / np.linalg.norm(self.sunDirectionEci)
         sunPosition = sunDirection * simulationSunDistance
         glPushMatrix()
-        modelView = (GLdouble * 16)()
-        glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
-        originalModelView = list(modelView)
-        modelView[12] = modelView[13] = modelView[14] = 0.0
-        glLoadMatrixd(modelView)
-        glTranslatef(sunPosition[0], sunPosition[1], sunPosition[2])
-        glDisable(GL_LIGHTING)
-        glEnable(GL_BLEND)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        glDepthMask(GL_FALSE)
-        right = np.array([modelView[0], modelView[4], modelView[8]])
-        up = np.array([modelView[1], modelView[5], modelView[9]])
+        try:
+            modelView = (GLdouble * 16)()
+            glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
+            originalModelView = list(modelView)
+            modelView[12] = modelView[13] = modelView[14] = 0.0
+            glLoadMatrixd(modelView)
+            glTranslatef(sunPosition[0], sunPosition[1], sunPosition[2])
+            glDisable(GL_LIGHTING)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            glDepthMask(GL_FALSE)
+            right = np.array([modelView[0], modelView[4], modelView[8]])
+            up = np.array([modelView[1], modelView[5], modelView[9]])
 
-        def drawDisk(radius, color):
-            glColor4f(*color)
-            glBegin(GL_TRIANGLE_FAN)
-            glVertex3f(0.0, 0.0, 0.0)
-            segments = 64
-            for i in range(segments + 1):
-                angle = 2.0 * np.pi * i / segments
-                offset = (np.cos(angle) * right + np.sin(angle) * up) * radius
-                glVertex3f(offset[0], offset[1], offset[2])
-            glEnd()
+            def drawDisk(radius, color):
+                glColor4f(*color)
+                glBegin(GL_TRIANGLE_FAN)
+                glVertex3f(0.0, 0.0, 0.0)
+                segments = 64
+                for i in range(segments + 1):
+                    angle = 2.0 * np.pi * i / segments
+                    offset = (np.cos(angle) * right + np.sin(angle) * up) * radius
+                    glVertex3f(offset[0], offset[1], offset[2])
+                glEnd()
 
-        drawDisk(sunRadius, (1.0, 0.98, 0.9, 1.0))
-        drawDisk(sunRadius * 1.5, (1.0, 0.94, 0.75, 0.5))
-        drawDisk(sunRadius * 2.0, (1.0, 0.9, 0.6, 0.2))
-        drawDisk(sunRadius * 2.5, (1.0, 0.7, 0.3, 0.08))
-        drawDisk(sunRadius * 5.0, (1.0, 0.5, 0.2, 0.03))
-        drawDisk(sunRadius * 8.0, (1.0, 0.3, 0.1, 0.01))
-        glDepthMask(GL_TRUE)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glLoadMatrixd(originalModelView)
-        glPopMatrix()
+            drawDisk(sunRadius, (1.0, 0.98, 0.9, 1.0))
+            drawDisk(sunRadius * 1.5, (1.0, 0.94, 0.75, 0.5))
+            drawDisk(sunRadius * 2.0, (1.0, 0.9, 0.6, 0.2))
+            drawDisk(sunRadius * 2.5, (1.0, 0.7, 0.3, 0.08))
+            drawDisk(sunRadius * 5.0, (1.0, 0.5, 0.2, 0.03))
+            drawDisk(sunRadius * 8.0, (1.0, 0.3, 0.1, 0.01))
+            glDepthMask(GL_TRUE)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glLoadMatrixd(originalModelView)
+        finally:
+            glPopMatrix()
 
     def drawMoon(self):
-        if self.moonTextureIndex == 0:
+        if self.moonTextureIndex == 0 or self.moonShader is None:
             return
+
         moonVisualPosition = self.moonPositionEci / self.EARTH_RADIUS
         moonVisualRadius = self.MOON_RADIUS / self.EARTH_RADIUS
+
         glPushMatrix()
-        glTranslatef(moonVisualPosition[0], moonVisualPosition[1], moonVisualPosition[2])
-        rotationMatrix = np.eye(4, dtype=np.float32)
-        rotationMatrix[:3, :3] = self.moonRotationMatrix
-        glRotatef(90, 0, 0, 1)
-        glMultMatrixf(rotationMatrix.T.flatten())
-        glEnable(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, self.moonTextureIndex)
-        gluQuadricTexture(self.moonQuadric, GL_TRUE)
-        glColor4f(1, 1, 1, 1)
-        gluSphere(self.moonQuadric, moonVisualRadius, 64, 64)
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glDisable(GL_TEXTURE_2D)
-        glPopMatrix()
+        try:
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+
+            # Position the moon
+            glTranslatef(moonVisualPosition[0], moonVisualPosition[1], moonVisualPosition[2])
+
+            # Apply moon orientation
+            rotationMatrix = np.eye(4, dtype=np.float32)
+            rotationMatrix[:3, :3] = self.moonRotationMatrix
+            glMultMatrixf(rotationMatrix.T.flatten())
+
+            # === SHADER SETUP ===
+            glUseProgram(self.moonShader)
+
+            # Get the model matrix for this moon (translation + rotation only)
+            # We read it AFTER applying moon transforms but BEFORE camera affects it?
+            # Actually easier: pass identity + moon transform by reading now
+            model_mat = (GLdouble * 16)()
+            glGetDoublev(GL_MODELVIEW_MATRIX, model_mat)
+            model_mat_np = np.array(model_mat, dtype=np.float32).reshape(4, 4).T
+
+            loc_model = glGetUniformLocation(self.moonShader, "modelMatrix")
+            glUniformMatrix4fv(loc_model, 1, GL_FALSE, model_mat_np)
+
+            # Pass sun direction in world space (ECI)
+            sunDir = self.sunDirectionEci / np.linalg.norm(self.sunDirectionEci)
+            glUniform3f(
+                glGetUniformLocation(self.moonShader, "sunDirectionEci"),
+                sunDir[0], sunDir[1], sunDir[2]
+            )
+
+            glUniform1f(glGetUniformLocation(self.moonShader, "ambient"), 0.05)
+
+            # Texture
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.moonTextureIndex)
+            glUniform1i(glGetUniformLocation(self.moonShader, "moonTexture"), 0)
+
+            # Draw
+            glEnable(GL_TEXTURE_2D)
+            gluQuadricTexture(self.moonQuadric, GL_TRUE)
+            glColor4f(1, 1, 1, 1)
+            gluSphere(self.moonQuadric, moonVisualRadius, 64, 64)
+
+            # Cleanup
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glUseProgram(0)
+
+        finally:
+            glPopMatrix()
 
     def drawSkybox(self, size=500.0):
         glDisable(GL_DEPTH_TEST)
