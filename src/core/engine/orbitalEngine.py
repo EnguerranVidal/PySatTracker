@@ -340,6 +340,16 @@ class OrbitalMechanicsEngine:
         R[2, 2] = sinDelta
         return R
 
+    def sunDirectionMoonFixed(self, fullJulianDate, normed=True):
+        fullJulianDate, scalar = self._ensureArray(fullJulianDate)
+        sunDirectionEci = self.solarDirectionEci(fullJulianDate, normed=normed)
+        if sunDirectionEci.ndim == 1:
+            sunDirectionEci = sunDirectionEci.reshape(1, 3)
+        rotationMatrix = self.moonRotationMatrixEci(fullJulianDate)
+        transposedMatrix = rotationMatrix.T
+        sunMoonFixed = transposedMatrix @ sunDirectionEci
+        return self._maybeScalar(sunMoonFixed, scalar)
+
     def terminatorCurve(self, fullJulianDate, nbPoints=361, radians=True):
         sunLongitude, sunLatitude, _ = self.subSolarPoint(fullJulianDate, radians=True)
         longitudes = np.linspace(-np.pi, np.pi, nbPoints)
