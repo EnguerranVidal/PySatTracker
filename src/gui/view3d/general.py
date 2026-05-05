@@ -28,6 +28,7 @@ class Camera:
         glTranslatef(0, 0, -self.zoom)
         glRotatef(self.rotationX, 1, 0, 0)
         glRotatef(self.rotationY, 0, 1, 0)
+        glRotatef(-90, 1, 0, 0)
 
     def rotate(self, dx, dy):
         self.rotationY += dx * 0.5
@@ -75,8 +76,7 @@ class View3dWidget(QOpenGLWidget):
         self.earthRenderer = EarthRenderer()
         self.moonRenderer = MoonRenderer()
         self.skyboxTextures = []
-        self.lastPosX = 0
-        self.lastPosY = 0
+        self.lastPosX, self.lastPosY = 0, 0
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
@@ -112,15 +112,15 @@ class View3dWidget(QOpenGLWidget):
             "gmst": self.gmstAngle,
             "config": self.displayConfiguration.get('3D_VIEW', {})
         }
-        self.drawSkybox()
+        # self.drawSkybox()
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
             self.earthRenderer.render(context)
             self.earthRenderer.drawAxis()
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH_GRID', False):
+            self.earthRenderer.drawGrid(context)
         self.moonRenderer.render(context)
-        glUseProgram(0)
-        glDisable(GL_TEXTURE_2D)
         glDisable(GL_LIGHTING)
         if self.displayConfiguration.get('OBJECTS'):
             for noradIndex in self.activeObjects.allNoradIndices():
@@ -133,6 +133,13 @@ class View3dWidget(QOpenGLWidget):
             glRotatef(self.gmstAngle, 0, 0, 1)
             self._drawAxes((1, 0, 1), (1, 1, 0), (0, 1, 1))
             glPopMatrix()
+
+    def resizeGL(self, w, h):
+        glViewport(0, 0, w, h)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45, w / max(h, 1), 0.1, 1000)
+        glMatrixMode(GL_MODELVIEW)
 
     def updateData(self, positions: dict, displayConfiguration: dict):
         if not self.activeObjects:
@@ -147,6 +154,99 @@ class View3dWidget(QOpenGLWidget):
         self.objectOrbitData = {str(n): positions['3D_VIEW']['OBJECTS'][n]['ORBIT_PATH'] for n in self.activeObjects.allNoradIndices() if n in positions['3D_VIEW']['OBJECTS']}
         self.objectNameData = {str(n): positions['3D_VIEW']['OBJECTS'][n]['NAME'] for n in self.activeObjects.allNoradIndices() if n in positions['3D_VIEW']['OBJECTS']}
         self.update()
+
+    def _getObjectRenderConfiguration(self, noradIndex):
+        groupName = self.activeObjects.getGroupForNoradIndex(noradIndex)
+        isInSelectedGroup = (self.activeObjects.isGroupSelected and groupName == self.activeObjects.selectedGroupName)
+        if isInSelectedGroup and groupName:
+            group = self.activeObjects.objectGroups.get(groupName)
+            if group:
+                groupConfig = group.renderRules.get('3D_VIEW', {})
+                if groupConfig.get('SHARED'):
+                    source = groupConfig.get('SOURCE', 'CUSTOM')
+                    if source == 'CUSTOM':
+                        config = groupConfig.get('CONFIG')
+                        if config:
+                            return copy.deepcopy(config)
+                    elif source == 'OBJECT':
+                        sourceNorad = groupConfig.get('SOURCE_OBJECT')
+                        if sourceNorad and str(sourceNorad) in self.displayConfiguration['OBJECTS']:
+                            return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(sourceNorad)])
+        return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(noradIndex)])
+
+    def _drawObject(self, noradIndex):
+        isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
+        isHovered = (noradIndex == self.hoveredObject)
+        isActive = isSelected or isHovered
+        configuration = self._getObjectRenderConfiguration(noradIndex)
+        # ORBITAL PATH
+        orbitColor, orbitWidth = configuration['ORBIT_PATH']['COLOR'], configuration['ORBIT_PATH']['WIDTH']
+        isToggled = self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ORBIT_PATHS', False)
+        if self._shouldRender(configuration['ORBIT_PATH']['MODE'], isSelected, isToggled):
+            glLineWidth(orbitWidth)
+            orbitColor = (orbitColor[0] / 255, orbitColor[1] / 255, orbitColor[2] / 255, 1) if isActive else (1, 1, 1, 1)
+            glColor4f(*orbitColor)
+            points = self.objectOrbitData[str(noradIndex)] / self.EARTH_RADIUS
+            glBegin(GL_LINE_STRIP)
+            for point in points:
+                glVertex3f(point[0], point[1], point[2])
+            glEnd()
+        # OBJECT SPOT
+        spotColor = configuration['SPOT']['COLOR']
+        spotColor = (spotColor[0] / 255, spotColor[1] / 255, spotColor[2] / 255, 1) if isActive else (1, 1, 1, 1)
+        glPointSize(configuration['SPOT']['SIZE'])
+        glColor4f(*spotColor)
+        glBegin(GL_POINTS)
+        position = self.objectSpotData[str(noradIndex)] / self.EARTH_RADIUS
+        glVertex3f(position[0], position[1], position[2])
+        glEnd()
+        # OBJECT LABEL
+        if isActive:
+            objectName = self.objectNameData[str(noradIndex)]
+            viewModel = (GLdouble * 16)()
+            viewProjection = (GLdouble * 16)()
+            viewPort = (GLint * 4)()
+            glGetDoublev(GL_MODELVIEW_MATRIX, viewModel)
+            glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
+            glGetIntegerv(GL_VIEWPORT, viewPort)
+            xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
+            if zWindow <= 0.0 or zWindow >= 1.0:
+                return
+            if self._isBehindEarth(position) and self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
+                return
+            try:
+                glMatrixMode(GL_PROJECTION)
+                glPushMatrix()
+                glLoadIdentity()
+                glOrtho(0, viewPort[2], 0, viewPort[3], -1, 1)
+                glMatrixMode(GL_MODELVIEW)
+                glPushMatrix()
+                glLoadIdentity()
+                glActiveTexture(GL_TEXTURE1)
+                glDisable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, 0)
+                glActiveTexture(GL_TEXTURE0)
+                glDisable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, 0)
+                glColor4f(1, 1, 1, 1)
+                glRasterPos2f(xWindow + 5, yWindow + 5)
+                for char in objectName:
+                    glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+            finally:
+                glMatrixMode(GL_PROJECTION)
+                glPopMatrix()
+                glMatrixMode(GL_MODELVIEW)
+                glPopMatrix()
+
+    @staticmethod
+    def _shouldRender(mode: str, isSelected: bool, isToggled: bool):
+        if not isToggled:
+            return False
+        if mode == "ALWAYS":
+            return True
+        if mode == "WHEN_SELECTED":
+            return isSelected
+        return False  # NEVER
 
     def _getCameraPosition(self):
         return self.camera.getPosition()
@@ -212,6 +312,9 @@ class View3dWidget(QOpenGLWidget):
             self.lastPosY = event.y()
             self.update()
             self.cameraChanged.emit()
+        hovered = self._detectHover(event)
+        self.hoveredObject = hovered
+        self.update()
 
     def _detectHover(self, event):
         if not self.activeObjects:

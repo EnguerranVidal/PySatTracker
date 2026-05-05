@@ -15,7 +15,7 @@ from src.gui.plots.line import LinePlot
 from src.gui.plots.time import TimeSeriesPlot
 from src.gui.plots.polar import PolarPlot
 from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog
-from src.gui.view3d import View3dWidget
+from src.gui.view3d.general import View3dWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 from src.core.quantities import VariableRegistry
 
