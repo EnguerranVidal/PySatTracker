@@ -24,6 +24,81 @@ class BaseRenderer:
         pass
 
 
+class ObjectRenderer(BaseRenderer):
+    def __init__(self):
+        self.vaos = {}
+        self.vbos = {}
+        self.orbitCounts = {}
+        self.shader = None
+
+    def initialize(self):
+        with open("src/assets/objects/object.vert") as f:
+            vert = f.read()
+        with open("src/assets/objects/object.frag") as f:
+            frag = f.read()
+        self.shader = compileProgram(compileShader(vert, GL_VERTEX_SHADER), compileShader(frag, GL_FRAGMENT_SHADER))
+
+    def updateObject(self, noradIndex, position, orbit):
+        position = (position / self.EARTH_RADIUS).astype(np.float32)
+        orbit = (orbit / self.EARTH_RADIUS).astype(np.float32)
+        if noradIndex not in self.vaos:
+            self.vaos[noradIndex] = {"point": glGenVertexArrays(1), "orbit": glGenVertexArrays(1)}
+            self.vbos[noradIndex] = {"point": glGenBuffers(1), "orbit": glGenBuffers(1)}
+            # POINT BUFFER
+            glBindVertexArray(self.vaos[noradIndex]["point"])
+            glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["point"])
+            glBufferData(GL_ARRAY_BUFFER, position.nbytes, position, GL_DYNAMIC_DRAW)
+            glEnableVertexAttribArray(0)
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
+            # ORBIT BUFFER
+            glBindVertexArray(self.vaos[noradIndex]["orbit"])
+            glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["orbit"])
+            glBufferData(GL_ARRAY_BUFFER, orbit.nbytes, orbit, GL_DYNAMIC_DRAW)
+            glEnableVertexAttribArray(0)
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
+            # ORBIT COUNT
+            self.orbitCounts[noradIndex] = len(orbit)
+            glBindVertexArray(0)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    def renderObject(self, noradId, configuration, isSelected, isHovered, displayConfiguration):
+        if noradId not in self.vaos:
+            return
+        isActive = isSelected or isHovered
+        glUseProgram(self.shader)
+        # ----- ORBIT -----
+        orbitPathConfig = configuration['ORBIT_PATH']
+        showOrbits = displayConfiguration.get('SHOW_ORBIT_PATHS', False)
+        if self._shouldRender(orbitPathConfig['MODE'], isSelected, showOrbits):
+            color = orbitPathConfig['COLOR']
+            color = (color[0] / 255, color[1] / 255, color[2] / 255, 1.0) if isActive else (1, 1, 1, 1)
+            glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
+            glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
+            glLineWidth(orbitPathConfig['WIDTH'])
+            glBindVertexArray(self.vaos[noradId]["orbit"])
+            glDrawArrays(GL_LINE_STRIP, 0, self.orbitCounts[noradId])
+        # ----- POINT -----
+        spotCfg = configuration['SPOT']
+        color = spotCfg['COLOR']
+        color = ( color[0] / 255, color[1] / 255, color[2] / 255, 1.0) if isActive else (1, 1, 1, 1)
+        glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
+        glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'])
+        glBindVertexArray(self.vaos[noradId]["point"])
+        glDrawArrays(GL_POINTS, 0, 1)
+        glBindVertexArray(0)
+        glUseProgram(0)
+
+    @staticmethod
+    def _shouldRender(mode: str, isSelected: bool, isToggled: bool):
+        if not isToggled:
+            return False
+        if mode == "ALWAYS":
+            return True
+        if mode == "WHEN_SELECTED":
+            return isSelected
+        return False  # NEVER
+
+
 class SunRenderer(BaseRenderer):
     SUN_RADIUS = 696340
     EARTH_SUN_DISTANCE = 149600000
