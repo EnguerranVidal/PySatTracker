@@ -68,7 +68,7 @@ class ObjectRenderer(BaseRenderer):
         self.orbitCounts[noradIndex] = len(orbit)
 
     def renderObject(self, noradId, configuration, isSelected, isHovered, displayConfiguration):
-        if noradId not in self.vbos:
+        if noradId not in self.vbos or self.shader is None:
             return
         isActive = isSelected or isHovered
         glUseProgram(self.shader)
@@ -77,16 +77,17 @@ class ObjectRenderer(BaseRenderer):
         showOrbits = displayConfiguration.get('SHOW_ORBIT_PATHS', False)
         if self._shouldRender(orbitPathConfig['MODE'], isSelected, showOrbits):
             color = orbitPathConfig['COLOR']
-            color = (color[0] / 255, color[1] / 255, color[2] / 255, 1.0) if isActive else (1, 1, 1, 1)
+            color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.8) if isActive else (1, 1, 1, 0.40)
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
             glLineWidth(orbitPathConfig['WIDTH'])
             self._bindObjectBuffer(noradId, "orbit")
             glDrawArrays(GL_LINE_STRIP, 0, self.orbitCounts[noradId])
+            glDepthMask(GL_TRUE)
         # OBJECT SPOT RENDER
         spotCfg = configuration['SPOT']
         color = spotCfg['COLOR']
-        color = ( color[0] / 255, color[1] / 255, color[2] / 255, 1.0) if isActive else (1, 1, 1, 1)
+        color = ( color[0] / 255, color[1] / 255, color[2] / 255, 0.8) if isActive else (1, 1, 1, 0.4)
         glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
         glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'])
         self._bindObjectBuffer(noradId, "point")
@@ -154,13 +155,13 @@ class SunRenderer(BaseRenderer):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE)
         glDepthMask(GL_FALSE)
-        right, up = np.array([mv[0], mv[4], mv[8]]), np.array([mv[1], mv[5], mv[9]])
-        self._drawDisk(self.sunRadius, (1.0, 0.98, 0.9, 1.0), right, up)
-        self._drawDisk(self.sunRadius * 1.5, (1.0, 0.94, 0.75, 0.5), right, up)
-        self._drawDisk(self.sunRadius * 2.0, (1.0, 0.9, 0.6, 0.2), right, up)
-        self._drawDisk(self.sunRadius * 2.5, (1.0, 0.7, 0.3, 0.08), right, up)
-        self._drawDisk(self.sunRadius * 5.0, (1.0, 0.5, 0.2, 0.03), right, up)
-        self._drawDisk(self.sunRadius * 8.0, (1.0, 0.3, 0.1, 0.01), right, up)
+        right = np.array([mv[0], mv[4], mv[8]])
+        up = np.array([mv[1], mv[5], mv[9]])
+        self._drawDisk(self.sunRadius * 0.85, (1.0, 0.98, 0.86, 0.75), right, up)
+        self._drawDisk(self.sunRadius * 1.35, (1.0, 0.88, 0.50, 0.30), right, up)
+        self._drawDisk(self.sunRadius * 2.20, (1.0, 0.62, 0.24, 0.12), right, up)
+        self._drawDisk(self.sunRadius * 3.80, (1.0, 0.36, 0.12, 0.045), right, up)
+        self._drawDisk(self.sunRadius * 7.00, (1.0, 0.18, 0.06, 0.018), right, up)
         glDepthMask(GL_TRUE)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glPopMatrix()
@@ -293,13 +294,16 @@ class MoonRenderer(BaseRenderer):
         moonRotationMatrix = context["moonRot"]
         sunDirectionEci = context["sunEci"]
         moonPosition = context["moonPos"] / self.EARTH_RADIUS
-        sunDirectionMoonFixed = moonRotationMatrix.T @ (sunDirectionEci / np.linalg.norm(sunDirectionEci))
+        sunDirectionEci = sunDirectionEci / np.linalg.norm(sunDirectionEci)
+        moonTextureCorrection = np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+        sunDirectionMoonFixed = moonTextureCorrection.T @ (moonRotationMatrix.T @ sunDirectionEci)
         glPushMatrix()
         try:
             glTranslatef(*moonPosition)
             mat = np.eye(4, dtype=np.float32)
             mat[:3, :3] = moonRotationMatrix
             glMultMatrixf(mat.T.flatten())
+            glRotatef(180.0, 0.0, 0.0, 1.0)
             glUseProgram(self.shader)
             glUniform3f(glGetUniformLocation(self.shader, "sunDirectionMoonFixed"), *sunDirectionMoonFixed)
             glUniform1f(glGetUniformLocation(self.shader, "ambient"), 0.05)
@@ -307,7 +311,7 @@ class MoonRenderer(BaseRenderer):
             glBindTexture(GL_TEXTURE_2D, self.moonTexture)
             glUniform1i(glGetUniformLocation(self.shader, "moonTexture"), 0)
             glEnable(GL_TEXTURE_2D)
-            gluSphere(self.sphere, self.moonRadius, 64, 64)
+            gluSphere(self.sphere, self.moonRadius, 128, 96)
             glBindTexture(GL_TEXTURE_2D, 0)
             glDisable(GL_TEXTURE_2D)
             glUseProgram(0)

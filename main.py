@@ -8,6 +8,7 @@ from PyQt5.QtCore import QThread
 from src.core.database.general import DatabaseLoaderWorker
 from src.gui.common import LoadingScreen
 from src.gui.mainWindow import MainWindow
+from src.gui.utilities import configureOpenGLFormat
 
 
 def main():
@@ -26,6 +27,7 @@ def main():
     thread.started.connect(databaseLoader.run)
     databaseLoader.progress.connect(splash.setProgress)
     databaseLoader.status.connect(splash.setStatus)
+    configureOpenGLFormat()
 
     def onFinished(databases):
         tleDatabase, starDatabase = databases

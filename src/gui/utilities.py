@@ -1,5 +1,6 @@
 import json
 import numpy as np
+from PyQt5.QtGui import QSurfaceFormat
 
 
 def giveDefaultObjectViewConfig():
@@ -55,3 +56,11 @@ def upperBoundary(value):
     else:
         niceFraction = 10
     return niceFraction * (10 ** exponent)
+
+def configureOpenGLFormat():
+    surfaceFormat = QSurfaceFormat()
+    surfaceFormat.setDepthBufferSize(24)
+    surfaceFormat.setStencilBufferSize(8)
+    surfaceFormat.setSamples(8)
+    surfaceFormat.setProfile(QSurfaceFormat.CompatibilityProfile)
+    QSurfaceFormat.setDefaultFormat(surfaceFormat)
