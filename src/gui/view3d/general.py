@@ -2,14 +2,13 @@ import copy
 
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
-from OpenGL.GL.shaders import compileProgram, compileShader
+from OpenGL.GL import *
 
 from PIL import Image
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import *
-from OpenGL.GL import *
 
 from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, RenderContext, ObjectRenderer
 from src.core.objects import ActiveObjectsModel
@@ -64,6 +63,7 @@ class View3dWidget(QOpenGLWidget):
         self.objectSpotData = {}
         self.objectOrbitData = {}
         self.objectNameData = {}
+        self.pendingObjectBufferUpdates = {}
         self.hoveredObject = None
         self.displayConfiguration = {}
         self.gmstAngle = 0
@@ -89,32 +89,17 @@ class View3dWidget(QOpenGLWidget):
         self.earthRenderer.initialize()
         self.moonRenderer.initialize()
         self.objectRenderer.initialize()
-        self.skyboxTextures = self._loadSkyBoxTextures([
-            "src/assets/skybox/posx.png",
-            "src/assets/skybox/negx.png",
-            "src/assets/skybox/posy.png",
-            "src/assets/skybox/negy.png",
-            "src/assets/skybox/posz.png",
-            "src/assets/skybox/negz.png",
-        ])
 
     def paintGL(self):
         if not self.activeObjects:
             return
+        self._uploadPendingObjectBuffers()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         self.camera.apply()
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
-        context = {
-            "modelView": modelView,
-            "sunEci": self.sunDirectionEci,
-            "sunEcef": self.sunDirectionEcef,
-            "moonRot": self.moonRotationMatrix,
-            "moonPos": self.moonPositionEci,
-            "gmst": self.gmstAngle,
-            "config": self.displayConfiguration.get('3D_VIEW', {})
-        }
-        # self.drawSkybox()
+        context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix,
+                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "config": self.displayConfiguration.get('3D_VIEW', {})}
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
@@ -155,6 +140,7 @@ class View3dWidget(QOpenGLWidget):
         self.objectSpotData = {}
         self.objectOrbitData = {}
         self.objectNameData = {}
+        self.pendingObjectBufferUpdates = {}
         for noradIndex in self.activeObjects.allNoradIndices():
             if noradIndex not in positions['3D_VIEW']['OBJECTS']:
                 continue
@@ -165,8 +151,16 @@ class View3dWidget(QOpenGLWidget):
             self.objectSpotData[key] = objectPositionData
             self.objectOrbitData[key] = objectOrbitPathData
             self.objectNameData[key] = objectName
-            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData)
+            self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData)
         self.update()
+
+    def _uploadPendingObjectBuffers(self):
+        if not self.pendingObjectBufferUpdates:
+            return
+        for key, objectData in self.pendingObjectBufferUpdates.items():
+            objectPositionData, objectOrbitPathData = objectData
+            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData)
+        self.pendingObjectBufferUpdates = {}
 
     def _getObjectRenderConfiguration(self, noradIndex):
         groupName = self.activeObjects.getGroupForNoradIndex(noradIndex)

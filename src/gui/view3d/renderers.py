@@ -30,43 +30,49 @@ class ObjectRenderer(BaseRenderer):
         self.vbos = {}
         self.orbitCounts = {}
         self.shader = None
+        self.useVaos = False
 
     def initialize(self):
         with open("src/assets/objects/object.vert") as f:
             vert = f.read()
         with open("src/assets/objects/object.frag") as f:
             frag = f.read()
-        self.shader = compileProgram(compileShader(vert, GL_VERTEX_SHADER), compileShader(frag, GL_FRAGMENT_SHADER))
+        vertexShader = compileShader(vert, GL_VERTEX_SHADER)
+        fragmentShader = compileShader(frag, GL_FRAGMENT_SHADER)
+        self.shader = glCreateProgram()
+        glAttachShader(self.shader, vertexShader)
+        glAttachShader(self.shader, fragmentShader)
+        glBindAttribLocation(self.shader, 0, "aPos")
+        glLinkProgram(self.shader)
+        if glGetProgramiv(self.shader, GL_LINK_STATUS) != GL_TRUE:
+            log = glGetProgramInfoLog(self.shader)
+            raise RuntimeError(f"Object shader failed to link:\n{log}")
+        glDeleteShader(vertexShader)
+        glDeleteShader(fragmentShader)
+        self.useVaos = bool(glGenVertexArrays) and bool(glBindVertexArray)
 
     def updateObject(self, noradIndex, position, orbit):
-        position = (position / self.EARTH_RADIUS).astype(np.float32)
-        orbit = (orbit / self.EARTH_RADIUS).astype(np.float32)
-        if noradIndex not in self.vaos:
-            self.vaos[noradIndex] = {"point": glGenVertexArrays(1), "orbit": glGenVertexArrays(1)}
+        position = (np.asarray(position, dtype=np.float32) / self.EARTH_RADIUS).reshape(1, 3)
+        orbit = (np.asarray(orbit, dtype=np.float32) / self.EARTH_RADIUS).reshape(-1, 3)
+        if noradIndex not in self.vbos:
             self.vbos[noradIndex] = {"point": glGenBuffers(1), "orbit": glGenBuffers(1)}
-            # POINT BUFFER
-            glBindVertexArray(self.vaos[noradIndex]["point"])
-            glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["point"])
-            glBufferData(GL_ARRAY_BUFFER, position.nbytes, position, GL_DYNAMIC_DRAW)
-            glEnableVertexAttribArray(0)
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
-            # ORBIT BUFFER
-            glBindVertexArray(self.vaos[noradIndex]["orbit"])
-            glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["orbit"])
-            glBufferData(GL_ARRAY_BUFFER, orbit.nbytes, orbit, GL_DYNAMIC_DRAW)
-            glEnableVertexAttribArray(0)
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
-            # ORBIT COUNT
-            self.orbitCounts[noradIndex] = len(orbit)
-            glBindVertexArray(0)
-            glBindBuffer(GL_ARRAY_BUFFER, 0)
+            if self.useVaos:
+                self.vaos[noradIndex] = {"point": glGenVertexArrays(1), "orbit": glGenVertexArrays(1)}
+                self._configureVertexArray(self.vaos[noradIndex]["point"], self.vbos[noradIndex]["point"])
+                self._configureVertexArray(self.vaos[noradIndex]["orbit"], self.vbos[noradIndex]["orbit"])
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["point"])
+        glBufferData(GL_ARRAY_BUFFER, position.nbytes, position, GL_DYNAMIC_DRAW)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex]["orbit"])
+        glBufferData(GL_ARRAY_BUFFER, orbit.nbytes, orbit, GL_DYNAMIC_DRAW)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        self.orbitCounts[noradIndex] = len(orbit)
 
     def renderObject(self, noradId, configuration, isSelected, isHovered, displayConfiguration):
-        if noradId not in self.vaos:
+        if noradId not in self.vbos:
             return
         isActive = isSelected or isHovered
         glUseProgram(self.shader)
-        # ----- ORBIT -----
+        # ORBITAL PATH RENDER
         orbitPathConfig = configuration['ORBIT_PATH']
         showOrbits = displayConfiguration.get('SHOW_ORBIT_PATHS', False)
         if self._shouldRender(orbitPathConfig['MODE'], isSelected, showOrbits):
@@ -75,18 +81,42 @@ class ObjectRenderer(BaseRenderer):
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
             glLineWidth(orbitPathConfig['WIDTH'])
-            glBindVertexArray(self.vaos[noradId]["orbit"])
+            self._bindObjectBuffer(noradId, "orbit")
             glDrawArrays(GL_LINE_STRIP, 0, self.orbitCounts[noradId])
-        # ----- POINT -----
+        # OBJECT SPOT RENDER
         spotCfg = configuration['SPOT']
         color = spotCfg['COLOR']
         color = ( color[0] / 255, color[1] / 255, color[2] / 255, 1.0) if isActive else (1, 1, 1, 1)
         glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
         glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'])
-        glBindVertexArray(self.vaos[noradId]["point"])
+        self._bindObjectBuffer(noradId, "point")
         glDrawArrays(GL_POINTS, 0, 1)
-        glBindVertexArray(0)
+        self._unbindObjectBuffer()
         glUseProgram(0)
+
+    @staticmethod
+    def _configureVertexArray(vao, vbo):
+        glBindVertexArray(vao)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        glBindVertexArray(0)
+
+    def _bindObjectBuffer(self, noradId, bufferName):
+        if self.useVaos:
+            glBindVertexArray(self.vaos[noradId][bufferName])
+            return
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradId][bufferName])
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
+
+    def _unbindObjectBuffer(self):
+        if self.useVaos:
+            glBindVertexArray(0)
+            return
+        glDisableVertexAttribArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
 
     @staticmethod
     def _shouldRender(mode: str, isSelected: bool, isToggled: bool):
@@ -203,7 +233,6 @@ class EarthRenderer(BaseRenderer):
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             gluQuadricTexture(self.sphere, GL_FALSE)
             glPushMatrix()
-            glRotatef(90, 1, 0, 0)
             gluSphere(self.sphere, 1.003, 48, 24)
             glPopMatrix()
             gluQuadricTexture(self.sphere, GL_TRUE)
