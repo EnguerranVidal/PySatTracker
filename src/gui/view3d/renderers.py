@@ -179,10 +179,16 @@ class SunRenderer(BaseRenderer):
 
 
 class EarthRenderer(BaseRenderer):
+    EARTH_RADIUS = 6371
+    ATMOSPHERE_THICKNESS = 50
+
     def __init__(self):
         self.dayEarthTexture = 0
         self.nightEarthTexture = 0
-        self.shader = None
+        self.cloudTexture = 0
+        self.earthShader = None
+        self.cloudShader = None
+        self.atmosphereThickness = self.ATMOSPHERE_THICKNESS / self.EARTH_RADIUS
         self.sphere = None
 
     def initialize(self):
@@ -191,11 +197,17 @@ class EarthRenderer(BaseRenderer):
         gluQuadricTexture(self.sphere, GL_TRUE)
         self.dayEarthTexture = self._loadTexture("src/assets/earth/earth.jpg")
         self.nightEarthTexture = self._loadTexture("src/assets/earth/earth_lights.jpg")
+        self.cloudTexture = self._loadTexture("src/assets/earth/clouds.jpg")
         with open("src/assets/earth/earth.vert") as f:
-            vert = f.read()
+            earthVert = f.read()
         with open("src/assets/earth/earth.frag") as f:
-            frag = f.read()
-        self.shader = compileProgram(compileShader(vert, GL_VERTEX_SHADER), compileShader(frag, GL_FRAGMENT_SHADER))
+            earthFrag = f.read()
+        self.earthShader = compileProgram(compileShader(earthVert, GL_VERTEX_SHADER), compileShader(earthFrag, GL_FRAGMENT_SHADER))
+        with open("src/assets/earth/clouds.vert") as f:
+            cloudsVert = f.read()
+        with open("src/assets/earth/clouds.frag") as f:
+            cloudsFrag = f.read()
+        self.cloudShader = compileProgram(compileShader(cloudsVert, GL_VERTEX_SHADER), compileShader(cloudsFrag, GL_FRAGMENT_SHADER))
 
     def render(self, context):
         if not context["config"].get("SHOW_EARTH", False):
@@ -207,21 +219,40 @@ class EarthRenderer(BaseRenderer):
             glRotatef(gmstAngle, 0, 0, 1)
             glRotatef(90, 0, 0, 1)
             glEnable(GL_TEXTURE_2D)
-            glUseProgram(self.shader)
+            glUseProgram(self.earthShader)
             glActiveTexture(GL_TEXTURE0)
+            glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.dayEarthTexture)
-            glUniform1i(glGetUniformLocation(self.shader, "earthDay"), 0)
+            glUniform1i(glGetUniformLocation(self.earthShader, "earthDay"), 0)
             glActiveTexture(GL_TEXTURE1)
+            glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.nightEarthTexture)
-            glUniform1i(glGetUniformLocation(self.shader, "earthNight"), 1)
+            glUniform1i(glGetUniformLocation(self.earthShader, "earthNight"), 1)
             sun = sunDirectionEcef / np.linalg.norm(sunDirectionEcef)
-            glUniform3f(glGetUniformLocation(self.shader, "sunDirectionEcef"), sun[1], -sun[0], sun[2])
-            glUniform1f(glGetUniformLocation(self.shader, "twilightWidth"), 0.15)
-            glUniform1f(glGetUniformLocation(self.shader, "nightIntensity"), 1.0)
-            gluSphere(self.sphere, 1.0, 96, 64)
+            glUniform3f(glGetUniformLocation(self.earthShader, "sunDirectionEcef"), sun[1], -sun[0], sun[2])
+            glUniform1f(glGetUniformLocation(self.earthShader, "twilightWidth"), 0.15)
+            glUniform1f(glGetUniformLocation(self.earthShader, "nightIntensity"), 1.0)
+            gluSphere(self.sphere, 1.0, 160, 96)
             glUseProgram(0)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
             glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            self._drawCloudLayer(gmstAngle, sunDirectionEcef)
+            self._drawAtmosphereShell()
         finally:
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glUseProgram(0)
+            glDepthMask(GL_TRUE)
+            glDisable(GL_CULL_FACE)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
             glPopMatrix()
 
     def drawGrid(self, context):
@@ -252,6 +283,72 @@ class EarthRenderer(BaseRenderer):
             glVertex3f(0.0, -1.2, 0.0)
             glVertex3f(0.0, 1.2, 0.0)
             glEnd()
+        finally:
+            glPopMatrix()
+
+    def _drawCloudLayer(self, gmstAngle, sunDirectionEcef: np.ndarray):
+        if not self.cloudTexture or self.cloudShader is None:
+            return
+        cloudDriftAngle = gmstAngle * 0.08
+        sun = sunDirectionEcef / np.linalg.norm(sunDirectionEcef)
+        sunLocalDirection = np.array([sun[1], -sun[0], sun[2]], dtype=float)
+        angle = np.deg2rad(-cloudDriftAngle)
+        cosAngle = np.cos(angle)
+        sinAngle = np.sin(angle)
+        cloudSunLocal = np.array([cosAngle * sunLocalDirection[0] - sinAngle * sunLocalDirection[1], sinAngle * sunLocalDirection[0] + cosAngle * sunLocalDirection[1], sunLocalDirection[2]], dtype=float)
+        glPushMatrix()
+        try:
+            glRotatef(cloudDriftAngle, 0, 0, 1)
+            glUseProgram(self.cloudShader)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glDepthMask(GL_FALSE)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.cloudTexture)
+            glUniform1i(glGetUniformLocation(self.cloudShader, "cloudTexture"), 0)
+            glUniform1f(glGetUniformLocation(self.cloudShader, "cloudOpacity"), 0.8)
+            glUniform1f(glGetUniformLocation(self.cloudShader, "cloudBrightnessCutoff"), 0.12)
+            glUniform1f(glGetUniformLocation(self.cloudShader, "cloudNightOpacity"), 0.6)
+            glUniform3f(glGetUniformLocation(self.cloudShader, "cloudColor"), 1.0, 1.0, 1.0)
+            glUniform3f(glGetUniformLocation(self.cloudShader, "sunDirectionLocal"), cloudSunLocal[0], cloudSunLocal[1], cloudSunLocal[2])
+            gluQuadricTexture(self.sphere, GL_TRUE)
+            gluSphere(self.sphere, 1.006, 160, 96)
+            glUseProgram(0)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glDepthMask(GL_TRUE)
+        finally:
+            glPopMatrix()
+
+    def _drawAtmosphereShell(self):
+        glPushMatrix()
+        try:
+            glUseProgram(0)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_FRONT)
+            glDepthMask(GL_FALSE)
+            glColor4f(0.25, 0.48, 1.0, 0.2)
+            gluQuadricTexture(self.sphere, GL_FALSE)
+            gluSphere(self.sphere, 1 + self.atmosphereThickness, 160, 96)
+            gluQuadricTexture(self.sphere, GL_TRUE)
+            glDepthMask(GL_TRUE)
+            glCullFace(GL_BACK)
+            glDisable(GL_CULL_FACE)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
         finally:
             glPopMatrix()
 
