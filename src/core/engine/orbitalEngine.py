@@ -328,26 +328,26 @@ class OrbitalMechanicsEngine:
         rotation0 = (meanRotationAngle + libration) % 360.0
         alpha, delta, rotationAngle = np.deg2rad(alpha0), np.deg2rad(delta0), np.deg2rad(rotation0)
         sinAlpha, cosAlpha, sinDelta, cosDelta, sinRot, cosRot = np.sin(alpha), np.cos(alpha), np.sin(delta), np.cos(delta), np.sin(rotationAngle), np.cos(rotationAngle)
-        R = np.empty((3, 3))
-        R[0, 0] = cosRot * cosAlpha * sinDelta - sinRot * sinAlpha
-        R[0, 1] = cosRot * sinAlpha * sinDelta + sinRot * cosAlpha
-        R[0, 2] = -cosRot * cosDelta
-        R[1, 0] = -sinRot * cosAlpha * sinDelta - cosRot * sinAlpha
-        R[1, 1] = -sinRot * sinAlpha * sinDelta + cosRot * cosAlpha
-        R[1, 2] = sinRot * cosDelta
-        R[2, 0] = cosAlpha * cosDelta
-        R[2, 1] = sinAlpha * cosDelta
-        R[2, 2] = sinDelta
-        return R
+        eciToMoonFixed = np.empty((3, 3), dtype=float)
+        eciToMoonFixed[0, 0] = cosRot * cosAlpha * sinDelta - sinRot * sinAlpha
+        eciToMoonFixed[0, 1] = cosRot * sinAlpha * sinDelta + sinRot * cosAlpha
+        eciToMoonFixed[0, 2] = -cosRot * cosDelta
+        eciToMoonFixed[1, 0] = -sinRot * cosAlpha * sinDelta - cosRot * sinAlpha
+        eciToMoonFixed[1, 1] = -sinRot * sinAlpha * sinDelta + cosRot * cosAlpha
+        eciToMoonFixed[1, 2] = sinRot * cosDelta
+        eciToMoonFixed[2, 0] = cosAlpha * cosDelta
+        eciToMoonFixed[2, 1] = sinAlpha * cosDelta
+        eciToMoonFixed[2, 2] = sinDelta
+        return eciToMoonFixed.T
 
     def sunDirectionMoonFixed(self, fullJulianDate, normed=True):
         fullJulianDate, scalar = self._ensureArray(fullJulianDate)
         sunDirectionEci = self.solarDirectionEci(fullJulianDate, normed=normed)
         if sunDirectionEci.ndim == 1:
             sunDirectionEci = sunDirectionEci.reshape(1, 3)
-        rotationMatrix = self.moonRotationMatrixEci(fullJulianDate)
-        transposedMatrix = rotationMatrix.T
-        sunMoonFixed = transposedMatrix @ sunDirectionEci
+        moonFixedToEci = self.moonRotationMatrixEci(fullJulianDate)
+        eciToMoonFixed = moonFixedToEci.T
+        sunMoonFixed = sunDirectionEci @ eciToMoonFixed.T
         return self._maybeScalar(sunMoonFixed, scalar)
 
     def terminatorCurve(self, fullJulianDate, nbPoints=361, radians=True):

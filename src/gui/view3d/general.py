@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import *
 
-from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, RenderContext, ObjectRenderer
+from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, ObjectRenderer, SkyBoxRenderer
 from src.core.objects import ActiveObjectsModel
 
 
@@ -54,6 +54,7 @@ class View3dWidget(QOpenGLWidget):
     cameraChanged = pyqtSignal()
     EARTH_RADIUS = 6371
     EARTH_MOON_DISTANCE = 384400
+    """Textures are from https://www.solarsystemscope.com/textures/"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -66,6 +67,7 @@ class View3dWidget(QOpenGLWidget):
         self.pendingObjectBufferUpdates = {}
         self.hoveredObject = None
         self.displayConfiguration = {}
+        self.simFullJulianDate = 2451545.0
         self.gmstAngle = 0
         self.activeObjects: ActiveObjectsModel | None = None
         self.sunDirectionEcef = np.array([1, 0, 0], dtype=float)
@@ -75,6 +77,7 @@ class View3dWidget(QOpenGLWidget):
         self.sunRenderer = SunRenderer()
         self.earthRenderer = EarthRenderer()
         self.moonRenderer = MoonRenderer()
+        self.skyBoxRenderer = SkyBoxRenderer()
         self.objectRenderer = ObjectRenderer()
         self.skyboxTextures = []
         self.lastPosX, self.lastPosY = 0, 0
@@ -96,6 +99,7 @@ class View3dWidget(QOpenGLWidget):
         glShadeModel(GL_SMOOTH)
         self.earthRenderer.initialize()
         self.moonRenderer.initialize()
+        self.skyBoxRenderer.initialize()
         self.objectRenderer.initialize()
 
     def paintGL(self):
@@ -104,9 +108,10 @@ class View3dWidget(QOpenGLWidget):
         self._uploadPendingObjectBuffers()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         self.camera.apply()
+        self.skyBoxRenderer.render()
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
-        context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix,
+        context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix, "julianDate": self.simFullJulianDate,
                    "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "config": self.displayConfiguration.get('3D_VIEW', {})}
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
@@ -140,6 +145,7 @@ class View3dWidget(QOpenGLWidget):
         if not self.activeObjects:
             return
         self.displayConfiguration = displayConfiguration
+        self.simFullJulianDate = positions['3D_VIEW'].get('JULIAN_DATE', self.simFullJulianDate)
         self.gmstAngle = np.rad2deg(positions['3D_VIEW']['GMST'])
         self.sunDirectionEcef = positions['3D_VIEW']['SUN_DIRECTION_ECEF']
         self.sunDirectionEci = positions['3D_VIEW']['SUN_DIRECTION_ECI']

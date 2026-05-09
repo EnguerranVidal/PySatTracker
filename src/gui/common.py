@@ -414,6 +414,7 @@ class OrbitWorker(QObject):
             view3dResults['OBJECTS'][noradIndex]['ORBIT_PATH'] = states['rECI']
             view3dResults['OBJECTS'][noradIndex]['GROUND_TRACK'] = groundTrackEci
             view3dResults['OBJECTS'][noradIndex]['VISIBILITY'] = visibilityEci
+        view3dResults['JULIAN_DATE'] = simFullJulianDate
         view3dResults['GMST'] = self.engine.greenwichMeridianSiderealTime(simFullJulianDate)
         view3dResults['SUN_DIRECTION_ECI'] = self.engine.solarDirectionEci(simFullJulianDate)
         view3dResults['SUN_DIRECTION_ECEF'] = self.engine.eciToEcef(view3dResults['SUN_DIRECTION_ECI'], simFullJulianDate)
