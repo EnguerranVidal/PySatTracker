@@ -23,6 +23,19 @@ class BaseRenderer:
     def render(self, context):
         pass
 
+    @staticmethod
+    def _loadTexture(path):
+        image = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM)
+        data = np.array(image.convert("RGB"), dtype=np.uint8)
+        texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, texture)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, data)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        return texture
+
 
 class ObjectRenderer(BaseRenderer):
     def __init__(self):
@@ -213,6 +226,7 @@ class EarthRenderer(BaseRenderer):
         if not context["config"].get("SHOW_EARTH", False):
             return
         gmstAngle = context["gmst"]
+        fullJulianDate = context.get("julianDate", 2451545.0)
         sunDirectionEcef = context["sunEcef"]
         glPushMatrix()
         try:
@@ -240,7 +254,7 @@ class EarthRenderer(BaseRenderer):
             glActiveTexture(GL_TEXTURE0)
             glBindTexture(GL_TEXTURE_2D, 0)
             glDisable(GL_TEXTURE_2D)
-            self._drawCloudLayer(gmstAngle, sunDirectionEcef)
+            self._drawCloudLayer(fullJulianDate, sunDirectionEcef)
             self._drawAtmosphereShell()
         finally:
             glActiveTexture(GL_TEXTURE1)
@@ -286,10 +300,11 @@ class EarthRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
-    def _drawCloudLayer(self, gmstAngle, sunDirectionEcef: np.ndarray):
+    def _drawCloudLayer(self, fullJulianDate, sunDirectionEcef: np.ndarray):
         if not self.cloudTexture or self.cloudShader is None:
             return
-        cloudDriftAngle = gmstAngle * 0.08
+        daysSinceJ2000 = fullJulianDate - 2451545.0
+        cloudDriftAngle = (daysSinceJ2000 * 28.8) % 360.0
         sun = sunDirectionEcef / np.linalg.norm(sunDirectionEcef)
         sunLocalDirection = np.array([sun[1], -sun[0], sun[2]], dtype=float)
         angle = np.deg2rad(-cloudDriftAngle)
@@ -352,19 +367,6 @@ class EarthRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
-    @staticmethod
-    def _loadTexture(path):
-        image = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM)
-        data = np.array(image.convert("RGB"), dtype=np.uint8)
-        texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, data)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glGenerateMipmap(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, 0)
-        return texture
-
 
 class MoonRenderer(BaseRenderer):
     MOON_RADIUS = 1737
@@ -388,21 +390,22 @@ class MoonRenderer(BaseRenderer):
         self.shader = compileProgram(compileShader(vert, GL_VERTEX_SHADER), compileShader(frag, GL_FRAGMENT_SHADER))
 
     def render(self, context):
-        moonRotationMatrix = context["moonRot"]
+        moonFixedToEci = context["moonRot"]
         sunDirectionEci = context["sunEci"]
         moonPosition = context["moonPos"] / self.EARTH_RADIUS
         sunDirectionEci = sunDirectionEci / np.linalg.norm(sunDirectionEci)
         moonTextureCorrection = np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
-        sunDirectionMoonFixed = moonTextureCorrection.T @ (moonRotationMatrix.T @ sunDirectionEci)
+        eciToMoonFixed = moonFixedToEci.T
+        sunDirectionMoonFixed = moonTextureCorrection.T @ (eciToMoonFixed @ sunDirectionEci)
         glPushMatrix()
         try:
             glTranslatef(*moonPosition)
-            mat = np.eye(4, dtype=np.float32)
-            mat[:3, :3] = moonRotationMatrix
-            glMultMatrixf(mat.T.flatten())
+            transform  = np.eye(4, dtype=np.float32)
+            transform [:3, :3] = moonFixedToEci
+            glMultMatrixf(transform .T.flatten())
             glRotatef(180.0, 0.0, 0.0, 1.0)
             glUseProgram(self.shader)
-            glUniform3f(glGetUniformLocation(self.shader, "sunDirectionMoonFixed"), *sunDirectionMoonFixed)
+            glUniform3f(glGetUniformLocation(self.shader, "sunDirectionMoonFixed"), sunDirectionMoonFixed[0], sunDirectionMoonFixed[1], sunDirectionMoonFixed[2])
             glUniform1f(glGetUniformLocation(self.shader, "ambient"), 0.05)
             glActiveTexture(GL_TEXTURE0)
             glBindTexture(GL_TEXTURE_2D, self.moonTexture)
@@ -415,15 +418,82 @@ class MoonRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
+
+class SkyBoxRenderer(BaseRenderer):
+    def __init__(self):
+        super().__init__()
+        self.skyTexture = 0
+        self.skyRadius = 500
+        self.sphere = None
+        self.textureYawOffsetDeg = 0.0
+        self.texturePitchOffsetDeg = 0.0
+        self.textureRollOffsetDeg = 0.0
+
+    def initialize(self):
+        self.sphere = gluNewQuadric()
+        gluQuadricNormals(self.sphere, GLU_SMOOTH)
+        gluQuadricTexture(self.sphere, GL_TRUE)
+        gluQuadricOrientation(self.sphere, GLU_INSIDE)
+        self.skyTexture = self._loadTexture("src/assets/skybox/skybox.jpg")
+
+    def render(self, context=None):
+        if not self.skyTexture or self.sphere is None:
+            return
+        modelView = (GLdouble * 16)()
+        glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
+        modelViewWithoutTranslation = list(modelView)
+        modelViewWithoutTranslation[12] = 0.0
+        modelViewWithoutTranslation[13] = 0.0
+        modelViewWithoutTranslation[14] = 0.0
+        galacticToEci = self.galacticToEciMatrix()
+        skyboxMatrix = np.eye(4, dtype=np.float32)
+        skyboxMatrix[:3, :3] = galacticToEci
+        glPushMatrix()
+        try:
+            glLoadMatrixd(modelViewWithoutTranslation)
+            glUseProgram(0)
+            glDisable(GL_LIGHTING)
+            glDisable(GL_CULL_FACE)
+            glDisable(GL_DEPTH_TEST)
+            glDepthMask(GL_FALSE)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, self.skyTexture)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            glRotatef(self.textureYawOffsetDeg, 0.0, 0.0, 1.0)
+            glRotatef(self.texturePitchOffsetDeg, 1.0, 0.0, 0.0)
+            glRotatef(self.textureRollOffsetDeg, 0.0, 1.0, 0.0)
+            glMultMatrixf(skyboxMatrix.T.flatten())
+            gluSphere(self.sphere, self.skyRadius, 128, 64)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glDepthMask(GL_TRUE)
+            glEnable(GL_DEPTH_TEST)
+        finally:
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+            glDepthMask(GL_TRUE)
+            glEnable(GL_DEPTH_TEST)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            glPopMatrix()
+
     @staticmethod
-    def _loadTexture(path):
-        image = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM)
-        data = np.array(image.convert("RGB"), dtype=np.uint8)
-        texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, data)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glGenerateMipmap(GL_TEXTURE_2D)
-        glBindTexture(GL_TEXTURE_2D, 0)
-        return texture
+    def galacticToEciMatrix():
+        return np.array([[-0.0548755604162154, 0.4941094278755837, -0.8676661490190047], [-0.8734370902348850, -0.4448296299600112, -0.1980763734312015], [-0.4838350155487132, 0.7469822444972189, 0.4559837761750669]], dtype=np.float64)
+
+    @staticmethod
+    def galacticLonLatToVector(longitudeRad, latitudeRad):
+        cosLatitude = np.cos(latitudeRad)
+        return np.array([cosLatitude * np.cos(longitudeRad), cosLatitude * np.sin(longitudeRad), np.sin(latitudeRad),], dtype=np.float64)
+
+    @staticmethod
+    def galacticLonLatToEci(longitudeRad, latitudeRad):
+        galacticVector = SkyBoxRenderer.galacticLonLatToVector(longitudeRad, latitudeRad)
+        return SkyBoxRenderer.galacticToEciMatrix() @ galacticVector
