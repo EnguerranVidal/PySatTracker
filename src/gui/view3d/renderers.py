@@ -132,7 +132,7 @@ class ObjectRenderer(BaseRenderer):
         color = spotCfg['COLOR']
         color = ( color[0] / 255, color[1] / 255, color[2] / 255, 0.8) if isActive else (1, 1, 1, 0.4)
         glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
-        glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'])
+        glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'] if isActive else 5)
         self._bindObjectBuffer(noradIndex, "point")
         glDrawArrays(GL_POINTS, 0, 1)
         self._unbindObjectBuffer()

@@ -132,11 +132,17 @@ class OrbitalMechanicsEngine:
             longitudes, latitudes = np.rad2deg(longitudes), np.rad2deg(latitudes)
         return self._maybeScalar(longitudes, scalar), self._maybeScalar(latitudes, scalar), self._maybeScalar(altitudes, scalar)
 
-    def longitudeLatitudeToEcef(self, longitudes, latitudes, altitudes, radians=True):
+    def longitudeLatitudeToEcef(self, longitudes, latitudes, altitudes, radians=True, spherical=False):
         if not radians:
             longitudes, latitudes = np.deg2rad(longitudes), np.deg2rad(latitudes)
         cosLatitude, sinLatitude = np.cos(latitudes), np.sin(latitudes)
         cosLongitude, sinLongitude= np.cos(longitudes), np.sin(longitudes)
+        if spherical:
+            radius = self.equatorialRadius + altitudes
+            x = radius * cosLatitude * cosLongitude
+            y = radius * cosLatitude * sinLongitude
+            z = radius * sinLatitude
+            return np.stack([x, y, z], axis=-1)
         N = self.equatorialRadius / np.sqrt(1 - self.e2Ellipsoid * sinLatitude ** 2)
         x = (N + altitudes) * cosLatitude * cosLongitude
         y = (N + altitudes) * cosLatitude * sinLongitude
@@ -209,8 +215,9 @@ class OrbitalMechanicsEngine:
     def satellite3dVisibilityFootPrint(self, longitude, latitude, altitude, fullJulianDate, nbPoints=501, surfaceOffset=10):
         circleLongitude, circleLatitude = self.satellite2dVisibilityFootPrint(longitude, latitude, altitude, nbPoints)
         altitudes = np.full_like(circleLongitude, surfaceOffset)
-        positionsEcef = self.longitudeLatitudeToEcef(circleLongitude, circleLatitude, altitudes)
-        return self.ecefToEci(positionsEcef, fullJulianDate)
+        positionsEcef = self.longitudeLatitudeToEcef(circleLongitude, circleLatitude, altitudes, spherical=True)
+        fullJulianDates = np.full(circleLongitude.shape, fullJulianDate, dtype=float)
+        return self.ecefToEci(positionsEcef, fullJulianDates)
 
     def satellite2dGroundTrack(self, positions, fullJulianDates):
         positionsEcef = self.eciToEcef(positions, fullJulianDates)

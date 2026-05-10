@@ -201,10 +201,11 @@ class View3dWidget(QOpenGLWidget):
         isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
         isHovered = (noradIndex == self.hoveredObject)
         configuration = self._getObjectRenderConfiguration(noradIndex)
-        self.objectRenderer.renderObject(key, configuration, isSelected, isHovered,
-                                         self.displayConfiguration.get('3D_VIEW', {}))
+        self.objectRenderer.renderObject(key, configuration, isSelected, isHovered, self.displayConfiguration.get('3D_VIEW', {}))
         # OBJECT NAME LABEL
         if not (isSelected or isHovered):
+            return
+        if key not in self.objectSpotData:
             return
         position = self.objectSpotData[key] / self.EARTH_RADIUS
         viewModel = (GLdouble * 16)()
