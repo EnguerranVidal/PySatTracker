@@ -4,7 +4,7 @@ from PyQt5.QtGui import QSurfaceFormat
 
 
 def giveDefaultObjectViewConfig():
-    return {'SPOT': {'SIZE': 10, 'COLOR': (255, 60, 0), },
+    return {'SPOT': {'SIZE': 6, 'COLOR': (255, 60, 0), },
             'GROUND_TRACK': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
             'ORBIT_PATH': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
             'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 2, 'COLOR': (0, 180, 255), },

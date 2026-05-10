@@ -360,6 +360,11 @@ class OrbitWorker(QObject):
     def stop(self):
         self._running = False
 
+    @staticmethod
+    def orbitPathResolution(orbitalPeriodSeconds, minimum=720, maximum=2400):
+        resolution = int(orbitalPeriodSeconds / 60)
+        return max(minimum, min(maximum, resolution)) + 1
+
     def buildTimeArray(self, simulationTime: datetime, orbitalPeriod, configuration, resolution):
         timeScales = {'seconds': 1, 'minutes': 60, 'hours': 3600, 'days': 86400, 'orbital periods': orbitalPeriod}
         beforeDuration, beforeDurationUnit = configuration['BEFORE'], configuration['BEFORE_UNIT']
@@ -378,8 +383,9 @@ class OrbitWorker(QObject):
         for noradIndex in noradIndices:
             satObject = self.tleDatabase.getSatrec(noradIndex)
             nowState = self.engine.satelliteState(satObject, simFullJulianDate)
-            nowOrbitalPeriod = self.engine.orbitalPeriodFromState(nowState['rECI'], nowState['vECI'])
-            julianDates, fractions = self.buildTimeArray(simulationTime, nowOrbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution=max(500, int(nowOrbitalPeriod / 2)) + 1)
+            orbitalPeriod = self.engine.orbitalPeriod(satObject)
+            orbitResolution = self.orbitPathResolution(orbitalPeriod)
+            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution=orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
             visibilityLongitudes, visibilityLatitudes = self.engine.satellite2dVisibilityFootPrint(nowState['longitude'], nowState['latitude'], nowState['altitude'], nbPoints=501)
@@ -404,8 +410,9 @@ class OrbitWorker(QObject):
         for noradIndex in noradIndices:
             satObject = self.tleDatabase.getSatrec(noradIndex)
             nowState = self.engine.satelliteState(satObject, simFullJulianDate)
-            nowOrbitalPeriod = self.engine.orbitalPeriodFromState(nowState['rECI'], nowState['vECI'])
-            julianDates, fractions = self.buildTimeArray(simulationTime, nowOrbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution= max(500, int(nowOrbitalPeriod / 2)) + 1)
+            orbitalPeriod = self.engine.orbitalPeriod(satObject)
+            orbitResolution = self.orbitPathResolution(orbitalPeriod)
+            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution= orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
             groundTrackEci = self.engine.satellite3dGroundTrack(states['rECI'], fullJulianDates)

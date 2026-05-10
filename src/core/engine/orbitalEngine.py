@@ -206,12 +206,11 @@ class OrbitalMechanicsEngine:
         circleLongitude = (circleLongitude + np.pi) % (2 * np.pi) - np.pi
         return circleLongitude, circleLatitude
 
-    def satellite3dVisibilityFootPrint(self, longitude, latitude, altitude, fullJulianDate, nbPoints=501):
+    def satellite3dVisibilityFootPrint(self, longitude, latitude, altitude, fullJulianDate, nbPoints=501, surfaceOffset=10):
         circleLongitude, circleLatitude = self.satellite2dVisibilityFootPrint(longitude, latitude, altitude, nbPoints)
-        altitudes = np.zeros_like(circleLongitude)
+        altitudes = np.full_like(circleLongitude, surfaceOffset)
         positionsEcef = self.longitudeLatitudeToEcef(circleLongitude, circleLatitude, altitudes)
-        positionsEci = self.ecefToEci(positionsEcef, fullJulianDate)
-        return positionsEci
+        return self.ecefToEci(positionsEcef, fullJulianDate)
 
     def satellite2dGroundTrack(self, positions, fullJulianDates):
         positionsEcef = self.eciToEcef(positions, fullJulianDates)
@@ -219,14 +218,13 @@ class OrbitalMechanicsEngine:
         longitudes = (longitudes + np.pi) % (2 * np.pi) - np.pi
         return longitudes, latitudes, altitudes
 
-    def satellite3dGroundTrack(self, positions, fullJulianDates):
+    def satellite3dGroundTrack(self, positions, fullJulianDates, surfaceOffset=10):
         positionsEcef = self.eciToEcef(positions, fullJulianDates)
         longitudes, latitudes, altitudes = self.ecefToLongitudeLatitude(positionsEcef)
         longitudes = (longitudes + np.pi) % (2 * np.pi) - np.pi
-        altitudes = np.zeros_like(altitudes)
+        altitudes = np.full_like(altitudes, surfaceOffset)
         positionsEcef = self.longitudeLatitudeToEcef(longitudes, latitudes, altitudes)
-        positionsEci = self.ecefToEci(positionsEcef, fullJulianDates)
-        return positionsEci
+        return self.ecefToEci(positionsEcef, fullJulianDates)
 
     @staticmethod
     def orbitalPeriod(sat: Satrec):
