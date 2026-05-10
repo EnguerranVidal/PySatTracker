@@ -160,6 +160,16 @@ class MainWindow(QMainWindow):
         self.showOrbitPaths3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'])
         self.showOrbitPaths3dAction.toggled.connect(self._toggleOrbitPaths3d)
         self.showOrbitPaths3dAction.setIconVisibleInMenu(False)
+        # SHOW 3D VIEW GROUND TRACKS
+        self.showGroundTracks3dAction = QAction('Show Ground Tracks', self, checkable=True)
+        self.showGroundTracks3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_GROUND_TRACKS'])
+        self.showGroundTracks3dAction.toggled.connect(self._toggleGroundTracks3d)
+        self.showGroundTracks3dAction.setIconVisibleInMenu(False)
+        # SHOW 3D VIEW FOOTPRINTS
+        self.showFootprints3dAction = QAction('Show Footprints', self, checkable=True)
+        self.showFootprints3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_FOOTPRINTS'])
+        self.showFootprints3dAction.toggled.connect(self._toggleFootprints3d)
+        self.showFootprints3dAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH MODEL
         self.showEarthAction = QAction('&Show Earth', self, checkable=True)
         self.showEarthAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH'])
@@ -285,6 +295,8 @@ class MainWindow(QMainWindow):
         self.view3dMenu.addAction(self.showEcefAxesAction)
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.showOrbitPaths3dAction)
+        self.view3dMenu.addAction(self.showGroundTracks3dAction)
+        self.view3dMenu.addAction(self.showFootprints3dAction)
         self.view3dMenu.addSeparator()
         self.view3dMenu.addAction(self.reset3dCameraViewAction)
         # PLOT VIEW MENU
@@ -680,8 +692,18 @@ class MainWindow(QMainWindow):
         self.saveSettings()
         self._updateGlobalVisibility()
 
+    def _toggleGroundTracks3d(self, checked):
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_GROUND_TRACKS'] = checked
+        self.saveSettings()
+        self._updateGlobalVisibility()
+
     def _toggleFootprints2d(self, checked):
         self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_FOOTPRINTS'] = checked
+        self.saveSettings()
+        self._updateGlobalVisibility()
+
+    def _toggleFootprints3d(self, checked):
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_FOOTPRINTS'] = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 

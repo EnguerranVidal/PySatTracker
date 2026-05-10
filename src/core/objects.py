@@ -736,8 +736,8 @@ class ObjectViewConfigDockWidget(QDockWidget):
         self._viewMode = mode
         is2D = mode == "2D"
         self.spotGroup.setVisible(True)
-        self.groundTrackGroup.setVisible(is2D)
-        self.footprintGroup.setVisible(is2D)
+        self.groundTrackGroup.setVisible(True)
+        self.footprintGroup.setVisible(True)
         self.orbitPathGroup.setVisible(not is2D)
         self._updateTitle()
         self.configEditorWidget.adjustSize()
@@ -918,12 +918,11 @@ class ObjectViewConfigDockWidget(QDockWidget):
             return
         configuration = self._currentConfig
         configuration['SPOT']['SIZE'] = self.spotSizeSpin.value()
-        if self._viewMode == "2D":
-            configuration['GROUND_TRACK']['MODE'] = self.MODES[self.groundTrackModeCombo.currentText()]
-            configuration['GROUND_TRACK']['WIDTH'] = self.groundTrackWidthSpin.value()
-            configuration['FOOTPRINT']['MODE'] = self.MODES[self.footprintModeCombo.currentText()]
-            configuration['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
-        else:
+        configuration['GROUND_TRACK']['MODE'] = self.MODES[self.groundTrackModeCombo.currentText()]
+        configuration['GROUND_TRACK']['WIDTH'] = self.groundTrackWidthSpin.value()
+        configuration['FOOTPRINT']['MODE'] = self.MODES[self.footprintModeCombo.currentText()]
+        configuration['FOOTPRINT']['WIDTH'] = self.footprintWidthSpin.value()
+        if self._viewMode != "2D":
             configuration['ORBIT_PATH']['MODE'] = self.MODES[self.orbitModeCombo.currentText()]
             configuration['ORBIT_PATH']['WIDTH'] = self.orbitWidthSpin.value()
         self.objectConfigChanged.emit(self.noradIndex, configuration)
@@ -961,14 +960,13 @@ class ObjectViewConfigDockWidget(QDockWidget):
 
     def applyGlobalVisibility(self, viewConfig: dict, currentTab: str):
         is2D = currentTab == '2D_MAP'
-        showOrbitPaths, showGroundTracks, showFootprints = True, True, True
-        if is2D:
-            showGroundTracks = viewConfig['2D_MAP'].get('SHOW_GROUND_TRACKS', True)
-            showFootprints = viewConfig['2D_MAP'].get('SHOW_FOOTPRINTS', True)
-        else:
-            showOrbitPaths = viewConfig['3D_VIEW'].get('SHOW_ORBIT_PATHS', True)
-        self.groundTrackGroup.setEnabled(showGroundTracks and is2D)
-        self.footprintGroup.setEnabled(showFootprints and is2D)
+        showOrbitPaths = True
+        showGroundTracks = viewConfig[currentTab].get('SHOW_GROUND_TRACKS', True)
+        showFootprints = viewConfig[currentTab].get('SHOW_FOOTPRINTS', True)
+        if not is2D:
+            showOrbitPaths = viewConfig[currentTab].get('SHOW_ORBIT_PATHS', True)
+        self.groundTrackGroup.setEnabled(showGroundTracks)
+        self.footprintGroup.setEnabled(showFootprints)
         self.orbitPathGroup.setEnabled(showOrbitPaths and not is2D)
         self.configEditorWidget.update()
 

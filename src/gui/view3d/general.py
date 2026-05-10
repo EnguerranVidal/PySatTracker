@@ -4,10 +4,8 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from OpenGL.GL import *
 
-from PIL import Image
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QMouseEvent, QWheelEvent
 from PyQt5.QtWidgets import *
 
 from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, ObjectRenderer, SkyBoxRenderer
@@ -159,21 +157,24 @@ class View3dWidget(QOpenGLWidget):
             if noradIndex not in positions['3D_VIEW']['OBJECTS']:
                 continue
             key = str(noradIndex)
-            objectPositionData = positions['3D_VIEW']['OBJECTS'][noradIndex]['POSITION']['R_ECI']
-            objectOrbitPathData = positions['3D_VIEW']['OBJECTS'][noradIndex]['ORBIT_PATH']
+            objectData = positions['3D_VIEW']['OBJECTS'][noradIndex]
+            objectPositionData = objectData['POSITION']['R_ECI']
+            objectOrbitPathData = objectData['ORBIT_PATH']
+            objectGroundTrackData = objectData.get('GROUND_TRACK')
+            objectFootprintData = objectData.get('VISIBILITY')
             objectName = positions['3D_VIEW']['OBJECTS'][noradIndex]['NAME']
             self.objectSpotData[key] = objectPositionData
             self.objectOrbitData[key] = objectOrbitPathData
             self.objectNameData[key] = objectName
-            self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData)
+            self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData)
         self.update()
 
     def _uploadPendingObjectBuffers(self):
         if not self.pendingObjectBufferUpdates:
             return
         for key, objectData in self.pendingObjectBufferUpdates.items():
-            objectPositionData, objectOrbitPathData = objectData
-            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData)
+            objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData = objectData
+            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData)
         self.pendingObjectBufferUpdates = {}
 
     def _getObjectRenderConfiguration(self, noradIndex):
@@ -200,7 +201,8 @@ class View3dWidget(QOpenGLWidget):
         isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
         isHovered = (noradIndex == self.hoveredObject)
         configuration = self._getObjectRenderConfiguration(noradIndex)
-        self.objectRenderer.renderObject(key, configuration, isSelected, isHovered, self.displayConfiguration.get('3D_VIEW', {}))
+        self.objectRenderer.renderObject(key, configuration, isSelected, isHovered,
+                                         self.displayConfiguration.get('3D_VIEW', {}))
         # OBJECT NAME LABEL
         if not (isSelected or isHovered):
             return

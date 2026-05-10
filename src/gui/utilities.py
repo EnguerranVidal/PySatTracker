@@ -7,7 +7,7 @@ def giveDefaultObjectViewConfig():
     return {'SPOT': {'SIZE': 6, 'COLOR': (255, 60, 0), },
             'GROUND_TRACK': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
             'ORBIT_PATH': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
-            'FOOTPRINT': {'MODE': 'NEVER', 'WIDTH': 2, 'COLOR': (0, 180, 255), },
+            'FOOTPRINT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (0, 180, 255), },
             'BEFORE': 0.5, 'BEFORE_UNIT': 'orbital periods', 'AFTER': 0.5, 'AFTER_UNIT': 'orbital periods'}
 
 def giveDefaultGroupViewConfig():
@@ -20,7 +20,7 @@ def generateDefaultSettingsJson(path):
         'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True}, 'CURRENT_TAB': '3D_VIEW', 'TIMELINE_MODE': 'UTC',
         'VIEW_CONFIG': {'DEFAULT_CONFIG': giveDefaultObjectViewConfig(), 'OBJECTS': {'25544': giveDefaultObjectViewConfig()},
                         '2D_MAP': {'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_GRID': False, 'SHOW_VERNAL': False, 'SHOW_TERMINATOR': False, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False},
-                        '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True}
+                        '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False}
                         },
         'PLOT_VIEW': {'TABS': {}},
     }
