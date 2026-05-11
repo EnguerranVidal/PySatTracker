@@ -415,7 +415,7 @@ class OrbitWorker(QObject):
             julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution= orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
-            subPointCrossEci = self.engine.satellite3dSubPointCross(nowState['rECI'], simFullJulianDate, surfaceOffset=10, sizeKilometers=180, diagonal=True)
+            subPointCrossEci = self.engine.satellite3dSubPointCross(nowState['rECI'], nowState['vECI'], simFullJulianDate, surfaceOffset=10, sizeKilometers=180)
             groundTrackEci = self.engine.satellite3dGroundTrack(states['rECI'], fullJulianDates)
             visibilityEci = self.engine.satellite3dVisibilityFootPrint(nowState['longitude'], nowState['latitude'], nowState['altitude'], simFullJulianDate, nbPoints=501)
             view3dResults['OBJECTS'][noradIndex]['POSITION'] = {'R_ECI': nowState['rECI'], 'V_ECI': nowState['vECI'], 'ALTITUDE': nowState['altitude'], 'LATITUDE': np.rad2deg(nowState['latitude']), 'LONGITUDE': np.rad2deg(nowState['longitude'])}

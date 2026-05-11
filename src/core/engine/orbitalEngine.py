@@ -230,25 +230,38 @@ class OrbitalMechanicsEngine:
         longitudes, latitudes, altitudes = self.ecefToLongitudeLatitude(positionsEcef)
         longitudes = (longitudes + np.pi) % (2 * np.pi) - np.pi
         altitudes = np.full_like(altitudes, surfaceOffset)
-        positionsEcef = self.longitudeLatitudeToEcef(longitudes, latitudes, altitudes)
+        positionsEcef = self.longitudeLatitudeToEcef(longitudes, latitudes, altitudes, spherical=True)
         return self.ecefToEci(positionsEcef, fullJulianDates)
 
-    def satellite3dSubPointCross(self, position, fullJulianDate, surfaceOffset=10, sizeKilometers=180, diagonal=True):
+    def satelliteSubPoint(self, position, fullJulianDate, surfaceOffset=10):
         positionEcef = self.eciToEcef(position, fullJulianDate)
         longitude, latitude, altitude = self.ecefToLongitudeLatitude(positionEcef)
         longitude = (longitude + np.pi) % (2 * np.pi) - np.pi
         centerEcef = self.longitudeLatitudeToEcef(longitude, latitude, surfaceOffset, spherical=True)
-        north, east = np.array([-np.sin(latitude) * np.cos(longitude), -np.sin(latitude) * np.sin(longitude), np.cos(latitude)], dtype=float), np.array([-np.sin(longitude), np.cos(longitude), 0.0], dtype=float)
-        north, east = north / np.linalg.norm(north), east / np.linalg.norm(east)
-        if diagonal:
-            axisA, axisB = east + north, east - north
-            axisA, axisB = axisA / np.linalg.norm(axisA), axisB / np.linalg.norm(axisB)
+        return self.ecefToEci(centerEcef.reshape(1, 3), np.array([fullJulianDate], dtype=float))[0]
+
+    def satellite3dSubPointCross(self, position, velocity, fullJulianDate, surfaceOffset=10, sizeKilometers=90, stepSeconds = 10):
+        center = self.satelliteSubPoint(position, fullJulianDate, surfaceOffset=surfaceOffset)
+        previousPosition, nextPosition = position - velocity * stepSeconds, position + velocity * stepSeconds
+        previousPoint = self.satelliteSubPoint(previousPosition, fullJulianDate - stepSeconds / 86400.0, surfaceOffset=surfaceOffset)
+        nextPoint  = self.satelliteSubPoint(nextPosition, fullJulianDate + stepSeconds / 86400.0, surfaceOffset=surfaceOffset)
+        tangent = nextPoint - previousPoint
+        tangentNorm = np.linalg.norm(tangent)
+        tangent = np.array([1.0, 0.0, 0.0], dtype=float) if tangentNorm <= 0 else tangent / tangentNorm
+        radial = center / np.linalg.norm(center)
+        tangent = tangent - radial * np.dot(tangent, radial)
+        tangentNorm = np.linalg.norm(tangent)
+        if tangentNorm <= 0:
+            tangent = np.cross(radial, np.array([0.0, 0.0, 1.0], dtype=float))
+            tangent = tangent / np.linalg.norm(tangent)
         else:
-            axisA, axisB = east, north
-        halfSize = sizeKilometers / 2
-        crossEcef = np.array([centerEcef - axisA * halfSize, centerEcef + axisA * halfSize, centerEcef - axisB * halfSize, centerEcef + axisB * halfSize], dtype=float)
-        fullJulianDates = np.full(4, fullJulianDate, dtype=float)
-        return self.ecefToEci(crossEcef, fullJulianDates)
+            tangent = tangent / tangentNorm
+        perpendicular = np.cross(radial, tangent)
+        perpendicular = perpendicular / np.linalg.norm(perpendicular)
+        axisA, axisB = tangent + perpendicular, tangent - perpendicular
+        axisA, axisB = axisA / np.linalg.norm(axisA), axisB / np.linalg.norm(axisB)
+        halfSize = sizeKilometers * 0.5
+        return np.array([center - axisA * halfSize, center + axisA * halfSize, center - axisB * halfSize, center + axisB * halfSize], dtype=float)
 
     @staticmethod
     def orbitalPeriod(sat: Satrec):
