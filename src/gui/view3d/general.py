@@ -162,19 +162,20 @@ class View3dWidget(QOpenGLWidget):
             objectOrbitPathData = objectData['ORBIT_PATH']
             objectGroundTrackData = objectData.get('GROUND_TRACK')
             objectFootprintData = objectData.get('VISIBILITY')
+            objectSubPointData = objectData.get('SUB_POINT')
             objectName = positions['3D_VIEW']['OBJECTS'][noradIndex]['NAME']
             self.objectSpotData[key] = objectPositionData
             self.objectOrbitData[key] = objectOrbitPathData
             self.objectNameData[key] = objectName
-            self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData)
+            self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData, objectSubPointData)
         self.update()
 
     def _uploadPendingObjectBuffers(self):
         if not self.pendingObjectBufferUpdates:
             return
         for key, objectData in self.pendingObjectBufferUpdates.items():
-            objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData = objectData
-            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData)
+            objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData, objectSubPointData = objectData
+            self.objectRenderer.updateObject(key, objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData, objectSubPointData)
         self.pendingObjectBufferUpdates = {}
 
     def _getObjectRenderConfiguration(self, noradIndex):

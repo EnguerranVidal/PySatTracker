@@ -64,23 +64,24 @@ class ObjectRenderer(BaseRenderer):
         glDeleteShader(fragmentShader)
         self.useVaos = bool(glGenVertexArrays) and bool(glBindVertexArray)
 
-    def updateObject(self, noradIndex, position, orbit, groundTrack=None, footprint=None):
+    def updateObject(self, noradIndex, position, orbit, groundTrack=None, footprint=None, subPoint=None):
         position = (np.asarray(position, dtype=np.float32) / self.EARTH_RADIUS).reshape(1, 3)
         orbit = (np.asarray(orbit, dtype=np.float32) / self.EARTH_RADIUS).reshape(-1, 3)
         groundTrack = np.empty((0, 3), dtype=np.float32) if groundTrack is None else (np.asarray(groundTrack, dtype=np.float32) / self.EARTH_RADIUS).reshape(-1, 3)
         footprint = np.empty((0, 3), dtype=np.float32) if footprint is None else (np.asarray(footprint, dtype=np.float32) / self.EARTH_RADIUS).reshape(-1, 3)
+        subPoint = np.empty((0, 3), dtype=np.float32) if subPoint is None else (np.asarray(subPoint, dtype=np.float32) / self.EARTH_RADIUS).reshape(-1, 3)
         if noradIndex not in self.vbos:
-            self.vbos[noradIndex] = {"point": glGenBuffers(1), "orbit": glGenBuffers(1), "ground": glGenBuffers(1), "footprint": glGenBuffers(1)}
+            self.vbos[noradIndex] = {"point": glGenBuffers(1), "orbit": glGenBuffers(1), "ground": glGenBuffers(1), "footprint": glGenBuffers(1), "subPoint": glGenBuffers(1)}
             if self.useVaos:
-                self.vaos[noradIndex] = {"point": glGenVertexArrays(1), "orbit": glGenVertexArrays(1), "ground": glGenVertexArrays(1), "footprint": glGenVertexArrays(1)}
+                self.vaos[noradIndex] = {"point": glGenVertexArrays(1), "orbit": glGenVertexArrays(1), "ground": glGenVertexArrays(1), "footprint": glGenVertexArrays(1), "subPoint": glGenVertexArrays(1)}
                 for bufferName in self.vbos[noradIndex]:
                     self._configureVertexArray(self.vaos[noradIndex][bufferName], self.vbos[noradIndex][bufferName])
-        uploads = {"point": position, "orbit": orbit, "ground": groundTrack, "footprint": footprint}
+        uploads = {"point": position, "orbit": orbit, "ground": groundTrack, "footprint": footprint, "subPoint": subPoint}
         for bufferName, data in uploads.items():
             glBindBuffer(GL_ARRAY_BUFFER, self.vbos[noradIndex][bufferName])
             glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
-        self.counts[noradIndex] = {"point": len(position), "orbit": len(orbit), "ground": len(groundTrack), "footprint": len(footprint)}
+        self.counts[noradIndex] = {"point": len(position), "orbit": len(orbit), "ground": len(groundTrack), "footprint": len(footprint), "subPoint": len(subPoint)}
 
     def renderObject(self, noradIndex, configuration, isSelected, isHovered, displayConfiguration):
         if noradIndex not in self.vbos or self.shader is None:
@@ -103,6 +104,16 @@ class ObjectRenderer(BaseRenderer):
             self._bindObjectBuffer(noradIndex, "ground")
             glDrawArrays(GL_LINE_STRIP, 0, self.counts[noradIndex]["ground"])
             glDisable(GL_LINE_STIPPLE)
+        # SUB-POINT CROSS RENDER
+        if self.counts[noradIndex].get("subPoint", 0) > 0 and self._shouldRender(groundTrackConfig.get('MODE', 'NEVER'), isSelected, showGroundTracks):
+            spotConfig = configuration.get('SPOT', {})
+            color = spotConfig.get('COLOR', (255, 255, 255))
+            color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.95 if isActive else 0.65)
+            glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
+            glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
+            glLineWidth(max(2, int(spotConfig.get('SIZE', 6) / 4)))
+            self._bindObjectBuffer(noradIndex, "subPoint")
+            glDrawArrays(GL_LINES, 0, self.counts[noradIndex]["subPoint"])
         # VISIBILITY FOOTPRINT RENDER
         footprintConfig = configuration.get('FOOTPRINT', {})
         showFootprints = displayConfiguration.get('SHOW_FOOTPRINTS', True)

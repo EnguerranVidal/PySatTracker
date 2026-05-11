@@ -233,6 +233,23 @@ class OrbitalMechanicsEngine:
         positionsEcef = self.longitudeLatitudeToEcef(longitudes, latitudes, altitudes)
         return self.ecefToEci(positionsEcef, fullJulianDates)
 
+    def satellite3dSubPointCross(self, position, fullJulianDate, surfaceOffset=10, sizeKilometers=180, diagonal=True):
+        positionEcef = self.eciToEcef(position, fullJulianDate)
+        longitude, latitude, altitude = self.ecefToLongitudeLatitude(positionEcef)
+        longitude = (longitude + np.pi) % (2 * np.pi) - np.pi
+        centerEcef = self.longitudeLatitudeToEcef(longitude, latitude, surfaceOffset, spherical=True)
+        north, east = np.array([-np.sin(latitude) * np.cos(longitude), -np.sin(latitude) * np.sin(longitude), np.cos(latitude)], dtype=float), np.array([-np.sin(longitude), np.cos(longitude), 0.0], dtype=float)
+        north, east = north / np.linalg.norm(north), east / np.linalg.norm(east)
+        if diagonal:
+            axisA, axisB = east + north, east - north
+            axisA, axisB = axisA / np.linalg.norm(axisA), axisB / np.linalg.norm(axisB)
+        else:
+            axisA, axisB = east, north
+        halfSize = sizeKilometers / 2
+        crossEcef = np.array([centerEcef - axisA * halfSize, centerEcef + axisA * halfSize, centerEcef - axisB * halfSize, centerEcef + axisB * halfSize], dtype=float)
+        fullJulianDates = np.full(4, fullJulianDate, dtype=float)
+        return self.ecefToEci(crossEcef, fullJulianDates)
+
     @staticmethod
     def orbitalPeriod(sat: Satrec):
         return 2 * np.pi / (sat.no / 60)

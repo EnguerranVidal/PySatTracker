@@ -415,12 +415,14 @@ class OrbitWorker(QObject):
             julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution= orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
+            subPointCrossEci = self.engine.satellite3dSubPointCross(nowState['rECI'], simFullJulianDate, surfaceOffset=10, sizeKilometers=180, diagonal=True)
             groundTrackEci = self.engine.satellite3dGroundTrack(states['rECI'], fullJulianDates)
             visibilityEci = self.engine.satellite3dVisibilityFootPrint(nowState['longitude'], nowState['latitude'], nowState['altitude'], simFullJulianDate, nbPoints=501)
             view3dResults['OBJECTS'][noradIndex]['POSITION'] = {'R_ECI': nowState['rECI'], 'V_ECI': nowState['vECI'], 'ALTITUDE': nowState['altitude'], 'LATITUDE': np.rad2deg(nowState['latitude']), 'LONGITUDE': np.rad2deg(nowState['longitude'])}
             view3dResults['OBJECTS'][noradIndex]['ORBIT_PATH'] = states['rECI']
             view3dResults['OBJECTS'][noradIndex]['GROUND_TRACK'] = groundTrackEci
             view3dResults['OBJECTS'][noradIndex]['VISIBILITY'] = visibilityEci
+            view3dResults['OBJECTS'][noradIndex]['SUB_POINT'] = subPointCrossEci
         view3dResults['JULIAN_DATE'] = simFullJulianDate
         view3dResults['GMST'] = self.engine.greenwichMeridianSiderealTime(simFullJulianDate)
         view3dResults['SUN_DIRECTION_ECI'] = self.engine.solarDirectionEci(simFullJulianDate)
