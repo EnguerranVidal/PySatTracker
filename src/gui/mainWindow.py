@@ -184,6 +184,12 @@ class MainWindow(QMainWindow):
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
         self.showEarthGridAction.setIconVisibleInMenu(False)
+        # SHOW 3D VIEW PLANE GRID
+        self.showPlaneGridAction = QAction('&Show XY Grid', self, checkable=True)
+        self.showPlaneGridAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_XY_GRID'])
+        self.showPlaneGridAction.setStatusTip('Show 3D View XY Plane Grid')
+        self.showPlaneGridAction.toggled.connect(self._checkPlaneGrid)
+        self.showPlaneGridAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECI AXIS
         self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
         self.showEciAxesAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECI_AXES'])
@@ -291,6 +297,7 @@ class MainWindow(QMainWindow):
         self.view3dMenu = self.viewMenu.addMenu('&3D View')
         self.view3dMenu.addAction(self.showEarthAction)
         self.view3dMenu.addAction(self.showEarthGridAction)
+        self.view3dMenu.addAction(self.showPlaneGridAction)
         self.view3dMenu.addAction(self.showEciAxesAction)
         self.view3dMenu.addAction(self.showEcefAxesAction)
         self.view3dMenu.addSeparator()
@@ -432,6 +439,11 @@ class MainWindow(QMainWindow):
 
     def _checkEarthGrid(self, checked):
         self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH_GRID'] = checked
+        self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+
+    def _checkPlaneGrid(self, checked):
+        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_XY_GRID'] = checked
         self.saveSettings()
         self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 

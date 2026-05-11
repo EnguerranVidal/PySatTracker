@@ -8,7 +8,7 @@ import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
-from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, ObjectRenderer, SkyBoxRenderer
+from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, ObjectRenderer, SkyBoxRenderer, GridRenderer
 from src.core.objects import ActiveObjectsModel
 
 
@@ -77,6 +77,7 @@ class View3dWidget(QOpenGLWidget):
         self.moonRenderer = MoonRenderer()
         self.skyBoxRenderer = SkyBoxRenderer()
         self.objectRenderer = ObjectRenderer()
+        self.gridRenderer = GridRenderer()
         self.skyboxTextures = []
         self.lastPosX, self.lastPosY = 0, 0
 
@@ -99,6 +100,7 @@ class View3dWidget(QOpenGLWidget):
         self.moonRenderer.initialize()
         self.skyBoxRenderer.initialize()
         self.objectRenderer.initialize()
+        self.gridRenderer.initialize()
 
     def paintGL(self):
         if not self.activeObjects:
@@ -110,7 +112,7 @@ class View3dWidget(QOpenGLWidget):
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
         context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix, "julianDate": self.simFullJulianDate,
-                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "config": self.displayConfiguration.get('3D_VIEW', {})}
+                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "cameraZoom": self.camera.zoom, "config": self.displayConfiguration.get('3D_VIEW', {})}
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
@@ -119,6 +121,8 @@ class View3dWidget(QOpenGLWidget):
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH_GRID', False):
             self.earthRenderer.drawGrid(context)
         self.moonRenderer.render(context)
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_XY_GRID', False):
+            self.gridRenderer.render(context)
         glDisable(GL_LIGHTING)
         if self.displayConfiguration.get('OBJECTS'):
             for noradIndex in self.activeObjects.allNoradIndices():

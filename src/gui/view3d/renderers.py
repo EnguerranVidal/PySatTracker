@@ -1,5 +1,6 @@
-from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GLUT import *
+from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 from PIL import Image
 import numpy as np
@@ -538,3 +539,114 @@ class SkyBoxRenderer(BaseRenderer):
     def galacticLonLatToEci(longitudeRad, latitudeRad):
         galacticVector = SkyBoxRenderer.galacticLonLatToVector(longitudeRad, latitudeRad)
         return SkyBoxRenderer.galacticToEciMatrix() @ galacticVector
+
+class GridRenderer(BaseRenderer):
+    def __init__(self):
+        self.minimumExtent = 1.0
+        self.maximumExtent = 1000.0
+        self.linesPerHalfAxis = 10
+
+    def initialize(self):
+        pass
+
+    def render(self, context):
+        if not context["config"].get("SHOW_XY_GRID", False):
+            return
+        cameraZoom = context.get("cameraZoom", 5.0)
+        extent = self._niceGridExtent(cameraZoom * 2.5)
+        extent = max(self.minimumExtent, min(self.maximumExtent, extent))
+        step = self._gridStep(extent)
+        glPushMatrix()
+        try:
+            glUseProgram(0)
+            glDisable(GL_TEXTURE_2D)
+            glDisable(GL_LIGHTING)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glLineWidth(1.0)
+            glBegin(GL_LINES)
+            value = -extent
+            while value <= extent + 1e-9:
+                isAxis = abs(value) < 1e-9
+                isMajor = self._isMajorGridLine(value, step)
+                if isAxis:
+                    glColor4f(0.85, 0.85, 0.85, 0.55)
+                elif isMajor:
+                    glColor4f(0.55, 0.65, 0.75, 0.22)
+                else:
+                    glColor4f(0.45, 0.50, 0.55, 0.10)
+                glVertex3f(-extent, value, 0.0)
+                glVertex3f(extent, value, 0.0)
+                glVertex3f(value, -extent, 0.0)
+                glVertex3f(value, extent, 0.0)
+                value += step
+            glEnd()
+            self._drawLabels(extent, step)
+        finally:
+            glPopMatrix()
+
+    @staticmethod
+    def _niceGridExtent(value):
+        if value <= 1.0:
+            return 1.0
+        exponent = np.ceil(np.log10(value))
+        return 10.0 ** exponent
+
+    def _gridStep(self, extent):
+        return extent / self.linesPerHalfAxis
+
+    @staticmethod
+    def _isMajorGridLine(value, step):
+        if abs(value) < 1e-9:
+            return True
+        majorStep = step * 5.0
+        ratio = value / majorStep
+        return abs(ratio - round(ratio)) < 1e-6
+
+    def _drawLabels(self, extent, step):
+        viewModel = (GLdouble * 16)()
+        viewProjection = (GLdouble * 16)()
+        viewport = (GLint * 4)()
+        glGetDoublev(GL_MODELVIEW_MATRIX, viewModel)
+        glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
+        glGetIntegerv(GL_VIEWPORT, viewport)
+        labelStep = step * 5.0
+        value = -extent
+        while value <= extent + 1e-9:
+            if abs(value) > 1e-9 and self._isMajorGridLine(value, step):
+                self._drawWorldLabel(value, 0.0, 0.0, self._formatGridLabel(value), viewModel, viewProjection, viewport)
+                self._drawWorldLabel(0.0, value, 0.0, self._formatGridLabel(value), viewModel, viewProjection, viewport)
+            value += labelStep
+
+    @staticmethod
+    def _formatGridLabel(value):
+        if abs(value) >= 10.0:
+            return f"{value:.0f} Re"
+        return f"{value:.1f} Re"
+
+    @staticmethod
+    def _drawWorldLabel(x, y, z, text, viewModel, viewProjection, viewport):
+        xWindow, yWindow, zWindow = gluProject(x, y, z, viewModel, viewProjection, viewport)
+        if zWindow <= 0.0 or zWindow >= 1.0:
+            return
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, viewport[2], 0, viewport[3], -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        try:
+            glUseProgram(0)
+            glDisable(GL_TEXTURE_2D)
+            glDisable(GL_LIGHTING)
+            glColor4f(0.75, 0.80, 0.85, 0.75)
+            glRasterPos2f(xWindow + 4, yWindow + 4)
+            for char in text:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+        finally:
+            glMatrixMode(GL_MODELVIEW)
+            glPopMatrix()
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
