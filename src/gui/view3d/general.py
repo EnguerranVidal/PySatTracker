@@ -140,7 +140,7 @@ class View3dWidget(QOpenGLWidget):
         glViewport(0, 0, w, h)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45, w / max(h, 1), 0.1, 1000)
+        gluPerspective(45, w / max(h, 1), 0.1, 2000 * np.sqrt(2))
         glMatrixMode(GL_MODELVIEW)
 
     def updateData(self, positions: dict, displayConfiguration: dict):
@@ -281,7 +281,7 @@ class View3dWidget(QOpenGLWidget):
             self.makeCurrent()
             glMatrixMode(GL_PROJECTION)
             glLoadIdentity()
-            gluPerspective(45, self.width() / max(self.height(), 1), 0.1, 1000)
+            gluPerspective(45, self.width() / max(self.height(), 1), 0.1, 2000 * np.sqrt(2))
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             self.camera.apply()
@@ -330,7 +330,7 @@ class View3dWidget(QOpenGLWidget):
         self.makeCurrent()
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45, self.width() / max(self.height(), 1), 0.1, 1000)
+        gluPerspective(45, self.width() / max(self.height(), 1), 0.1, 2000 * np.sqrt(2))
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         self.camera.apply()

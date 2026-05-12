@@ -585,12 +585,19 @@ class GridRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
+
     @staticmethod
     def _niceGridExtent(value):
         if value <= 1.0:
             return 1.0
-        exponent = np.ceil(np.log10(value))
-        return 10.0 ** exponent
+        exponent = np.floor(np.log10(value))
+        base = 10 ** exponent
+        scaled = value / base
+        if scaled <= 2.5:
+            return base
+        if scaled <= 7.5:
+            return 5.0 * base
+        return 10 * base
 
     def _gridStep(self, extent):
         return extent / self.linesPerHalfAxis
