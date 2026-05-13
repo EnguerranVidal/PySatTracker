@@ -112,7 +112,7 @@ class View3dWidget(QOpenGLWidget):
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
         context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix, "julianDate": self.simFullJulianDate,
-                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "cameraZoom": self.camera.zoom, "config": self.displayConfiguration.get('3D_VIEW', {})}
+                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "cameraZoom": self.camera.zoom, "cameraPosition": self.camera.getPosition(), "config": self.displayConfiguration.get('3D_VIEW', {})}
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
@@ -205,44 +205,9 @@ class View3dWidget(QOpenGLWidget):
         key = str(noradIndex)
         isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
         isHovered = (noradIndex == self.hoveredObject)
-        configuration = self._getObjectRenderConfiguration(noradIndex)
-        self.objectRenderer.renderObject(key, configuration, isSelected, isHovered, self.displayConfiguration.get('3D_VIEW', {}))
-        # OBJECT NAME LABEL
-        if not (isSelected or isHovered):
-            return
-        if key not in self.objectSpotData:
-            return
-        position = self.objectSpotData[key] / self.EARTH_RADIUS
-        viewModel = (GLdouble * 16)()
-        viewProjection = (GLdouble * 16)()
-        viewPort = (GLint * 4)()
-        glGetDoublev(GL_MODELVIEW_MATRIX, viewModel)
-        glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
-        glGetIntegerv(GL_VIEWPORT, viewPort)
-        xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
-        if zWindow <= 0.0 or zWindow >= 1.0:
-            return
-        if self._isBehindEarth(position) and self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
-            return
-        objectName = self.objectNameData[key]
-        try:
-            glMatrixMode(GL_PROJECTION)
-            glPushMatrix()
-            glLoadIdentity()
-            glOrtho(0, viewPort[2], 0, viewPort[3], -1, 1)
-            glMatrixMode(GL_MODELVIEW)
-            glPushMatrix()
-            glLoadIdentity()
-            glDisable(GL_TEXTURE_2D)
-            glColor4f(1, 1, 1, 1)
-            glRasterPos2f(xWindow + 5, yWindow + 5)
-            for char in objectName:
-                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
-        finally:
-            glMatrixMode(GL_PROJECTION)
-            glPopMatrix()
-            glMatrixMode(GL_MODELVIEW)
-            glPopMatrix()
+        cameraPosition = self.camera.getPosition()
+        objectConfiguration = self._getObjectRenderConfiguration(noradIndex)
+        self.objectRenderer.renderObject(key, cameraPosition, objectConfiguration, isSelected, isHovered, self.displayConfiguration.get('3D_VIEW', {}), self.objectSpotData[key], self.objectNameData.get(key, ""))
 
     @staticmethod
     def _shouldRender(mode: str, isSelected: bool, isToggled: bool):
