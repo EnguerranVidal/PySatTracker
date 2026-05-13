@@ -37,6 +37,55 @@ class BaseRenderer:
         glBindTexture(GL_TEXTURE_2D, 0)
         return texture
 
+    @staticmethod
+    def _earthOcclusionAlpha(position, cameraPosition, fadeWidth=0.08):
+        if cameraPosition is None:
+            return 1.0
+        position = np.asarray(position, dtype=float)
+        cameraPosition = np.asarray(cameraPosition, dtype=float)
+        ray = position - cameraPosition
+        rayLength = np.linalg.norm(ray)
+        if rayLength <= 0:
+            return 1.0
+        direction = ray / rayLength
+        closestT = -np.dot(cameraPosition, direction)
+        closestT = max(0.0, min(rayLength, closestT))
+        closestPoint = cameraPosition + direction * closestT
+        closestDistance = np.linalg.norm(closestPoint)
+        if closestT <= 0.0 or closestT >= rayLength:
+            return 1.0
+        alpha = (closestDistance - 1) / fadeWidth
+        return max(0.0, min(1.0, alpha))
+
+    @staticmethod
+    def _drawWorldLabel(x, y, z, text, viewModel, viewProjection, viewport, alpha=1.0, color=(0.75, 0.80, 0.85), baseAlpha=1.0):
+        xWindow, yWindow, zWindow = gluProject(x, y, z, viewModel, viewProjection, viewport)
+        if zWindow <= 0.0 or zWindow >= 1.0:
+            return
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, viewport[2], 0, viewport[3], -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        try:
+            glUseProgram(0)
+            glDisable(GL_TEXTURE_2D)
+            glDisable(GL_LIGHTING)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glColor4f(color[0], color[1], color[2], baseAlpha * alpha)
+            glRasterPos2f(xWindow + 4, yWindow + 4)
+            for char in text:
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
+        finally:
+            glMatrixMode(GL_MODELVIEW)
+            glPopMatrix()
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
+
 
 class ObjectRenderer(BaseRenderer):
     def __init__(self):
@@ -203,55 +252,7 @@ class ObjectRenderer(BaseRenderer):
                 return
         else:
             alpha = 1.0
-        self._drawScreenLabel(xWindow + 5, yWindow + 5, objectName, alpha)
-
-    @staticmethod
-    def _drawScreenLabel(xWindow, yWindow, text, alpha=1.0):
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        viewport = (GLint * 4)()
-        glGetIntegerv(GL_VIEWPORT, viewport)
-        glOrtho(0, viewport[2], 0, viewport[3], -1, 1)
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-        try:
-            glUseProgram(0)
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_LIGHTING)
-            glEnable(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            glColor4f(1.0, 1.0, 1.0, alpha)
-            glRasterPos2f(xWindow, yWindow)
-            for char in text:
-                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
-        finally:
-            glMatrixMode(GL_MODELVIEW)
-            glPopMatrix()
-            glMatrixMode(GL_PROJECTION)
-            glPopMatrix()
-            glMatrixMode(GL_MODELVIEW)
-
-    @staticmethod
-    def _earthOcclusionAlpha(position, cameraPosition, fadeWidth=0.08):
-        if cameraPosition is None:
-            return 1.0
-        position = np.asarray(position, dtype=float)
-        cameraPosition = np.asarray(cameraPosition, dtype=float)
-        ray = position - cameraPosition
-        rayLength = np.linalg.norm(ray)
-        if rayLength <= 0:
-            return 1.0
-        direction = ray / rayLength
-        closestT = -np.dot(cameraPosition, direction)
-        closestT = max(0.0, min(rayLength, closestT))
-        closestPoint = cameraPosition + direction * closestT
-        closestDistance = np.linalg.norm(closestPoint)
-        if closestT <= 0.0 or closestT >= rayLength:
-            return 1.0
-        alpha = (closestDistance - 1) / fadeWidth
-        return max(0.0, min(1.0, alpha))
+        self._drawWorldLabel(position[0], position[1], position[2], objectName, viewModel, viewProjection, viewport, alpha=alpha, color=(1.0, 1.0, 1.0), baseAlpha=1)
 
 
 class SunRenderer(BaseRenderer):
@@ -385,7 +386,7 @@ class EarthRenderer(BaseRenderer):
         glPushMatrix()
         try:
             glRotatef(gmstAngle, 0, 0, 1)
-            glColor4f(0.5, 1.0, 1.0, 1.0)
+            glColor4f(0.5, 1.0, 1.0, 0.3)
             glLineWidth(1)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             gluQuadricTexture(self.sphere, GL_FALSE)
@@ -394,8 +395,54 @@ class EarthRenderer(BaseRenderer):
             glPopMatrix()
             gluQuadricTexture(self.sphere, GL_TRUE)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            self._drawEarthGridLabels(context)
         finally:
             glPopMatrix()
+
+    def _drawEarthGridLabels(self, context):
+        cameraPosition = context.get("cameraPosition")
+        showEarth = context.get("config", {}).get("SHOW_EARTH", False)
+        gmstAngle = context["gmst"]
+        viewModel = (GLdouble * 16)()
+        viewProjection = (GLdouble * 16)()
+        viewport = (GLint * 4)()
+        glGetDoublev(GL_MODELVIEW_MATRIX, viewModel)
+        glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
+        glGetIntegerv(GL_VIEWPORT, viewport)
+        labelRadius = 1.025
+        longitudes, latitudes = [-180, -135, -90, -45, 0, 45, 90, 135, 180], [-90, -60, -30, 0, 30, 60, 90]
+        for longitude in longitudes:
+            localPosition = self._longitudeLatitudeToUnitSphere(longitude, 0.0, labelRadius)
+            worldPosition = self._rotateAroundZ(localPosition, gmstAngle)
+            alpha = 1.0
+            if showEarth:
+                alpha = self._earthOcclusionAlpha(worldPosition, cameraPosition, fadeWidth=0.08)
+            if alpha > 0.01:
+                self._drawWorldLabel(localPosition[0], localPosition[1], localPosition[2], f"{longitude:+d} °", viewModel, viewProjection, viewport, alpha=alpha, color=(0.55, 1.0, 1.0), baseAlpha=0.75)
+        for latitude in latitudes:
+            localPosition = self._longitudeLatitudeToUnitSphere(0.0, latitude, labelRadius)
+            worldPosition = self._rotateAroundZ(localPosition, gmstAngle)
+            alpha = 1.0
+            if showEarth:
+                alpha = self._earthOcclusionAlpha(worldPosition, cameraPosition, fadeWidth=0.08)
+            if alpha > 0.01:
+                label = f"{latitude:+d} °"
+                localPosition[2] = localPosition[2] - 0.08 if latitude == -90 else localPosition[2]
+                localPosition[2] = localPosition[2] + 0.03 if latitude == 90 else localPosition[2]
+                if latitude == 90 or latitude == -90:
+                    label = "N" if latitude == 90 else "S"
+                self._drawWorldLabel(localPosition[0], localPosition[1], localPosition[2], label, viewModel, viewProjection, viewport, alpha=alpha, color=(0.55, 1.0, 1.0), baseAlpha=0.75)
+
+    @staticmethod
+    def _longitudeLatitudeToUnitSphere(longitudeDeg, latitudeDeg, radius=1.0):
+        longitude, latitude = np.deg2rad(longitudeDeg), np.deg2rad(latitudeDeg)
+        cosLatitude = np.cos(latitude)
+        return np.array([radius * cosLatitude * np.cos(longitude), radius * cosLatitude * np.sin(longitude), radius * np.sin(latitude)], dtype=float)
+
+    @staticmethod
+    def _rotateAroundZ(position, angle):
+        cosAngle, sinAngle = np.cos(np.deg2rad(angle)), np.sin(np.deg2rad(angle))
+        return np.array([cosAngle * position[0] - sinAngle * position[1],  sinAngle * position[0] + cosAngle * position[1], position[2]], dtype=float)
 
     @staticmethod
     def drawAxis():
@@ -702,9 +749,9 @@ class GridRenderer(BaseRenderer):
                 if earthOcclusionEnabled:
                     xAlpha, yAlpha = self._earthOcclusionAlpha(xLabelPosition, cameraPosition, fadeWidth=0.08), self._earthOcclusionAlpha(yLabelPosition, cameraPosition, fadeWidth=0.08)
                 if xAlpha > 0.01:
-                    self._drawWorldLabel(xLabelPosition[0], xLabelPosition[1], xLabelPosition[2], self._formatGridLabel(value), viewModel, viewProjection, viewport, alpha=xAlpha)
+                    self._drawWorldLabel(xLabelPosition[0], xLabelPosition[1], xLabelPosition[2], self._formatGridLabel(value), viewModel, viewProjection, viewport, alpha=xAlpha, baseAlpha=0.75)
                 if yAlpha > 0.01:
-                    self._drawWorldLabel(yLabelPosition[0], yLabelPosition[1], yLabelPosition[2], self._formatGridLabel(value), viewModel, viewProjection, viewport, alpha=yAlpha)
+                    self._drawWorldLabel(yLabelPosition[0], yLabelPosition[1], yLabelPosition[2], self._formatGridLabel(value), viewModel, viewProjection, viewport, alpha=yAlpha, baseAlpha=0.75)
             value += labelStep
 
     @staticmethod
@@ -712,53 +759,3 @@ class GridRenderer(BaseRenderer):
         if abs(value) >= 10.0:
             return f"{value:.0f} Re"
         return f"{value:.1f} Re"
-
-    @staticmethod
-    def _drawWorldLabel(x, y, z, text, viewModel, viewProjection, viewport, alpha=1.0):
-        xWindow, yWindow, zWindow = gluProject(x, y, z, viewModel, viewProjection, viewport)
-        if zWindow <= 0.0 or zWindow >= 1.0:
-            return
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        glOrtho(0, viewport[2], 0, viewport[3], -1, 1)
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-        try:
-            glUseProgram(0)
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_LIGHTING)
-            glEnable(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            glColor4f(0.75, 0.80, 0.85, 0.75 * alpha)
-            glRasterPos2f(xWindow + 4, yWindow + 4)
-            glRasterPos2f(xWindow + 4, yWindow + 4)
-            for char in text:
-                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, ord(char))
-        finally:
-            glMatrixMode(GL_MODELVIEW)
-            glPopMatrix()
-            glMatrixMode(GL_PROJECTION)
-            glPopMatrix()
-            glMatrixMode(GL_MODELVIEW)
-
-    @staticmethod
-    def _earthOcclusionAlpha(position, cameraPosition, fadeWidth=0.08):
-        if cameraPosition is None:
-            return 1.0
-        position = np.asarray(position, dtype=float)
-        cameraPosition = np.asarray(cameraPosition, dtype=float)
-        ray = position - cameraPosition
-        rayLength = np.linalg.norm(ray)
-        if rayLength <= 0:
-            return 1.0
-        direction = ray / rayLength
-        closestT = -np.dot(cameraPosition, direction)
-        closestT = max(0.0, min(rayLength, closestT))
-        closestPoint = cameraPosition + direction * closestT
-        closestDistance = np.linalg.norm(closestPoint)
-        if closestT <= 0.0 or closestT >= rayLength:
-            return 1.0
-        alpha = (closestDistance - 1) / fadeWidth
-        return max(0.0, min(1.0, alpha))
