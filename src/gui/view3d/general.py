@@ -121,7 +121,7 @@ class View3dWidget(QOpenGLWidget):
         if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH_GRID', False):
             self.earthRenderer.drawGrid(context)
         self.moonRenderer.render(context)
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_XY_GRID', False):
+        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EQUATORIAL_GRID', False):
             self.gridRenderer.render(context)
         glDisable(GL_LIGHTING)
         if self.displayConfiguration.get('OBJECTS'):

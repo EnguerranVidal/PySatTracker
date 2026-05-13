@@ -667,7 +667,7 @@ class GridRenderer(BaseRenderer):
         pass
 
     def render(self, context):
-        if not context["config"].get("SHOW_XY_GRID", False):
+        if not context["config"].get("SHOW_EQUATORIAL_GRID", False):
             return
         cameraZoom = context.get("cameraZoom", 5.0)
         extent = self._niceGridExtent(cameraZoom * 2.5)
