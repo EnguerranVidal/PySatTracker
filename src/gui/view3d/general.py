@@ -50,6 +50,8 @@ class Camera:
 class View3dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
     cameraChanged = pyqtSignal()
+    requestContextMenu = pyqtSignal(object, object)
+
     EARTH_RADIUS = 6371
     EARTH_MOON_DISTANCE = 384400
     """Textures are from https://www.solarsystemscope.com/textures/"""
@@ -80,6 +82,9 @@ class View3dWidget(QOpenGLWidget):
         self.gridRenderer = GridRenderer()
         self.skyboxTextures = []
         self.lastPosX, self.lastPosY = 0, 0
+
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._showContextMenu)
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1.0)
@@ -283,15 +288,14 @@ class View3dWidget(QOpenGLWidget):
             self.lastPosY = event.y()
             self.update()
             self.cameraChanged.emit()
-        hovered = self._detectHover(event)
-        self.hoveredObject = hovered
+        self.hoveredObject = self._pickObjectAt(event.pos())
         self.update()
 
-    def _detectHover(self, event):
+    def _pickObjectAt(self, pos):
         if not self.activeObjects:
             return None
-        xMouse = event.x()
-        yMouse = self.height() - event.y()
+        xMouse = pos.x()
+        yMouse = self.height() - pos.y()
         self.makeCurrent()
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -353,3 +357,7 @@ class View3dWidget(QOpenGLWidget):
         self.update()
         self.cameraChanged.emit()
 
+    def _showContextMenu(self, pos):
+        hovered = self._pickObjectAt(pos)
+        globalPosition = self.mapToGlobal(pos)
+        self.requestContextMenu.emit(globalPosition, hovered)

@@ -36,10 +36,11 @@ class MainWindow(QMainWindow):
         # CENTRAL VISUALIZATION WIDGET
         self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings['TIMELINE_MODE'])
         self.setCentralWidget(self.centralViewWidget)
-        self.centralViewWidget.view3dWidget.zoom = self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM']
-        self.centralViewWidget.view3dWidget.rotX = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X']
-        self.centralViewWidget.view3dWidget.rotY = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y']
+        self.centralViewWidget.view3dWidget.camera.zoom = self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM']
+        self.centralViewWidget.view3dWidget.camera.rotationX = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X']
+        self.centralViewWidget.view3dWidget.camera.rotationY = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y']
         self.centralViewWidget.view3dWidget.cameraChanged.connect(self._change3dViewCameraSettings)
+        self.centralViewWidget.view3dWidget.requestContextMenu.connect(self._show3dContextMenu)
 
         # SATELLITE LIST WIDGET
         self.activeObjectsDock = ActiveObjectsEditorWidget(self)
@@ -694,9 +695,9 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _change3dViewCameraSettings(self):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM'] = self.centralViewWidget.view3dWidget.zoom
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X'] = self.centralViewWidget.view3dWidget.rotX
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y'] = self.centralViewWidget.view3dWidget.rotY
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM'] = self.centralViewWidget.view3dWidget.camera.zoom
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X'] = self.centralViewWidget.view3dWidget.camera.rotationX
+        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y'] = self.centralViewWidget.view3dWidget.camera.rotationY
         self.saveSettings()
 
     def _toggleGroundTracks2d(self, checked):
@@ -723,6 +724,47 @@ class MainWindow(QMainWindow):
         self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'] = checked
         self.saveSettings()
         self._updateGlobalVisibility()
+
+    def _show3dContextMenu(self, globalPosition, noradIndex):
+        menu = QMenu(self)
+        activeObjects = self.activeObjectsDock.getActiveObjectsModel()
+        if noradIndex is not None:
+            obj = activeObjects.getObjectByNoradIndex(noradIndex)
+            groupName = activeObjects.getGroupForNoradIndex(noradIndex)
+            objectName = obj.name if obj is not None and obj.name else str(noradIndex)
+            objectIsSelected = obj in activeObjects.selectedObjects if obj is not None else False
+            groupIsSelected = (groupName is not None and activeObjects.isGroupSelected and activeObjects.selectedGroupName == groupName)
+            if objectIsSelected and not activeObjects.isGroupSelected:
+                unselectObjectAction = QAction(f"Unselect {objectName}", self)
+                unselectObjectAction.triggered.connect(lambda checked=False: self.activeObjectsDock.outsideObjectSelection(None))
+                menu.addAction(unselectObjectAction)
+            else:
+                selectObjectAction = QAction(f"Select {objectName}", self)
+                selectObjectAction.triggered.connect(lambda checked=False, index=noradIndex: self.activeObjectsDock.outsideObjectSelection(index))
+                menu.addAction(selectObjectAction)
+            if groupName is not None:
+                if groupIsSelected:
+                    unselectGroupAction = QAction(f"Unselect group {groupName}", self)
+                    unselectGroupAction.triggered.connect(lambda checked=False: self.activeObjectsDock.outsideGroupSelection(None))
+                    menu.addAction(unselectGroupAction)
+                else:
+                    selectGroupAction = QAction(f"Select group {groupName}", self)
+                    selectGroupAction.triggered.connect(lambda checked=False, group=groupName: self.activeObjectsDock.outsideGroupSelection(group))
+                    menu.addAction(selectGroupAction)
+            menu.addSeparator()
+        menu.addAction(self.showOrbitPaths3dAction)
+        menu.addAction(self.showGroundTracks3dAction)
+        menu.addAction(self.showFootprints3dAction)
+        menu.addSeparator()
+        menu.addAction(self.showEarthAction)
+        menu.addAction(self.showEarthGridAction)
+        menu.addAction(self.showEquatorialGridAction)
+        menu.addSeparator()
+        menu.addAction(self.showEciAxesAction)
+        menu.addAction(self.showEcefAxesAction)
+        menu.addSeparator()
+        menu.addAction(self.reset3dCameraViewAction)
+        menu.exec_(globalPosition)
 
     def _updateGlobalVisibility(self):
         viewConfiguration = copy.deepcopy(self.settings['VIEW_CONFIG'])

@@ -283,10 +283,14 @@ class ActiveObjectsEditorWidget(QDockWidget):
     def outsideObjectSelection(self, noradIndices):
         if isinstance(noradIndices, list):
             if not noradIndices:
-                return
-            noradIndices = noradIndices[0]
+                noradIndices = None
+            else:
+                noradIndices = noradIndices[0]
         if noradIndices is None:
             self.activeObjects.clearSelection()
+            self.treeWidget.blockSignals(True)
+            self.treeWidget.clearSelection()
+            self.treeWidget.blockSignals(False)
             self.activeObjectsChanged.emit()
             return
         obj = self.activeObjects.getObjectByNoradIndex(noradIndices)
@@ -308,6 +312,31 @@ class ActiveObjectsEditorWidget(QDockWidget):
                     found = True
                     break
             if found:
+                break
+        self.treeWidget.blockSignals(False)
+        self.activeObjectsChanged.emit()
+
+    def outsideGroupSelection(self, groupName):
+        if groupName is None:
+            self.activeObjects.clearSelection()
+            self.treeWidget.blockSignals(True)
+            self.treeWidget.clearSelection()
+            self.treeWidget.blockSignals(False)
+            self.activeObjectsChanged.emit()
+            return
+        group = self.activeObjects.objectGroups.get(groupName)
+        if group is None:
+            return
+        self.activeObjects.setSelectedObjects(set(group.objects), isGroup=True, groupName=groupName)
+        self.treeWidget.blockSignals(True)
+        self.treeWidget.clearSelection()
+        for i in range(self.treeWidget.topLevelItemCount()):
+            item = self.treeWidget.topLevelItem(i)
+            data = item.data(0, Qt.UserRole)
+            if isinstance(data, tuple) and data[0] == "GROUP" and data[1] == groupName:
+                item.setSelected(True)
+                self.treeWidget.setCurrentItem(item)
+                self.treeWidget.scrollToItem(item)
                 break
         self.treeWidget.blockSignals(False)
         self.activeObjectsChanged.emit()
@@ -959,6 +988,8 @@ class ObjectViewConfigDockWidget(QDockWidget):
             self._loading = False
 
     def applyGlobalVisibility(self, viewConfig: dict, currentTab: str):
+        if currentTab == 'PLOT_VIEW':
+            return
         is2D = currentTab == '2D_MAP'
         showOrbitPaths = True
         showGroundTracks = viewConfig[currentTab].get('SHOW_GROUND_TRACKS', True)
