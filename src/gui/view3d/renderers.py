@@ -96,9 +96,9 @@ class ObjectRenderer(BaseRenderer):
         self.useVaos = False
 
     def initialize(self):
-        with open("src/assets/objects/object.vert") as f:
+        with open("src/assets/shaders/objects/object.vert") as f:
             vert = f.read()
-        with open("src/assets/objects/object.frag") as f:
+        with open("src/assets/shaders/objects/object.frag") as f:
             frag = f.read()
         vertexShader = compileShader(vert, GL_VERTEX_SHADER)
         fragmentShader = compileShader(frag, GL_FRAGMENT_SHADER)
@@ -323,14 +323,14 @@ class EarthRenderer(BaseRenderer):
         self.dayEarthTexture = self._loadTexture("src/assets/earth/earth.jpg")
         self.nightEarthTexture = self._loadTexture("src/assets/earth/earth_lights.jpg")
         self.cloudTexture = self._loadTexture("src/assets/earth/clouds.jpg")
-        with open("src/assets/earth/earth.vert") as f:
+        with open("src/assets/shaders/earth/earth.vert") as f:
             earthVert = f.read()
-        with open("src/assets/earth/earth.frag") as f:
+        with open("src/assets/shaders/earth/earth.frag") as f:
             earthFrag = f.read()
         self.earthShader = compileProgram(compileShader(earthVert, GL_VERTEX_SHADER), compileShader(earthFrag, GL_FRAGMENT_SHADER))
-        with open("src/assets/earth/clouds.vert") as f:
+        with open("src/assets/shaders/earth/clouds.vert") as f:
             cloudsVert = f.read()
-        with open("src/assets/earth/clouds.frag") as f:
+        with open("src/assets/shaders/earth/clouds.frag") as f:
             cloudsFrag = f.read()
         self.cloudShader = compileProgram(compileShader(cloudsVert, GL_VERTEX_SHADER), compileShader(cloudsFrag, GL_FRAGMENT_SHADER))
 
@@ -541,9 +541,9 @@ class MoonRenderer(BaseRenderer):
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
         self.moonTexture = self._loadTexture("src/assets/moon/moon.jpg")
-        with open("src/assets/moon/moon.vert") as f:
+        with open("src/assets/shaders/moon/moon.vert") as f:
             vert = f.read()
-        with open("src/assets/moon/moon.frag") as f:
+        with open("src/assets/shaders/moon/moon.frag") as f:
             frag = f.read()
         self.shader = compileProgram(compileShader(vert, GL_VERTEX_SHADER), compileShader(frag, GL_FRAGMENT_SHADER))
 
