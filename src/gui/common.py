@@ -1,5 +1,7 @@
 import copy
 import os
+import shutil
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -510,7 +512,9 @@ class TextureEditorDialog(QDialog):
 
         # TEXTURE CONFIGURATION EDITOR WIDGET
         self.textureTypeList = QListWidget()
+        self.textureTypeList.setMaximumWidth(200)
         self.textureOptionList = QListWidget()
+        self.textureOptionList.setMaximumWidth(200)
         self.previewTextureLabel = QLabel("No texture selected")
         self.previewTextureLabel.setAlignment(Qt.AlignCenter)
         self.previewTextureLabel.setMinimumSize(520, 440)
@@ -530,6 +534,7 @@ class TextureEditorDialog(QDialog):
         self.textureTypeList.currentItemChanged.connect(self._onTextureTypeChanged)
         self.textureOptionList.currentItemChanged.connect(self._onTextureOptionChanged)
         self.useTextureButton.clicked.connect(self._useSelectedTexture)
+        self.addTextureButton.clicked.connect(self._addTexture)
         self.removeTextureButton.clicked.connect(self._removeSelectedTexture)
         textureTypeLayout = QVBoxLayout()
         textureTypeLayout.addWidget(QLabel("Texture type"))
@@ -662,6 +667,84 @@ class TextureEditorDialog(QDialog):
         if item is None:
             return None
         return item.data(Qt.UserRole)
+
+    def _addTexture(self):
+        if self.currentTextureType is None:
+            return
+        sourceChoice, ok = QInputDialog.getItem(self, "Texture source", "Source:", ["Local image", "Web URL"], 0, False)
+        if not ok:
+            return
+        if sourceChoice == "Local image":
+            self._addLocalTexture()
+        else:
+            self._addWebTexture()
+
+    def _addLocalTexture(self):
+        sourcePath, _ = QFileDialog.getOpenFileName(self, "Select texture image", "", "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
+        if not sourcePath:
+            return
+        textureName, ok = QInputDialog.getText(self, "Texture name", "Name:")
+        if not ok or not textureName.strip():
+            return
+        textureName = textureName.strip()
+        if textureName in self.textureConfig[self.currentTextureType].get('OPTIONS', {}):
+            QMessageBox.warning(self, "Texture exists", f"A texture named '{textureName}' already exists.")
+            return
+        sourceLink, ok = QInputDialog.getText(self, "Source link", "Optional source URL for bookkeeping:")
+        if not ok:
+            sourceLink = ""
+        destinationPath = self._copyTextureToAssets(sourcePath, textureName)
+        option = {'PATH': destinationPath, 'SOURCE': sourceLink.strip(), 'SOURCE_TYPE': 'LOCAL'}
+        if self.currentTextureType == 'SKYBOX':
+            option['COORDINATES'] = self.skyboxCoordinatesCombo.currentText()
+        self.textureConfig[self.currentTextureType]['OPTIONS'][textureName] = option
+        self.textureConfig[self.currentTextureType]['SELECTED'] = textureName
+        self._populateTextureOptions()
+
+    def _addWebTexture(self):
+        url, ok = QInputDialog.getText(self, "Texture URL", "Image URL:")
+        if not ok or not url.strip():
+            return
+        textureName, ok = QInputDialog.getText(self, "Texture name", "Name:")
+        if not ok or not textureName.strip():
+            return
+        textureName = textureName.strip()
+        if textureName in self.textureConfig[self.currentTextureType].get('OPTIONS', {}):
+            QMessageBox.warning(self, "Texture exists", f"A texture named '{textureName}' already exists.")
+            return
+        try:
+            destinationPath = self._downloadTextureToAssets(url.strip(), textureName)
+        except Exception as exc:
+            QMessageBox.warning(self, "Download failed", str(exc))
+            return
+        option = {'PATH': destinationPath, 'SOURCE': url.strip(), 'SOURCE_TYPE': 'WEB'}
+        if self.currentTextureType == 'SKYBOX':
+            option['COORDINATES'] = self.skyboxCoordinatesCombo.currentText()
+        self.textureConfig[self.currentTextureType]['OPTIONS'][textureName] = option
+        self.textureConfig[self.currentTextureType]['SELECTED'] = textureName
+        self._populateTextureOptions()
+
+    def _copyTextureToAssets(self, sourcePath, textureName):
+        destinationPath = self._textureDestinationPath(sourcePath, textureName)
+        os.makedirs(os.path.dirname(destinationPath), exist_ok=True)
+        shutil.copy2(sourcePath, destinationPath)
+        return destinationPath.replace("\\", "/")
+
+    def _downloadTextureToAssets(self, url, textureName):
+        destinationPath = self._textureDestinationPath(url, textureName)
+        os.makedirs(os.path.dirname(destinationPath), exist_ok=True)
+        urllib.request.urlretrieve(url, destinationPath)
+        return destinationPath.replace("\\", "/")
+
+    def _textureDestinationPath(self, sourcePath, textureName):
+        extension = os.path.splitext(sourcePath.split("?")[0])[1].lower()
+        if extension not in [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"]:
+            extension = ".jpg"
+        safeName = "".join(char if char.isalnum() or char in ["_", "-"] else "_" for char in textureName).strip("_")
+        if not safeName:
+            safeName = "texture"
+        folderName = self.currentTextureType.lower()
+        return os.path.join("src", "assets", "textures", folderName, safeName + extension)
 
     def _useSelectedTexture(self):
         if self.currentTextureType is None:

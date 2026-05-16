@@ -677,9 +677,15 @@ class MainWindow(QMainWindow):
 
     def _openTexturesEditor(self):
         dialog = TextureEditorDialog(self.settings['VIEW_CONFIG']['TEXTURES'], parent=self)
+        dialog.textureConfigApplied.connect(self._onTexturesEditorChanged)
         if dialog.exec_() != QDialog.Accepted:
             return
         self.settings['VIEW_CONFIG']['TEXTURES'] = dialog.getTextureConfig()
+        self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+
+    def _onTexturesEditorChanged(self, textureConfig):
+        self.settings['VIEW_CONFIG']['TEXTURES'] = copy.deepcopy(textureConfig)
         self.saveSettings()
         self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
