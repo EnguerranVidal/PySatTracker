@@ -508,23 +508,204 @@ class TextureEditorDialog(QDialog):
         self.setWindowTitle("Texture Editor")
         self.textureConfig, self.previousConfig = copy.deepcopy(textureConfig), copy.deepcopy(textureConfig)
 
+        # TEXTURE CONFIGURATION EDITOR WIDGET
+        self.textureTypeList = QListWidget()
+        self.textureOptionList = QListWidget()
+        self.previewTextureLabel = QLabel("No texture selected")
+        self.previewTextureLabel.setAlignment(Qt.AlignCenter)
+        self.previewTextureLabel.setMinimumSize(520, 440)
+        self.previewTextureLabel.setStyleSheet("QLabel { background: #111; color: #aaa; border: 1px solid #333; }")
+        self.selectedLabel = QLabel("---")
+        self.pathLabel = QLabel("---")
+        self.pathLabel.setWordWrap(True)
+        self.sourceTypeLabel = QLabel("---")
+        self.sourceLabel = QLabel("---")
+        self.sourceLabel.setWordWrap(True)
+        self.skyboxCoordinatesCombo = QComboBox()
+        self.skyboxCoordinatesCombo.addItems(["GALACTIC", "CELESTIAL"])
+        self.skyboxCoordinatesCombo.currentTextChanged.connect(self._onSkyboxCoordinatesChanged)
+        self.useTextureButton = QPushButton("Use Selected")
+        self.addTextureButton = QPushButton("Add Texture")
+        self.removeTextureButton = QPushButton("Remove Texture")
+        self.textureTypeList.currentItemChanged.connect(self._onTextureTypeChanged)
+        self.textureOptionList.currentItemChanged.connect(self._onTextureOptionChanged)
+        self.useTextureButton.clicked.connect(self._useSelectedTexture)
+        self.removeTextureButton.clicked.connect(self._removeSelectedTexture)
+        textureTypeLayout = QVBoxLayout()
+        textureTypeLayout.addWidget(QLabel("Texture type"))
+        textureTypeLayout.addWidget(self.textureTypeList)
+        optionButtonLayout = QHBoxLayout()
+        optionButtonLayout.addWidget(self.useTextureButton)
+        optionButtonLayout.addWidget(self.removeTextureButton)
+        textureOptionLayout = QVBoxLayout()
+        textureOptionLayout.addWidget(QLabel("Textures"))
+        textureOptionLayout.addWidget(self.textureOptionList)
+        textureOptionLayout.addLayout(optionButtonLayout)
+        textureOptionLayout.addWidget(self.addTextureButton)
+        detailLayout = QFormLayout()
+        detailLayout.addRow("Selected", self.selectedLabel)
+        detailLayout.addRow("Path", self.pathLabel)
+        detailLayout.addRow("Source type", self.sourceTypeLabel)
+        detailLayout.addRow("Source", self.sourceLabel)
+        detailLayout.addRow("Skybox frame", self.skyboxCoordinatesCombo)
+        previewLayout = QVBoxLayout()
+        previewLayout.addWidget(QLabel("Preview"))
+        previewLayout.addWidget(self.previewTextureLabel)
+        previewLayout.addLayout(detailLayout)
+        previewLayout.addStretch()
+        editorLayout = QHBoxLayout()
+        editorLayout.addLayout(textureTypeLayout, 1)
+        editorLayout.addLayout(textureOptionLayout, 2)
+        editorLayout.addLayout(previewLayout, 3)
+
+        # BOTTOM BUTTONS
         self.acceptButton = QPushButton("Accept")
         self.applyButton = QPushButton("Apply")
         self.cancelButton = QPushButton("Cancel")
         self.acceptButton.clicked.connect(self._acceptChanges)
         self.applyButton.clicked.connect(self._applyChanges)
         self.cancelButton.clicked.connect(self.reject)
-
         bottomButtonLayout = QHBoxLayout()
         bottomButtonLayout.addWidget(self.acceptButton)
         bottomButtonLayout.addWidget(self.applyButton)
         bottomButtonLayout.addWidget(self.cancelButton)
 
+        # MAIN LAYOUT
         mainLayout = QVBoxLayout(self)
+        mainLayout.addLayout(editorLayout)
         mainLayout.addLayout(bottomButtonLayout)
+        self._populateTextureTypes()
+
+    def _populateTextureTypes(self):
+        self.textureTypeList.clear()
+        for textureType, label in self.TEXTURE_LABELS.items():
+            if textureType not in self.textureConfig:
+                continue
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, textureType)
+            self.textureTypeList.addItem(item)
+        if self.textureTypeList.count() > 0:
+            self.textureTypeList.setCurrentRow(0)
+            self._populateTextureOptions()
+
+    def _populateTextureOptions(self):
+        self.textureOptionList.clear()
+        if self.currentTextureType is None:
+            return
+        textureTypeConfig = self.textureConfig[self.currentTextureType]
+        selectedName = textureTypeConfig.get('SELECTED', 'Default')
+        options = textureTypeConfig.get('OPTIONS', {})
+        selectedRow = 0
+        for row, textureName in enumerate(options.keys()):
+            itemText = textureName
+            if textureName == selectedName:
+                itemText += "  [active]"
+            item = QListWidgetItem(itemText)
+            item.setData(Qt.UserRole, textureName)
+            self.textureOptionList.addItem(item)
+            if textureName == selectedName:
+                selectedRow = row
+        if self.textureOptionList.count() > 0:
+            self.textureOptionList.setCurrentRow(selectedRow)
+
+    def _onTextureTypeChanged(self, current, previous):
+        if current is None:
+            self.currentTextureType = None
+            self._clearDetails()
+            return
+        self.currentTextureType = current.data(Qt.UserRole)
+        self.skyboxCoordinatesCombo.setVisible(self.currentTextureType == 'SKYBOX')
+        self._populateTextureOptions()
+
+    def _onTextureOptionChanged(self, current, previous):
+        if current is None or self.currentTextureType is None:
+            self._clearDetails()
+            return
+        textureName = current.data(Qt.UserRole)
+        option = self.textureConfig[self.currentTextureType]['OPTIONS'].get(textureName)
+        if option is None:
+            self._clearDetails()
+            return
+        self._showTextureDetails(textureName, option)
+
+    def _showTextureDetails(self, textureName, option):
+        selectedName = self.textureConfig[self.currentTextureType].get('SELECTED', 'Default')
+        self.selectedLabel.setText("Yes" if textureName == selectedName else "No")
+        self.pathLabel.setText(option.get('PATH', ''))
+        self.sourceTypeLabel.setText(option.get('SOURCE_TYPE', ''))
+        self.sourceLabel.setText(option.get('SOURCE', ''))
+        if self.currentTextureType == 'SKYBOX':
+            self.skyboxCoordinatesCombo.blockSignals(True)
+            self.skyboxCoordinatesCombo.setCurrentText(option.get('COORDINATES', 'GALACTIC'))
+            self.skyboxCoordinatesCombo.blockSignals(False)
+        self._updatePreview(option.get('PATH', ''))
+
+    def _clearDetails(self):
+        self.selectedLabel.setText("---")
+        self.pathLabel.setText("---")
+        self.sourceTypeLabel.setText("---")
+        self.sourceLabel.setText("---")
+        self.previewTextureLabel.setPixmap(QPixmap())
+        self.previewTextureLabel.setText("No texture selected")
+
+    def _updatePreview(self, path):
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            self.previewTextureLabel.setPixmap(QPixmap())
+            self.previewTextureLabel.setText("Preview unavailable")
+            return
+        self.previewTextureLabel.setText("")
+        self.previewTextureLabel.setPixmap(pixmap.scaled(self.previewTextureLabel.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def _currentTextureName(self):
+        item = self.textureOptionList.currentItem()
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
+    def _useSelectedTexture(self):
+        if self.currentTextureType is None:
+            return
+        textureName = self._currentTextureName()
+        if textureName is None:
+            return
+        self.textureConfig[self.currentTextureType]['SELECTED'] = textureName
+        self._populateTextureOptions()
+
+    def _removeSelectedTexture(self):
+        if self.currentTextureType is None:
+            return
+        textureName = self._currentTextureName()
+        if textureName is None:
+            return
+        options = self.textureConfig[self.currentTextureType].get('OPTIONS', {})
+        option = options.get(textureName)
+        if option is None:
+            return
+        if option.get('SOURCE_TYPE') == 'DEFAULT':
+            QMessageBox.information(self, "Default texture", "Default textures cannot be removed.")
+            return
+        del options[textureName]
+        if self.textureConfig[self.currentTextureType].get('SELECTED') == textureName:
+            self.textureConfig[self.currentTextureType]['SELECTED'] = 'Default'
+        self._populateTextureOptions()
+
+    def _onSkyboxCoordinatesChanged(self, coordinates):
+        if self.currentTextureType != 'SKYBOX':
+            return
+        textureName = self._currentTextureName()
+        if textureName is None:
+            return
+        option = self.textureConfig['SKYBOX']['OPTIONS'].get(textureName)
+        if option is None:
+            return
+        option['COORDINATES'] = coordinates
 
     def _applyChanges(self):
         self.textureConfigApplied.emit(self.getTextureConfig())
+
+    def _resetChanges(self):
+        self.textureConfigApplied.emit(self.previousConfig)
 
     def _acceptChanges(self):
         self._applyChanges()
