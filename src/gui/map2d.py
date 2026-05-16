@@ -15,7 +15,7 @@ from src.core.objects import ActiveObjectsModel
 class Map2dWidget(QOpenGLWidget):
     objectSelected = pyqtSignal(list)
 
-    def __init__(self, parent=None, mapImagePath='src/assets/earth/earth.jpg', nightImagePath='src/assets/earth/earth_lights.jpg'):
+    def __init__(self, parent=None, mapImagePath='src/assets/textures/earth_day/Default.jpg', nightImagePath='src/assets/textures/earth_night/Default.jpg'):
         super().__init__(parent)
         glutInit()
         self.setMouseTracking(True)

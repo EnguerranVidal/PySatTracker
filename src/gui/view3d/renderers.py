@@ -320,9 +320,9 @@ class EarthRenderer(BaseRenderer):
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
-        self.dayEarthTexture = self._loadTexture("src/assets/earth/earth.jpg")
-        self.nightEarthTexture = self._loadTexture("src/assets/earth/earth_lights.jpg")
-        self.cloudTexture = self._loadTexture("src/assets/earth/clouds.jpg")
+        self.dayEarthTexture = self._loadTexture("src/assets/textures/earth_day/Default.jpg")
+        self.nightEarthTexture = self._loadTexture("src/assets/textures/earth_night/Default.jpg")
+        self.cloudTexture = self._loadTexture("src/assets/texture/earth_clouds/Default.jpg")
         with open("src/assets/shaders/earth/earth.vert") as f:
             earthVert = f.read()
         with open("src/assets/shaders/earth/earth.frag") as f:
@@ -540,7 +540,7 @@ class MoonRenderer(BaseRenderer):
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
-        self.moonTexture = self._loadTexture("src/assets/moon/moon.jpg")
+        self.moonTexture = self._loadTexture("src/assets/textures/moon/Default.jpg")
         with open("src/assets/shaders/moon/moon.vert") as f:
             vert = f.read()
         with open("src/assets/shaders/moon/moon.frag") as f:
@@ -592,7 +592,7 @@ class SkyBoxRenderer(BaseRenderer):
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
         gluQuadricOrientation(self.sphere, GLU_INSIDE)
-        self.skyTexture = self._loadTexture("src/assets/skybox/skybox.jpg")
+        self.skyTexture = self._loadTexture("src/assets/skybox/Default.jpg")
 
     def render(self, context=None):
         if not self.skyTexture or self.sphere is None:
