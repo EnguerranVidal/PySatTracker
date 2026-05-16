@@ -14,7 +14,7 @@ from src.gui.plots.requests import PlotRequestRegistryWindow, PlotRequestManager
 from src.gui.plots.line import LinePlot
 from src.gui.plots.time import TimeSeriesPlot
 from src.gui.plots.polar import PolarPlot
-from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog
+from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog, TextureEditorDialog
 from src.gui.view3d.general import View3dWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 from src.core.quantities import VariableRegistry
@@ -106,6 +106,10 @@ class MainWindow(QMainWindow):
         self.resetViewConfigAction.setStatusTip('Reset Object\'s View Configuration to Default')
         self.resetViewConfigAction.triggered.connect(self._resetObjectViewConfig)
         self._selectionDependentActions.append(self.resetViewConfigAction)
+        # OPEN TEXTURE EDITOR
+        self.openTextureEditorAction = QAction('&Textures', self)
+        self.openTextureEditorAction.setStatusTip('Open Textures Editor')
+        self.openTextureEditorAction.triggered.connect(self._openTexturesEditor)
 
         # SHOW 2D MAP GROUND TRACKS
         self.showGroundTracks2dAction = QAction('Show Ground Tracks', self, checkable=True)
@@ -281,6 +285,8 @@ class MainWindow(QMainWindow):
         self.viewMenu = self.menuBar.addMenu('&View')
         self.viewMenu.addAction(self.resetViewConfigAction)
         self.viewMenu.addAction(self.setViewConfigAsDefaultAction)
+        self.viewMenu.addSeparator()
+        self.viewMenu.addAction(self.openTextureEditorAction)
         self.viewMenu.addSeparator()
         # 2D MAP MENU
         self.map2dMenu = self.viewMenu.addMenu('&2D Map')
@@ -668,6 +674,14 @@ class MainWindow(QMainWindow):
         noradIndex = next(iter(model.selectedObjects))
         self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)])
         self.saveSettings()
+
+    def _openTexturesEditor(self):
+        dialog = TextureEditorDialog(self.settings['VIEW_CONFIG']['TEXTURES'], parent=self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        self.settings['VIEW_CONFIG']['TEXTURES'] = dialog.getTextureConfig()
+        self.saveSettings()
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
 
     def _check2dGrid(self, checked):
         self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GRID'] = checked

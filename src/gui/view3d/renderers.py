@@ -310,7 +310,7 @@ class EarthRenderer(BaseRenderer):
     def __init__(self):
         self.dayEarthTexture = 0
         self.nightEarthTexture = 0
-        self.cloudTexture = 0
+        self.cloudEarthTexture = 0
         self.earthShader = None
         self.cloudShader = None
         self.atmosphereThickness = self.ATMOSPHERE_THICKNESS / self.EARTH_RADIUS
@@ -322,7 +322,7 @@ class EarthRenderer(BaseRenderer):
         gluQuadricTexture(self.sphere, GL_TRUE)
         self.dayEarthTexture = self._loadTexture("src/assets/textures/earth_day/Default.jpg")
         self.nightEarthTexture = self._loadTexture("src/assets/textures/earth_night/Default.jpg")
-        self.cloudTexture = self._loadTexture("src/assets/texture/earth_clouds/Default.jpg")
+        self.cloudEarthTexture = self._loadTexture("src/assets/textures/earth_clouds/Default.jpg")
         with open("src/assets/shaders/earth/earth.vert") as f:
             earthVert = f.read()
         with open("src/assets/shaders/earth/earth.frag") as f:
@@ -459,7 +459,7 @@ class EarthRenderer(BaseRenderer):
             glPopMatrix()
 
     def _drawCloudLayer(self, fullJulianDate, sunDirectionEcef: np.ndarray):
-        if not self.cloudTexture or self.cloudShader is None:
+        if not self.cloudEarthTexture or self.cloudShader is None:
             return
         daysSinceJ2000 = fullJulianDate - 2451545.0
         cloudDriftAngle = (daysSinceJ2000 * 28.8) % 360.0
@@ -481,8 +481,8 @@ class EarthRenderer(BaseRenderer):
             glDisable(GL_TEXTURE_2D)
             glActiveTexture(GL_TEXTURE0)
             glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, self.cloudTexture)
-            glUniform1i(glGetUniformLocation(self.cloudShader, "cloudTexture"), 0)
+            glBindTexture(GL_TEXTURE_2D, self.cloudEarthTexture)
+            glUniform1i(glGetUniformLocation(self.cloudShader, "cloudEarthTexture"), 0)
             glUniform1f(glGetUniformLocation(self.cloudShader, "cloudOpacity"), 0.8)
             glUniform1f(glGetUniformLocation(self.cloudShader, "cloudBrightnessCutoff"), 0.12)
             glUniform1f(glGetUniformLocation(self.cloudShader, "cloudNightOpacity"), 0.6)
@@ -592,7 +592,7 @@ class SkyBoxRenderer(BaseRenderer):
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
         gluQuadricOrientation(self.sphere, GLU_INSIDE)
-        self.skyTexture = self._loadTexture("src/assets/skybox/Default.jpg")
+        self.skyTexture = self._loadTexture("src/assets/textures/skybox/Default.jpg")
 
     def render(self, context=None):
         if not self.skyTexture or self.sphere is None:

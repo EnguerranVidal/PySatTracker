@@ -73,9 +73,9 @@ class Map2dWidget(QOpenGLWidget):
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         try:
-            with open("src/assets/earth/map.vert") as f:
+            with open("src/assets/shaders/earth/map.vert") as f:
                 vertSource = f.read()
-            with open("src/assets/earth/map.frag") as f:
+            with open("src/assets/shaders/earth/map.frag") as f:
                 fragSource = f.read()
             self.earthShader = compileProgram(compileShader(vertSource, GL_VERTEX_SHADER), compileShader(fragSource, GL_FRAGMENT_SHADER))
         except Exception as e:

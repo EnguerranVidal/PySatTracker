@@ -1,3 +1,4 @@
+import copy
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -495,3 +496,39 @@ class SetTimeDialog(QDialog):
 
     def getDatetime(self):
         return self.dateTimeEdit.dateTime()
+
+
+class TextureEditorDialog(QDialog):
+    textureConfigApplied = pyqtSignal(object)
+
+    TEXTURE_LABELS = {'EARTH_DAY': 'Earth day', 'EARTH_NIGHT': 'Earth night', 'EARTH_CLOUDS': 'Earth clouds', 'SKYBOX': 'Skybox', 'MOON': 'Moon',}
+
+    def __init__(self, textureConfig, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Texture Editor")
+        self.textureConfig, self.previousConfig = copy.deepcopy(textureConfig), copy.deepcopy(textureConfig)
+
+        self.acceptButton = QPushButton("Accept")
+        self.applyButton = QPushButton("Apply")
+        self.cancelButton = QPushButton("Cancel")
+        self.acceptButton.clicked.connect(self._acceptChanges)
+        self.applyButton.clicked.connect(self._applyChanges)
+        self.cancelButton.clicked.connect(self.reject)
+
+        bottomButtonLayout = QHBoxLayout()
+        bottomButtonLayout.addWidget(self.acceptButton)
+        bottomButtonLayout.addWidget(self.applyButton)
+        bottomButtonLayout.addWidget(self.cancelButton)
+
+        mainLayout = QVBoxLayout(self)
+        mainLayout.addLayout(bottomButtonLayout)
+
+    def _applyChanges(self):
+        self.textureConfigApplied.emit(self.getTextureConfig())
+
+    def _acceptChanges(self):
+        self._applyChanges()
+        self.accept()
+
+    def getTextureConfig(self):
+        return copy.deepcopy(self.textureConfig)

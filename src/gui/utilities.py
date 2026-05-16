@@ -13,17 +13,21 @@ def giveDefaultObjectViewConfig():
 def giveDefaultGroupViewConfig():
     return {'SHARED': True, 'SOURCE': 'CUSTOM', 'SOURCE_OBJECT': None, 'CONFIG': giveDefaultObjectViewConfig()}
 
+def giveDefaultTextureConfig():
+    return {'EARTH_DAY': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_day/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'EARTH_NIGHT': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_night/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'EARTH_CLOUDS': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_clouds/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'SKYBOX': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/skybox/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT', 'COORDINATES': 'GALACTIC'}}},
+            'MOON': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/moon/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}}}
+
 def generateDefaultSettingsJson(path):
-    settings = {
-        'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
-        'ACTIVE_OBJECTS_MODEL': {'OBJECT_GROUPS': {}, 'UNGROUPED': [{"NORAD_INDEX": 25544, "NAME": "ISS (ZARYA)"}], "UNGROUPED_EXPANDED": True},
-        'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True}, 'CURRENT_TAB': '3D_VIEW', 'TIMELINE_MODE': 'UTC',
-        'VIEW_CONFIG': {'DEFAULT_CONFIG': giveDefaultObjectViewConfig(), 'OBJECTS': {'25544': giveDefaultObjectViewConfig()},
-                        '2D_MAP': {'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_GRID': False, 'SHOW_VERNAL': False, 'SHOW_TERMINATOR': False, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False},
-                        '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'SHOW_EQUATORIAL_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False}
-                        },
-        'PLOT_VIEW': {'TABS': {}},
-    }
+    settings = {'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},
+                'ACTIVE_OBJECTS_MODEL': {'OBJECT_GROUPS': {}, 'UNGROUPED': [{"NORAD_INDEX": 25544, "NAME": "ISS (ZARYA)"}], "UNGROUPED_EXPANDED": True},
+                'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True}, 'CURRENT_TAB': '3D_VIEW', 'TIMELINE_MODE': 'UTC',
+                'VIEW_CONFIG': {'DEFAULT_CONFIG': giveDefaultObjectViewConfig(), 'OBJECTS': {'25544': giveDefaultObjectViewConfig()}, 'TEXTURES': giveDefaultTextureConfig(),
+                                '2D_MAP': {'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_GRID': False, 'SHOW_VERNAL': False, 'SHOW_TERMINATOR': False, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False},
+                                '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'SHOW_EQUATORIAL_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False}},
+                'PLOT_VIEW': {'TABS': {}}}
     with open(path, 'w') as f:
         json.dump(settings, f)
 
