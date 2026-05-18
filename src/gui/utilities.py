@@ -40,6 +40,16 @@ def saveSettingsJson(path, settings):
     with open(path, 'w') as f:
         json.dump(settings, f)
 
+def getSelectedTextureOption(textureConfig, category):
+    categoryConfig = textureConfig.get(category, {})
+    selectedName = categoryConfig.get('SELECTED', 'Default')
+    options = categoryConfig.get('OPTIONS', {})
+    return options.get(selectedName) or options.get('Default') or {}
+
+def getSelectedTexturePath(textureConfig, category, fallbackPath):
+    option = getSelectedTextureOption(textureConfig, category)
+    return option.get('PATH', fallbackPath)
+
 def getKeyFromValue(dictionary, target):
     for key, value in dictionary.items():
         if value == target:

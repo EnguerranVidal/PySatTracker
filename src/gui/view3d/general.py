@@ -106,6 +106,7 @@ class View3dWidget(QOpenGLWidget):
         self.skyBoxRenderer.initialize()
         self.objectRenderer.initialize()
         self.gridRenderer.initialize()
+        self.setDisplayConfiguration(self.displayConfiguration)
 
     def paintGL(self):
         if not self.activeObjects:
@@ -179,6 +180,21 @@ class View3dWidget(QOpenGLWidget):
             self.pendingObjectBufferUpdates[key] = (objectPositionData, objectOrbitPathData, objectGroundTrackData, objectFootprintData, objectSubPointData)
         self.update()
 
+    def setDisplayConfiguration(self, displayConfiguration):
+        self.displayConfiguration = displayConfiguration or {}
+        textureConfiguration = self.displayConfiguration.get('TEXTURES', {})
+        if self.context() is not None and self.context().isValid():
+            self.makeCurrent()
+            self.earthRenderer.setTextureConfiguration(textureConfiguration)
+            self.moonRenderer.setTextureConfiguration(textureConfiguration)
+            self.skyBoxRenderer.setTextureConfiguration(textureConfiguration)
+            self.doneCurrent()
+        else:
+            self.earthRenderer.setTextureConfiguration(textureConfiguration)
+            self.moonRenderer.setTextureConfiguration(textureConfiguration)
+            self.skyBoxRenderer.setTextureConfiguration(textureConfiguration)
+        self.update()
+
     def _uploadPendingObjectBuffers(self):
         if not self.pendingObjectBufferUpdates:
             return
@@ -208,6 +224,8 @@ class View3dWidget(QOpenGLWidget):
 
     def _drawObject(self, noradIndex):
         key = str(noradIndex)
+        if key not in self.objectNameData or key not in self.objectSpotData:
+            return
         isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
         isHovered = (noradIndex == self.hoveredObject)
         cameraPosition = self.camera.getPosition()

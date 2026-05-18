@@ -5,6 +5,8 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 from PIL import Image
 import numpy as np
 
+from src.gui.utilities import getSelectedTextureOption, getSelectedTexturePath
+
 
 class RenderContext:
     def __init__(self):
@@ -308,6 +310,9 @@ class EarthRenderer(BaseRenderer):
     ATMOSPHERE_THICKNESS = 50
 
     def __init__(self):
+        self.dayEarthTexturePath = 'src/assets/textures/earth_day/Default.jpg'
+        self.nightEarthTexturePath = 'src/assets/textures/earth_night/Default.jpg'
+        self.cloudTexturePath = 'src/assets/textures/earth_clouds/Default.jpg'
         self.dayEarthTexture = 0
         self.nightEarthTexture = 0
         self.cloudEarthTexture = 0
@@ -320,9 +325,9 @@ class EarthRenderer(BaseRenderer):
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
-        self.dayEarthTexture = self._loadTexture("src/assets/textures/earth_day/Default.jpg")
-        self.nightEarthTexture = self._loadTexture("src/assets/textures/earth_night/Default.jpg")
-        self.cloudEarthTexture = self._loadTexture("src/assets/textures/earth_clouds/Default.jpg")
+        self.dayEarthTexture = self._loadTexture(self.dayEarthTexturePath)
+        self.nightEarthTexture = self._loadTexture(self.nightEarthTexturePath)
+        self.cloudEarthTexture = self._loadTexture(self.cloudTexturePath)
         with open("src/assets/shaders/earth/earth.vert") as f:
             earthVert = f.read()
         with open("src/assets/shaders/earth/earth.frag") as f:
@@ -525,6 +530,21 @@ class EarthRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
+    def setTextureConfiguration(self, textureConfiguration):
+        dayPath = getSelectedTexturePath(textureConfiguration, 'EARTH_DAY', 'src/assets/textures/earth_day/Default.jpg')
+        nightPath = getSelectedTexturePath(textureConfiguration, 'EARTH_NIGHT', 'src/assets/textures/earth_night/Default.jpg')
+        cloudPath = getSelectedTexturePath(textureConfiguration, 'EARTH_CLOUDS', 'src/assets/textures/earth_clouds/Default.jpg')
+        if getattr(self, 'dayEarthTexturePath', None) == dayPath and getattr(self, 'nightEarthTexturePath', None) == nightPath and getattr(self, 'cloudTexturePath', None) == cloudPath:
+            return
+        self.dayEarthTexturePath = dayPath
+        self.nightEarthTexturePath = nightPath
+        self.cloudTexturePath = cloudPath
+        if self.sphere is None:
+            return
+        self.dayEarthTexture = self._loadTexture(self.dayEarthTexturePath)
+        self.nightEarthTexture = self._loadTexture(self.nightEarthTexturePath)
+        self.cloudEarthTexture = self._loadTexture(self.cloudTexturePath)
+
 
 class MoonRenderer(BaseRenderer):
     MOON_RADIUS = 1737
@@ -532,6 +552,7 @@ class MoonRenderer(BaseRenderer):
 
     def __init__(self):
         self.moonTexture = 0
+        self.moonTexturePath = 'src/assets/textures/moon/Default.jpg'
         self.moonRadius = self.MOON_RADIUS / self.EARTH_RADIUS
         self.shader = None
         self.sphere = None
@@ -540,7 +561,7 @@ class MoonRenderer(BaseRenderer):
         self.sphere = gluNewQuadric()
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
-        self.moonTexture = self._loadTexture("src/assets/textures/moon/Default.jpg")
+        self.moonTexture = self._loadTexture(self.moonTexturePath)
         with open("src/assets/shaders/moon/moon.vert") as f:
             vert = f.read()
         with open("src/assets/shaders/moon/moon.frag") as f:
@@ -576,6 +597,15 @@ class MoonRenderer(BaseRenderer):
         finally:
             glPopMatrix()
 
+    def setTextureConfiguration(self, textureConfiguration):
+        moonPath = getSelectedTexturePath(textureConfiguration, 'MOON', 'src/assets/textures/moon/Default.jpg')
+        if getattr(self, 'moonTexturePath', None) == moonPath:
+            return
+        self.moonTexturePath = moonPath
+        if self.sphere is None:
+            return
+        self.moonTexture = self._loadTexture(self.moonTexturePath)
+
 
 class SkyBoxRenderer(BaseRenderer):
     def __init__(self):
@@ -583,6 +613,8 @@ class SkyBoxRenderer(BaseRenderer):
         self.skyTexture = 0
         self.skyRadius = 500
         self.sphere = None
+        self.skyTexturePath = 'src/assets/textures/skybox/Default.jpg'
+        self.skyTextureCoordinates = 'GALACTIC'
         self.textureYawOffsetDeg = 0.0
         self.texturePitchOffsetDeg = 0.0
         self.textureRollOffsetDeg = 0.0
@@ -592,7 +624,7 @@ class SkyBoxRenderer(BaseRenderer):
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
         gluQuadricOrientation(self.sphere, GLU_INSIDE)
-        self.skyTexture = self._loadTexture("src/assets/textures/skybox/Default.jpg")
+        self.skyTexture = self._loadTexture(self.skyTexturePath)
 
     def render(self, context=None):
         if not self.skyTexture or self.sphere is None:
@@ -603,9 +635,13 @@ class SkyBoxRenderer(BaseRenderer):
         modelViewWithoutTranslation[12] = 0.0
         modelViewWithoutTranslation[13] = 0.0
         modelViewWithoutTranslation[14] = 0.0
-        galacticToEci = self.galacticToEciMatrix()
+        rotation = np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+        if self.skyTextureCoordinates == 'CELESTIAL':
+            skyboxRotation = rotation
+        else:
+            skyboxRotation = self.galacticToEciMatrix() @ rotation
         skyboxMatrix = np.eye(4, dtype=np.float32)
-        skyboxMatrix[:3, :3] = galacticToEci
+        skyboxMatrix[:3, :3] = skyboxRotation.astype(np.float32)
         glPushMatrix()
         try:
             glLoadMatrixd(modelViewWithoutTranslation)
@@ -626,10 +662,6 @@ class SkyBoxRenderer(BaseRenderer):
             glRotatef(self.textureRollOffsetDeg, 0.0, 1.0, 0.0)
             glMultMatrixf(skyboxMatrix.T.flatten())
             gluSphere(self.sphere, self.skyRadius, 128, 64)
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glDisable(GL_TEXTURE_2D)
-            glDepthMask(GL_TRUE)
-            glEnable(GL_DEPTH_TEST)
         finally:
             glActiveTexture(GL_TEXTURE1)
             glBindTexture(GL_TEXTURE_2D, 0)
@@ -642,19 +674,25 @@ class SkyBoxRenderer(BaseRenderer):
             glColor4f(1.0, 1.0, 1.0, 1.0)
             glPopMatrix()
 
+    def setTextureConfiguration(self, textureConfiguration):
+        skyboxOption = getSelectedTextureOption(textureConfiguration, 'SKYBOX')
+        skyboxPath = skyboxOption.get('PATH', 'src/assets/textures/skybox/Default.jpg')
+        skyboxCoordinates = skyboxOption.get('COORDINATES', 'GALACTIC')
+        if getattr(self, 'skyTexturePath', None) == skyboxPath and getattr(self, 'skyTextureCoordinates', None) == skyboxCoordinates:
+            return
+        self.skyTexturePath = skyboxPath
+        self.skyTextureCoordinates = skyboxCoordinates
+        if self.sphere is None:
+            return
+        self.skyTexture = self._loadTexture(self.skyTexturePath)
+
+    @staticmethod
+    def textureToGalacticMatrix():
+        return np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+
     @staticmethod
     def galacticToEciMatrix():
         return np.array([[-0.0548755604162154, 0.4941094278755837, -0.8676661490190047], [-0.8734370902348850, -0.4448296299600112, -0.1980763734312015], [-0.4838350155487132, 0.7469822444972189, 0.4559837761750669]], dtype=np.float64)
-
-    @staticmethod
-    def galacticLonLatToVector(longitudeRad, latitudeRad):
-        cosLatitude = np.cos(latitudeRad)
-        return np.array([cosLatitude * np.cos(longitudeRad), cosLatitude * np.sin(longitudeRad), np.sin(latitudeRad),], dtype=np.float64)
-
-    @staticmethod
-    def galacticLonLatToEci(longitudeRad, latitudeRad):
-        galacticVector = SkyBoxRenderer.galacticLonLatToVector(longitudeRad, latitudeRad)
-        return SkyBoxRenderer.galacticToEciMatrix() @ galacticVector
 
 
 class GridRenderer(BaseRenderer):

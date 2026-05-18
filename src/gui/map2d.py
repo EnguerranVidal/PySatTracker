@@ -9,6 +9,7 @@ from OpenGL.GLUT import *
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
+from src.gui.utilities import getSelectedTexturePath
 from src.core.objects import ActiveObjectsModel
 
 
@@ -57,21 +58,8 @@ class Map2dWidget(QOpenGLWidget):
         glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
         self.earthTexture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
-        mapImage = self.earthTextureData
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mapImage.shape[1], mapImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, mapImage)
-        glGenerateMipmap(GL_TEXTURE_2D)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         self.nightTexture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.nightTexture)
-        img = self.nightTextureData
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.shape[1], img.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, img)
-        glGenerateMipmap(GL_TEXTURE_2D)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        self._uploadEarthTextures()
         try:
             with open("src/assets/shaders/earth/map.vert") as f:
                 vertSource = f.read()
@@ -81,6 +69,24 @@ class Map2dWidget(QOpenGLWidget):
         except Exception as e:
             self.earthShader = None
             raise RuntimeError(f"Earth shader failed to compile/link:\n{e}")
+
+    def _uploadEarthTextures(self):
+        glBindTexture(GL_TEXTURE_2D, self.earthTexture)
+        mapImage = self.earthTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mapImage.shape[1], mapImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, mapImage)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glBindTexture(GL_TEXTURE_2D, self.nightTexture)
+        nightImage = self.nightTextureData
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, nightImage.shape[1], nightImage.shape[0], 0, GL_RGB, GL_UNSIGNED_BYTE, nightImage)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glBindTexture(GL_TEXTURE_2D, 0)
+
     def _lonlatToCartesian(self, longitude, latitude):
         longitude, latitude = np.asarray(longitude), np.asarray(latitude)
         return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
@@ -187,6 +193,24 @@ class Map2dWidget(QOpenGLWidget):
         if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_VERNAL', False):
             self._drawVernal()
         self._drawLabels()
+
+    def setDisplayConfiguration(self, displayConfiguration):
+        self.displayConfiguration = displayConfiguration or {}
+        self.setTextureConfiguration(self.displayConfiguration.get('TEXTURES', {}))
+        self.update()
+
+    def setTextureConfiguration(self, textureConfiguration):
+        mapImagePath = getSelectedTexturePath(textureConfiguration, 'EARTH_DAY', 'src/assets/textures/earth_day/Default.jpg')
+        nightImagePath = getSelectedTexturePath(textureConfiguration, 'EARTH_NIGHT', 'src/assets/textures/earth_night/Default.jpg')
+        if mapImagePath == self.mapImagePath and nightImagePath == self.nightImagePath:
+            return
+        self.mapImagePath = mapImagePath
+        self.nightImagePath = nightImagePath
+        self._loadEarthTextures()
+        if self.context() is not None and self.context().isValid() and self.earthTexture is not None and self.nightTexture is not None:
+            self.makeCurrent()
+            self._uploadEarthTextures()
+            self.doneCurrent()
 
     def _drawEarth(self):
         correctShaderLoading = self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None

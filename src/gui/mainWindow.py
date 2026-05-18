@@ -924,6 +924,8 @@ class CentralViewWidget(QWidget):
 
     def setDisplayConfiguration(self, displayConfiguration):
         self.displayConfiguration = displayConfiguration
+        self.view3dWidget.setDisplayConfiguration(displayConfiguration)
+        self.map2dWidget.setDisplayConfiguration(displayConfiguration)
         self._refresh2dMap()
         self._refresh3dView()
 
