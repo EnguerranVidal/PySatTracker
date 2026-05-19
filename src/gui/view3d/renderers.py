@@ -27,7 +27,7 @@ class BaseRenderer:
         pass
 
     @staticmethod
-    def _loadTexture(path):
+    def _loadTexture(path, clamp=False):
         image = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM)
         data = np.array(image.convert("RGB"), dtype=np.uint8)
         texture = glGenTextures(1)
@@ -35,6 +35,9 @@ class BaseRenderer:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, data)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        wrapMode = GL_CLAMP_TO_EDGE if clamp else GL_REPEAT
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapMode)
         glGenerateMipmap(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, 0)
         return texture
@@ -624,7 +627,7 @@ class SkyBoxRenderer(BaseRenderer):
         gluQuadricNormals(self.sphere, GLU_SMOOTH)
         gluQuadricTexture(self.sphere, GL_TRUE)
         gluQuadricOrientation(self.sphere, GLU_INSIDE)
-        self.skyTexture = self._loadTexture(self.skyTexturePath)
+        self.skyTexture = self._loadTexture(self.skyTexturePath, clamp=True)
 
     def render(self, context=None):
         if not self.skyTexture or self.sphere is None:
@@ -678,17 +681,14 @@ class SkyBoxRenderer(BaseRenderer):
         skyboxOption = getSelectedTextureOption(textureConfiguration, 'SKYBOX')
         skyboxPath = skyboxOption.get('PATH', 'src/assets/textures/skybox/Default.jpg')
         skyboxCoordinates = skyboxOption.get('COORDINATES', 'GALACTIC')
-        if getattr(self, 'skyTexturePath', None) == skyboxPath and getattr(self, 'skyTextureCoordinates', None) == skyboxCoordinates:
+        if self.skyTexturePath == skyboxPath and self.skyTextureCoordinates == skyboxCoordinates:
             return
         self.skyTexturePath = skyboxPath
         self.skyTextureCoordinates = skyboxCoordinates
         if self.sphere is None:
             return
-        self.skyTexture = self._loadTexture(self.skyTexturePath)
+        self.skyTexture = self._loadTexture(self.skyTexturePath, clamp=True)
 
-    @staticmethod
-    def textureToGalacticMatrix():
-        return np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
     @staticmethod
     def galacticToEciMatrix():

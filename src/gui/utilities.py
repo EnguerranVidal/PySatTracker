@@ -14,11 +14,11 @@ def giveDefaultGroupViewConfig():
     return {'SHARED': True, 'SOURCE': 'CUSTOM', 'SOURCE_OBJECT': None, 'CONFIG': giveDefaultObjectViewConfig()}
 
 def giveDefaultTextureConfig():
-    return {'EARTH_DAY': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_day/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
-            'EARTH_NIGHT': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_night/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
-            'EARTH_CLOUDS': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_clouds/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}},
-            'SKYBOX': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/skybox/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT', 'COORDINATES': 'GALACTIC'}}},
-            'MOON': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/moon/Default.jpg', 'SOURCE': '', 'SOURCE_TYPE': 'DEFAULT'}}}}
+    return {'EARTH_DAY': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_day/Default.jpg', 'SOURCE': 'https://www.solarsystemscope.com/textures/', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'EARTH_NIGHT': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_night/Default.jpg', 'SOURCE': 'https://www.solarsystemscope.com/textures/', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'EARTH_CLOUDS': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_clouds/Default.jpg', 'SOURCE': 'https://www.solarsystemscope.com/textures/', 'SOURCE_TYPE': 'DEFAULT'}}},
+            'SKYBOX': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/skybox/Default.jpg', 'SOURCE': 'https://svs.gsfc.nasa.gov/4851/', 'SOURCE_TYPE': 'DEFAULT', 'COORDINATES': 'CELESTIAL'}}},
+            'MOON': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/moon/Default.jpg', 'SOURCE': 'https://www.solarsystemscope.com/textures/', 'SOURCE_TYPE': 'DEFAULT'}}}}
 
 def generateDefaultSettingsJson(path):
     settings = {'WINDOW': {'MAXIMIZED': False, 'GEOMETRY': {'X': 300, 'Y': 300, 'WIDTH': 1200, 'HEIGHT': 600}},

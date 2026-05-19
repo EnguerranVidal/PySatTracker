@@ -10,8 +10,8 @@ from PyQt5.QtGui import QPainter, QPen, QPixmap, QIcon, QPolygonF
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 
-from core.engine.orbitalEngine import OrbitalMechanicsEngine
-from core.objects import ActiveObjectsModel
+from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
+from src.core.objects import ActiveObjectsModel
 
 
 class LoadingScreen(QSplashScreen):
@@ -671,55 +671,25 @@ class TextureEditorDialog(QDialog):
     def _addTexture(self):
         if self.currentTextureType is None:
             return
-        sourceChoice, ok = QInputDialog.getItem(self, "Texture source", "Source:", ["Local image", "Web URL"], 0, False)
-        if not ok:
+        dialog = AddTextureDialog(self.currentTextureType, parent=self)
+        if dialog.exec_() != QDialog.Accepted:
             return
-        if sourceChoice == "Local image":
-            self._addLocalTexture()
-        else:
-            self._addWebTexture()
-
-    def _addLocalTexture(self):
-        sourcePath, _ = QFileDialog.getOpenFileName(self, "Select texture image", "", "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
-        if not sourcePath:
-            return
-        textureName, ok = QInputDialog.getText(self, "Texture name", "Name:")
-        if not ok or not textureName.strip():
-            return
-        textureName = textureName.strip()
-        if textureName in self.textureConfig[self.currentTextureType].get('OPTIONS', {}):
-            QMessageBox.warning(self, "Texture exists", f"A texture named '{textureName}' already exists.")
-            return
-        sourceLink, ok = QInputDialog.getText(self, "Source link", "Optional source URL for bookkeeping:")
-        if not ok:
-            sourceLink = ""
-        destinationPath = self._copyTextureToAssets(sourcePath, textureName)
-        option = {'PATH': destinationPath, 'SOURCE': sourceLink.strip(), 'SOURCE_TYPE': 'LOCAL'}
-        if self.currentTextureType == 'SKYBOX':
-            option['COORDINATES'] = self.skyboxCoordinatesCombo.currentText()
-        self.textureConfig[self.currentTextureType]['OPTIONS'][textureName] = option
-        self.textureConfig[self.currentTextureType]['SELECTED'] = textureName
-        self._populateTextureOptions()
-
-    def _addWebTexture(self):
-        url, ok = QInputDialog.getText(self, "Texture URL", "Image URL:")
-        if not ok or not url.strip():
-            return
-        textureName, ok = QInputDialog.getText(self, "Texture name", "Name:")
-        if not ok or not textureName.strip():
-            return
-        textureName = textureName.strip()
+        data = dialog.getTextureData()
+        textureName = data["NAME"]
         if textureName in self.textureConfig[self.currentTextureType].get('OPTIONS', {}):
             QMessageBox.warning(self, "Texture exists", f"A texture named '{textureName}' already exists.")
             return
         try:
-            destinationPath = self._downloadTextureToAssets(url.strip(), textureName)
+            if data["SOURCE_TYPE"] == "LOCAL":
+                destinationPath = self._copyTextureToAssets(data["SOURCE"], textureName)
+            else:
+                destinationPath = self._downloadTextureToAssets(data["SOURCE"], textureName)
         except Exception as exc:
-            QMessageBox.warning(self, "Download failed", str(exc))
+            QMessageBox.warning(self, "Texture import failed", str(exc))
             return
-        option = {'PATH': destinationPath, 'SOURCE': url.strip(), 'SOURCE_TYPE': 'WEB'}
+        option = {'PATH': destinationPath, 'SOURCE': data["BOOKKEEPING_SOURCE"], 'SOURCE_TYPE': data["SOURCE_TYPE"]}
         if self.currentTextureType == 'SKYBOX':
-            option['COORDINATES'] = self.skyboxCoordinatesCombo.currentText()
+            option['COORDINATES'] = data.get("COORDINATES", "GALACTIC")
         self.textureConfig[self.currentTextureType]['OPTIONS'][textureName] = option
         self.textureConfig[self.currentTextureType]['SELECTED'] = textureName
         self._populateTextureOptions()
@@ -796,3 +766,108 @@ class TextureEditorDialog(QDialog):
 
     def getTextureConfig(self):
         return copy.deepcopy(self.textureConfig)
+
+
+class AddTextureDialog(QDialog):
+    def __init__(self, textureType, parent=None):
+        super().__init__(parent)
+        self.textureType = textureType
+        self.setWindowTitle("Add Texture")
+
+        # MAIN TEXTURE SOURCE WIDGET
+        self.sourceTypeCombo = QComboBox()
+        self.sourceTypeCombo.addItems(["Local file", "Web URL"])
+        self.sourceEdit = QLineEdit()
+        self.sourceBrowseButton = QPushButton("Browse...")
+        self.nameEdit = QLineEdit()
+        self.bookKeepingSourceEdit = QLineEdit()
+        self.bookKeepingSourceEdit.setPlaceholderText("Optional source URL")
+        self.skyboxCoordinatesCombo = QComboBox()
+        self.skyboxCoordinatesCombo.addItems(["GALACTIC", "CELESTIAL"])
+        self.skyboxCoordinatesCombo.setVisible(textureType == "SKYBOX")
+        self.sourceTypeCombo.currentTextChanged.connect(self._onSourceTypeChanged)
+        self.sourceBrowseButton.clicked.connect(self._browseLocalFile)
+        self.sourceEdit.textChanged.connect(self._autoNameIfEmpty)
+        sourceRow = QHBoxLayout()
+        sourceRow.addWidget(self.sourceEdit, 1)
+        sourceRow.addWidget(self.sourceBrowseButton)
+        formLayout = QFormLayout()
+        formLayout.addRow("Source type", self.sourceTypeCombo)
+        formLayout.addRow("Source", sourceRow)
+        formLayout.addRow("Name", self.nameEdit)
+        formLayout.addRow("Bookkeeping source", self.bookKeepingSourceEdit)
+        if textureType == "SKYBOX":
+            formLayout.addRow("Skybox frame", self.skyboxCoordinatesCombo)
+
+        # BOTTOM BUTTONS
+        self.acceptButton = QPushButton("Add")
+        self.cancelButton = QPushButton("Cancel")
+        self.acceptButton.clicked.connect(self.accept)
+        self.cancelButton.clicked.connect(self.reject)
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(self.acceptButton)
+        buttonLayout.addWidget(self.cancelButton)
+
+        # MAIN LAYOUT
+        mainLayout = QVBoxLayout(self)
+        mainLayout.addLayout(formLayout)
+        mainLayout.addLayout(buttonLayout)
+        self._onSourceTypeChanged(self.sourceTypeCombo.currentText())
+
+    def _onSourceTypeChanged(self, sourceType):
+        isLocal = sourceType == "Local file"
+        self.sourceBrowseButton.setVisible(isLocal)
+        if isLocal:
+            self.sourceEdit.setPlaceholderText("Local image path")
+            self.bookkeepingSourceEdit.setEnabled(True)
+        else:
+            self.sourceEdit.setPlaceholderText("Image URL")
+            self.bookkeepingSourceEdit.setEnabled(False)
+            self.bookkeepingSourceEdit.clear()
+
+    def _browseLocalFile(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select texture image", "", "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
+        if not path:
+            return
+        self.sourceEdit.setText(path)
+        if not self.nameEdit.text().strip():
+            self._autoName()
+
+    def _autoNameIfEmpty(self):
+        if not self.nameEdit.text().strip():
+            self._autoName()
+
+    def _autoName(self):
+        source = self.sourceEdit.text().strip()
+        if not source:
+            return
+        if self.sourceTypeCombo.currentText() == "Web URL":
+            source = source.split("?")[0].rstrip("/")
+        baseName = os.path.basename(source)
+        name, _ = os.path.splitext(baseName)
+        if not name:
+            name = "Texture"
+        self.nameEdit.setText(name)
+
+    def getTextureData(self):
+        sourceType = self.sourceTypeCombo.currentText()
+        source = self.sourceEdit.text().strip()
+        name = self.nameEdit.text().strip()
+        bookkeepingSource = self.bookkeepingSourceEdit.text().strip()
+        if sourceType == "Web URL":
+            bookkeepingSource = source
+        data = {"SOURCE_TYPE": "LOCAL" if sourceType == "Local file" else "WEB", "SOURCE": source, "NAME": name, "BOOKKEEPING_SOURCE": bookkeepingSource}
+        if self.textureType == "SKYBOX":
+            data["COORDINATES"] = self.skyboxCoordinatesCombo.currentText()
+
+        return data
+
+    def accept(self):
+        data = self.getTextureData()
+        if not data["SOURCE"]:
+            QMessageBox.warning(self, "Missing source", "Choose a local file or enter a web URL.")
+            return
+        if not data["NAME"]:
+            QMessageBox.warning(self, "Missing name", "Enter a texture name.")
+            return
+        super().accept()
