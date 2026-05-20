@@ -781,13 +781,13 @@ class AddTextureDialog(QDialog):
         self.sourceBrowseButton = QPushButton("Browse...")
         self.nameEdit = QLineEdit()
         self.bookKeepingSourceEdit = QLineEdit()
-        self.bookKeepingSourceEdit.setPlaceholderText("Optional source URL")
+        self.bookKeepingSourceEdit.setPlaceholderText("Automatically filled for web textures")
         self.skyboxCoordinatesCombo = QComboBox()
         self.skyboxCoordinatesCombo.addItems(["GALACTIC", "CELESTIAL"])
         self.skyboxCoordinatesCombo.setVisible(textureType == "SKYBOX")
         self.sourceTypeCombo.currentTextChanged.connect(self._onSourceTypeChanged)
         self.sourceBrowseButton.clicked.connect(self._browseLocalFile)
-        self.sourceEdit.textChanged.connect(self._autoNameIfEmpty)
+        self.sourceEdit.textChanged.connect(self._onSourceChanged)
         sourceRow = QHBoxLayout()
         sourceRow.addWidget(self.sourceEdit, 1)
         sourceRow.addWidget(self.sourceBrowseButton)
@@ -814,16 +814,30 @@ class AddTextureDialog(QDialog):
         mainLayout.addLayout(buttonLayout)
         self._onSourceTypeChanged(self.sourceTypeCombo.currentText())
 
+    def _onSourceChanged(self, source):
+        source = source.strip()
+        if not source:
+            self.nameEdit.clear()
+            self.bookKeepingSourceEdit.clear()
+            return
+        self.nameEdit.setText(self._nameFromSource(source))
+        if self.sourceTypeCombo.currentText() == "Web URL":
+            self.bookKeepingSourceEdit.setText(source)
+        else:
+            self.bookKeepingSourceEdit.clear()
+
     def _onSourceTypeChanged(self, sourceType):
         isLocal = sourceType == "Local file"
         self.sourceBrowseButton.setVisible(isLocal)
+        self.sourceEdit.clear()
+        self.nameEdit.clear()
+        self.bookKeepingSourceEdit.clear()
         if isLocal:
             self.sourceEdit.setPlaceholderText("Local image path")
-            self.bookkeepingSourceEdit.setEnabled(True)
+            self.bookKeepingSourceEdit.setPlaceholderText("Add Optional Source")
         else:
             self.sourceEdit.setPlaceholderText("Image URL")
-            self.bookkeepingSourceEdit.setEnabled(False)
-            self.bookkeepingSourceEdit.clear()
+            self.bookKeepingSourceEdit.setPlaceholderText("Uses the web URL as source")
 
     def _browseLocalFile(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select texture image", "", "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
