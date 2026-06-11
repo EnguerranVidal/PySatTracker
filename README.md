@@ -64,9 +64,9 @@ python3 main.py
 |-------|-------------|--------|
 | 2D Map Shading | Adding night shadow shader copying the 3D View rendition | Done |
 | Object Grouping | Adding the ability to group visible objects | Done |
+| 3D View Optimization | Optimize 3D View rendition for GPU usage | Done |
 | Line Plots | Adding line plots able to graph wanted calculated values | Testing |
 | Polar Plots | Adding polar plots able to graph wanted calculated values | Testing |
-| 3D View Optimization | Optimize 3D View rendition for GPU usage | In Progress |
 | 2D Map Optimization | Optimize 2D Map rendition for GPU usage | Planned |
 | Orbit Coverage | Predict visible satellite ground coverage | Planned |
 | Pass Predictions | Predict visible satellite passes for observers | Planned |
