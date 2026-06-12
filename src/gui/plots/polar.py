@@ -9,7 +9,6 @@ from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
 from src.gui.utilities import upperBoundary
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class PolarPlot(QWidget):
@@ -18,8 +17,9 @@ class PolarPlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PolarGraph(self)
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -345,8 +345,8 @@ class PolarLineSettingsPage(QWidget):
         self.line = line
         self.polarPlot = polarPlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.polarPlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL LINE SETTINGS
         self.generalGroup = QGroupBox(f"General {self.line['NAME']} Settings")
         self.nameEdit = QLineEdit(self.line['NAME'])

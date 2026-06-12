@@ -2,8 +2,6 @@ import numpy as np
 from datetime import datetime, timedelta
 from sgp4.api import Satrec, jday
 
-from src.core.quantities import VariableRegistry
-
 
 class OrbitalMechanicsEngine:
     def __init__(self):
@@ -580,8 +578,3 @@ class OrbitalMechanicsEngine:
         exposure = self.solarExposure(fullJulianDates, positions)
         magnitude = np.where(exposure == 1, standardMagnitude + 5.0 * np.log10(obsObjectDistance / 1000.0) + phaseMagnitude, np.nan)
         return self._maybeScalar(magnitude, scalar)
-
-
-    @staticmethod
-    def getAvailableVariables():
-        return VariableRegistry().getAvailableVariables()

@@ -12,9 +12,10 @@ from src.gui.common import SquareIconButton, AreaCycler
 
 
 class PlotViewTabWidget(QMainWindow):
-    def __init__(self, parent=None, currentDir:str = None):
+    def __init__(self, parent=None, currentDir:str = None, variableRegistry=None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.variableRegistry = variableRegistry
         self.displayConfiguration = {}
         self.lastPositions = None
         self.dockAreaCycler = AreaCycler()

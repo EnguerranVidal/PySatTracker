@@ -6,7 +6,6 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class TimeSeriesPlot(QWidget):
@@ -15,8 +14,9 @@ class TimeSeriesPlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PlotWidget(axisItems={'bottom': pg.DateAxisItem(orientation='bottom')})
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -219,8 +219,8 @@ class TimeSeriesSettingsPage(QWidget):
         self.timeSeries = timeSeries
         self.timePlot = timePlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.timePlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL SERIES SETTINGS
         self.generalGroup = QGroupBox(f"General {self.timeSeries['NAME']} Settings")
         self.nameEdit = QLineEdit(self.timeSeries['NAME'])

@@ -5,7 +5,6 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class LinePlot(QWidget):
@@ -14,8 +13,9 @@ class LinePlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PlotWidget(self)
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -341,8 +341,8 @@ class LineSettingsPage(QWidget):
         self.line = line
         self.linePlot = linePlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.linePlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL LINE SETTINGS
         self.generalGroup = QGroupBox(f"General {self.line['NAME']} Settings")
         self.nameEdit = QLineEdit(self.line['NAME'])

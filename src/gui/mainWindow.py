@@ -836,7 +836,7 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
-        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir)
+        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir, variableRegistry=self.variableRegistry)
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)
@@ -975,7 +975,7 @@ class CentralViewWidget(QWidget):
                     self.addPolarPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
 
     def addLinePlot(self, configuration=None, title=None, area=None):
-        linePlot = LinePlot(self)
+        linePlot = LinePlot(self, variableRegistry=self.variableRegistry)
         linePlot.requestIndexProvider = self.generateRequestIndex
         linePlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         linePlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
@@ -987,7 +987,7 @@ class CentralViewWidget(QWidget):
         self.plotViewWidget.addNewPlot(widget=linePlot, title=title, area=area)
 
     def addTimeSeriesPlot(self, configuration=None, title=None, area=None):
-        timeSeriesPlot = TimeSeriesPlot(self)
+        timeSeriesPlot = TimeSeriesPlot(self, variableRegistry=self.variableRegistry)
         timeSeriesPlot.requestIndexProvider = self.generateRequestIndex
         timeSeriesPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         timeSeriesPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
@@ -999,7 +999,7 @@ class CentralViewWidget(QWidget):
         self.plotViewWidget.addNewPlot(widget=timeSeriesPlot, title=title, area=area)
 
     def addPolarPlot(self, configuration=None, title=None, area=None):
-        polarPlot = PolarPlot(self)
+        polarPlot = PolarPlot(self, variableRegistry=self.variableRegistry)
         polarPlot.requestIndexProvider = self.generateRequestIndex
         polarPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         polarPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
