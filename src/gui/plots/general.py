@@ -8,6 +8,7 @@ from PyQt5.QtGui import QIcon
 from src.gui.plots.line import LinePlot, LinePlotSettingsWidget
 from src.gui.plots.time import TimeSeriesPlot, TimeSeriesSettingsWidget
 from src.gui.plots.polar import PolarPlot, PolarPlotSettingsWidget
+from src.gui.plots.scatter import ScatterPlot, ScatterPlotSettingsWidget
 from src.gui.common import SquareIconButton, AreaCycler
 
 
@@ -117,6 +118,8 @@ class PlotViewTabWidget(QMainWindow):
                     plotType = "TIME_SERIES"
                 elif isinstance(dock.plotWidget, PolarPlot):
                     plotType = "POLAR"
+                elif isinstance(dock.plotWidget, ScatterPlot):
+                    plotType = "SCATTER"
                 else:
                     plotType = "NONE"
                 dockWidgets.append({"TITLE": dock.windowTitle(), "AREA": tab.dockWidgetArea(dock), "PLOT_TYPE": plotType, "CONFIGURATION": config})
@@ -180,7 +183,9 @@ class PlotSettingsDockWidget(QDockWidget):
 
     def addSettingsTab(self, title, dockWidget: PlotDockWidget):
         if dockWidget not in self.dockToSettings:
-            if isinstance(dockWidget.plotWidget, LinePlot):
+            if isinstance(dockWidget.plotWidget, ScatterPlot):
+                widget = ScatterPlotSettingsWidget(dockWidget.plotWidget, dockWidget=dockWidget, parent=self.tabWidget)
+            elif isinstance(dockWidget.plotWidget, LinePlot):
                 widget = LinePlotSettingsWidget(dockWidget.plotWidget, dockWidget=dockWidget, parent=self.tabWidget)
             elif isinstance(dockWidget.plotWidget, TimeSeriesPlot):
                 widget = TimeSeriesSettingsWidget(dockWidget.plotWidget, dockWidget=dockWidget, parent=self.tabWidget)
