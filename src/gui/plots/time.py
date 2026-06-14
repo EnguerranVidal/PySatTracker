@@ -362,6 +362,7 @@ class TimeSeriesSettingsPage(QWidget):
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.variableGroup)
         layout.addWidget(self.timeGroup)
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.timeSeries['NAME'] = text
@@ -469,6 +470,7 @@ class TimeSeriesSettingsPage(QWidget):
         self._fillUnitCombo(self.unitComboBox, self.timeSeries['VARIABLE'], self.timeSeries.get('UNIT'))
         self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateVariable(self, text):
         self.timeSeries['VARIABLE'] = self.variableComboBox.currentData()
@@ -476,10 +478,12 @@ class TimeSeriesSettingsPage(QWidget):
         self._fillUnitCombo(self.unitComboBox, self.timeSeries['VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
         self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateUnit(self, index):
         self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.timeSeries['RESOLUTION'] = value
@@ -524,3 +528,26 @@ class TimeSeriesSettingsPage(QWidget):
     def _endChanged(self, dt):
         self.timeSeries['TIME']['END'] = dt.toString(Qt.ISODate)
         self.timePlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _automaticLegendName(self):
+        objectName = self.objectComboBox.currentText() if self.objectComboBox.currentData() is not None else "NONE"
+        variableName = self.variableComboBox.currentData() if self.variableComboBox.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(self.unitComboBox.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel}) vs Time"
+        return f"{objectName} - {variableName} vs Time"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)

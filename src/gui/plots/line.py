@@ -43,8 +43,8 @@ class LinePlot(QWidget):
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
         self.plotItems.append(item)
-        self.dataRequestCreated.emit(xRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['X_OBJECT'], lineConfiguration['X_VARIABLE'], lineConfiguration['RESOLUTION']), lineConfiguration.get('X_UNIT'))
-        self.dataRequestCreated.emit(yRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['Y_OBJECT'], lineConfiguration['Y_VARIABLE'], lineConfiguration['RESOLUTION']), lineConfiguration.get('Y_UNIT'))
+        self.dataRequestCreated.emit(xRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['X_OBJECT'], lineConfiguration['X_VARIABLE'], lineConfiguration['RESOLUTION'], lineConfiguration.get('X_UNIT')))
+        self.dataRequestCreated.emit(yRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['Y_OBJECT'], lineConfiguration['Y_VARIABLE'], lineConfiguration['RESOLUTION'], lineConfiguration.get('Y_UNIT')))
 
     def setConfiguration(self, configuration):
         self.destroyDataRequest()
@@ -442,6 +442,7 @@ class LineSettingsPage(QWidget):
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.axesGroup)
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.line['NAME'] = text
@@ -576,6 +577,7 @@ class LineSettingsPage(QWidget):
         self.yUnitComboBox.blockSignals(False)
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateSwapButtonState(self):
         xObject, yObject = self.xObjectComboBox.currentData(), self.yObjectComboBox.currentData()
@@ -592,6 +594,7 @@ class LineSettingsPage(QWidget):
         self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateObjectY(self, text):
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
@@ -602,6 +605,7 @@ class LineSettingsPage(QWidget):
         self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateVariableX(self, text):
         self.line['X_VARIABLE'] = self.xVariableComboBox.currentData()
@@ -610,6 +614,7 @@ class LineSettingsPage(QWidget):
         self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateVariableY(self, text):
         self.line['Y_VARIABLE'] = self.yVariableComboBox.currentData()
@@ -618,15 +623,46 @@ class LineSettingsPage(QWidget):
         self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateUnitX(self, index):
         self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateUnitY(self, index):
         self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.line['RESOLUTION'] = value
         self.linePlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _axisLegendName(self, objectCombo: QComboBox, variableCombo: QComboBox, unitCombo: QComboBox):
+        objectName = objectCombo.currentText() if objectCombo.currentData() is not None else "NONE"
+        variableName = variableCombo.currentData() if variableCombo.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(unitCombo.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel})"
+        return f"{objectName} - {variableName}"
+
+    def _automaticLegendName(self):
+        yName = self._axisLegendName(self.yObjectComboBox, self.yVariableComboBox, self.yUnitComboBox)
+        xName = self._axisLegendName(self.xObjectComboBox, self.xVariableComboBox, self.xUnitComboBox)
+        return f"{yName} vs {xName}"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)

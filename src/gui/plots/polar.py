@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QRectF, QPointF
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
+from src.core.quantities import AngleQuantity
 from src.gui.utilities import upperBoundary
 
 
@@ -391,14 +392,14 @@ class PolarLineSettingsPage(QWidget):
         index = self.argumentObjectComboBox.findData(self.line['ARGUMENT_OBJECT'])
         self.argumentObjectComboBox.setCurrentIndex(index if index != -1 else 0)
         self.argumentVariableComboBox = QComboBox()
-        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox)
+        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox, AngleQuantity)
         index = self.argumentVariableComboBox.findData(self.line['ARGUMENT_VARIABLE'])
         self.argumentVariableComboBox.setCurrentIndex(index if index != -1 else 0)
         self.argumentUnitComboBox = QComboBox()
         self._fillUnitCombo(self.argumentUnitComboBox, self.argumentVariableComboBox.currentData(), self.line.get('ARGUMENT_UNIT'))
         self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
-        self.argumentVariableComboBox.currentTextChanged.connect(self._updateVariableX)
-        self.argumentObjectComboBox.currentTextChanged.connect(self._updateObjectX)
+        self.argumentVariableComboBox.currentTextChanged.connect(self._updateVariableArgument)
+        self.argumentObjectComboBox.currentTextChanged.connect(self._updateObjectArgument)
         self.argumentUnitComboBox.currentIndexChanged.connect(self._updateUnitArgument)
         argumentLayout = QFormLayout(self.argumentGroup)
         argumentLayout.addRow('Object:', self.argumentObjectComboBox)
@@ -416,8 +417,8 @@ class PolarLineSettingsPage(QWidget):
         self.moduleUnitComboBox = QComboBox()
         self._fillUnitCombo(self.moduleUnitComboBox, self.moduleVariableComboBox.currentData(), self.line.get('MODULE_UNIT'))
         self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
-        self.moduleVariableComboBox.currentTextChanged.connect(self._updateVariableY)
-        self.moduleObjectComboBox.currentTextChanged.connect(self._updateObjectY)
+        self.moduleVariableComboBox.currentTextChanged.connect(self._updateVariableModule)
+        self.moduleObjectComboBox.currentTextChanged.connect(self._updateObjectModule)
         self.moduleUnitComboBox.currentIndexChanged.connect(self._updateUnitModule)
         moduleLayout = QFormLayout(self.moduleGroup)
         moduleLayout.addRow('Object:', self.moduleObjectComboBox)
@@ -439,6 +440,7 @@ class PolarLineSettingsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.axesGroup)
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.line['NAME'] = text
@@ -499,15 +501,20 @@ class PolarLineSettingsPage(QWidget):
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
 
-    def _fillVariableCombo(self, combo: QComboBox, objectCombo: QComboBox = None):
+    def _fillVariableCombo(self, combo: QComboBox, objectCombo: QComboBox = None, quantityType=None):
         combo.blockSignals(True)
         currentVariable = combo.currentData()
         combo.clear()
         combo.addItem("NONE", None)
-        if objectCombo.currentData() is not None:
+        if objectCombo is not None and objectCombo.currentData() is not None:
             combo.insertSeparator(combo.count())
-            for variable in self.engineVariables:
-                combo.addItem(variable, variable)
+            for variableName in self.engineVariables:
+                variable = self.variableRegistry.getVariable(variableName) if self.variableRegistry is not None else None
+                if variable is None:
+                    continue
+                if quantityType is not None and variable.quantityType is not quantityType:
+                    continue
+                combo.addItem(variableName, variableName)
         index = combo.findData(currentVariable)
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
@@ -538,16 +545,17 @@ class PolarLineSettingsPage(QWidget):
         combo.setEnabled(True)
         combo.blockSignals(False)
 
-    def _updateObjectX(self, text):
-        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox)
+    def _updateObjectArgument(self, text):
+        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox, AngleQuantity)
         self.line['ARGUMENT_OBJECT'] = self.argumentObjectComboBox.currentData()
         self.line['ARGUMENT_VARIABLE'] = self.argumentVariableComboBox.currentData()
         self.argumentVariableComboBox.setEnabled(self.argumentObjectComboBox.currentData() is not None)
         self._fillUnitCombo(self.argumentUnitComboBox, self.line['ARGUMENT_VARIABLE'], self.line.get('ARGUMENT_UNIT'))
         self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
-    def _updateObjectY(self, text):
+    def _updateObjectModule(self, text):
         self._fillVariableCombo(self.moduleVariableComboBox, self.moduleObjectComboBox)
         self.line['MODULE_OBJECT'] = self.moduleObjectComboBox.currentData()
         self.line['MODULE_VARIABLE'] = self.moduleVariableComboBox.currentData()
@@ -555,32 +563,65 @@ class PolarLineSettingsPage(QWidget):
         self._fillUnitCombo(self.moduleUnitComboBox, self.line['MODULE_VARIABLE'], self.line.get('MODULE_UNIT'))
         self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
-    def _updateVariableX(self, text):
+    def _updateVariableArgument(self, text):
         self.line['ARGUMENT_VARIABLE'] = self.argumentVariableComboBox.currentData()
         defaultUnit = self.variableRegistry.getDefaultUnit(self.line['ARGUMENT_VARIABLE']) if self.variableRegistry is not None else None
         self._fillUnitCombo(self.argumentUnitComboBox, self.line['ARGUMENT_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
         self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
-    def _updateVariableY(self, text):
+    def _updateVariableModule(self, text):
         self.line['MODULE_VARIABLE'] = self.moduleVariableComboBox.currentData()
         defaultUnit = self.variableRegistry.getDefaultUnit(self.line['MODULE_VARIABLE']) if self.variableRegistry is not None else None
         self._fillUnitCombo(self.moduleUnitComboBox, self.line['MODULE_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
         self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateUnitArgument(self, index):
         self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateUnitModule(self, index):
         self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.line['RESOLUTION'] = value
         self.polarPlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _axisLegendName(self, objectCombo: QComboBox, variableCombo: QComboBox, unitCombo: QComboBox):
+        objectName = objectCombo.currentText() if objectCombo.currentData() is not None else "NONE"
+        variableName = variableCombo.currentData() if variableCombo.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(unitCombo.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel})"
+        return f"{objectName} - {variableName}"
+
+    def _automaticLegendName(self):
+        moduleName = self._axisLegendName(self.moduleObjectComboBox, self.moduleVariableComboBox, self.moduleUnitComboBox)
+        argumentName = self._axisLegendName(self.argumentObjectComboBox, self.argumentVariableComboBox, self.argumentUnitComboBox)
+        return f"{moduleName} vs {argumentName}"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)
 
 
 class PolarGraph(PlotWidget):
