@@ -508,6 +508,7 @@ class TextureEditorDialog(QDialog):
     def __init__(self, textureConfig, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Texture Editor")
+        self.currentTextureType = None
         self.textureConfig, self.previousConfig = copy.deepcopy(textureConfig), copy.deepcopy(textureConfig)
 
         # TEXTURE CONFIGURATION EDITOR WIDGET
@@ -515,7 +516,7 @@ class TextureEditorDialog(QDialog):
         self.textureTypeList.setMaximumWidth(200)
         self.textureOptionList = QListWidget()
         self.textureOptionList.setMaximumWidth(200)
-        self.previewTextureLabel = QLabel("No texture selected")
+        self.previewTextureLabel = QLabel("No Texture Selected")
         self.previewTextureLabel.setAlignment(Qt.AlignCenter)
         self.previewTextureLabel.setMinimumSize(520, 440)
         self.previewTextureLabel.setStyleSheet("QLabel { background: #111; color: #aaa; border: 1px solid #333; }")
@@ -537,7 +538,7 @@ class TextureEditorDialog(QDialog):
         self.addTextureButton.clicked.connect(self._addTexture)
         self.removeTextureButton.clicked.connect(self._removeSelectedTexture)
         textureTypeLayout = QVBoxLayout()
-        textureTypeLayout.addWidget(QLabel("Texture type"))
+        textureTypeLayout.addWidget(QLabel("Texture Type"))
         textureTypeLayout.addWidget(self.textureTypeList)
         optionButtonLayout = QHBoxLayout()
         optionButtonLayout.addWidget(self.useTextureButton)
@@ -547,16 +548,17 @@ class TextureEditorDialog(QDialog):
         textureOptionLayout.addWidget(self.textureOptionList)
         textureOptionLayout.addLayout(optionButtonLayout)
         textureOptionLayout.addWidget(self.addTextureButton)
-        detailLayout = QFormLayout()
-        detailLayout.addRow("Selected", self.selectedLabel)
-        detailLayout.addRow("Path", self.pathLabel)
-        detailLayout.addRow("Source type", self.sourceTypeLabel)
-        detailLayout.addRow("Source", self.sourceLabel)
-        detailLayout.addRow("Skybox frame", self.skyboxCoordinatesCombo)
+        self.detailLayout = QFormLayout()
+        self.detailLayout.addRow("Selected:", self.selectedLabel)
+        self.detailLayout.addRow("Path:", self.pathLabel)
+        self.skyboxFrameLabel = QLabel("Skybox frame:")
+        self.detailLayout.addRow(self.skyboxFrameLabel, self.skyboxCoordinatesCombo)
+        self.skyboxFrameLabel.hide()
+        self.skyboxCoordinatesCombo.hide()
         previewLayout = QVBoxLayout()
         previewLayout.addWidget(QLabel("Preview"))
         previewLayout.addWidget(self.previewTextureLabel)
-        previewLayout.addLayout(detailLayout)
+        previewLayout.addLayout(self.detailLayout)
         previewLayout.addStretch()
         editorLayout = QHBoxLayout()
         editorLayout.addLayout(textureTypeLayout, 1)
@@ -591,7 +593,6 @@ class TextureEditorDialog(QDialog):
             self.textureTypeList.addItem(item)
         if self.textureTypeList.count() > 0:
             self.textureTypeList.setCurrentRow(0)
-            self._populateTextureOptions()
 
     def _populateTextureOptions(self):
         self.textureOptionList.clear()
@@ -619,7 +620,9 @@ class TextureEditorDialog(QDialog):
             self._clearDetails()
             return
         self.currentTextureType = current.data(Qt.UserRole)
-        self.skyboxCoordinatesCombo.setVisible(self.currentTextureType == 'SKYBOX')
+        isSkybox = self.currentTextureType == "SKYBOX"
+        self.skyboxFrameLabel.setVisible(isSkybox)
+        self.skyboxCoordinatesCombo.setVisible(isSkybox)
         self._populateTextureOptions()
 
     def _onTextureOptionChanged(self, current, previous):
@@ -637,8 +640,6 @@ class TextureEditorDialog(QDialog):
         selectedName = self.textureConfig[self.currentTextureType].get('SELECTED', 'Default')
         self.selectedLabel.setText("Yes" if textureName == selectedName else "No")
         self.pathLabel.setText(option.get('PATH', ''))
-        self.sourceTypeLabel.setText(option.get('SOURCE_TYPE', ''))
-        self.sourceLabel.setText(option.get('SOURCE', ''))
         if self.currentTextureType == 'SKYBOX':
             self.skyboxCoordinatesCombo.blockSignals(True)
             self.skyboxCoordinatesCombo.setCurrentText(option.get('COORDINATES', 'GALACTIC'))
@@ -648,10 +649,11 @@ class TextureEditorDialog(QDialog):
     def _clearDetails(self):
         self.selectedLabel.setText("---")
         self.pathLabel.setText("---")
-        self.sourceTypeLabel.setText("---")
-        self.sourceLabel.setText("---")
         self.previewTextureLabel.setPixmap(QPixmap())
         self.previewTextureLabel.setText("No texture selected")
+        self.skyboxCoordinatesCombo.blockSignals(True)
+        self.skyboxCoordinatesCombo.setCurrentText("GALACTIC")
+        self.skyboxCoordinatesCombo.blockSignals(False)
 
     def _updatePreview(self, path):
         pixmap = QPixmap(path)
@@ -687,7 +689,7 @@ class TextureEditorDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "Texture import failed", str(exc))
             return
-        option = {'PATH': destinationPath, 'SOURCE': data["BOOKKEEPING_SOURCE"], 'SOURCE_TYPE': data["SOURCE_TYPE"]}
+        option = {'PATH': destinationPath, 'IS_DEFAULT': False}
         if self.currentTextureType == 'SKYBOX':
             option['COORDINATES'] = data.get("COORDINATES", "GALACTIC")
         self.textureConfig[self.currentTextureType]['OPTIONS'][textureName] = option
@@ -735,7 +737,7 @@ class TextureEditorDialog(QDialog):
         option = options.get(textureName)
         if option is None:
             return
-        if option.get('SOURCE_TYPE') == 'DEFAULT':
+        if option.get('IS_DEFAULT', True):
             QMessageBox.information(self, "Default texture", "Default textures cannot be removed.")
             return
         del options[textureName]
@@ -767,6 +769,14 @@ class TextureEditorDialog(QDialog):
     def getTextureConfig(self):
         return copy.deepcopy(self.textureConfig)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        current = self._currentTextureName()
+        if current and self.currentTextureType:
+            option = self.textureConfig[self.currentTextureType]["OPTIONS"].get(current)
+            if option:
+                self._updatePreview(option["PATH"])
+
 
 class AddTextureDialog(QDialog):
     def __init__(self, textureType, parent=None):
@@ -780,8 +790,6 @@ class AddTextureDialog(QDialog):
         self.sourceEdit = QLineEdit()
         self.sourceBrowseButton = QPushButton("Browse...")
         self.nameEdit = QLineEdit()
-        self.bookKeepingSourceEdit = QLineEdit()
-        self.bookKeepingSourceEdit.setPlaceholderText("Automatically filled for web textures")
         self.skyboxCoordinatesCombo = QComboBox()
         self.skyboxCoordinatesCombo.addItems(["GALACTIC", "CELESTIAL"])
         self.skyboxCoordinatesCombo.setVisible(textureType == "SKYBOX")
@@ -795,7 +803,6 @@ class AddTextureDialog(QDialog):
         formLayout.addRow("Source type", self.sourceTypeCombo)
         formLayout.addRow("Source", sourceRow)
         formLayout.addRow("Name", self.nameEdit)
-        formLayout.addRow("Bookkeeping source", self.bookKeepingSourceEdit)
         if textureType == "SKYBOX":
             formLayout.addRow("Skybox frame", self.skyboxCoordinatesCombo)
 
@@ -818,26 +825,19 @@ class AddTextureDialog(QDialog):
         source = source.strip()
         if not source:
             self.nameEdit.clear()
-            self.bookKeepingSourceEdit.clear()
             return
-        self.nameEdit.setText(self._nameFromSource(source))
-        if self.sourceTypeCombo.currentText() == "Web URL":
-            self.bookKeepingSourceEdit.setText(source)
-        else:
-            self.bookKeepingSourceEdit.clear()
+        if not self.nameEdit.text().strip():
+            self._autoName()
 
     def _onSourceTypeChanged(self, sourceType):
         isLocal = sourceType == "Local file"
         self.sourceBrowseButton.setVisible(isLocal)
         self.sourceEdit.clear()
         self.nameEdit.clear()
-        self.bookKeepingSourceEdit.clear()
         if isLocal:
             self.sourceEdit.setPlaceholderText("Local image path")
-            self.bookKeepingSourceEdit.setPlaceholderText("Add Optional Source")
         else:
             self.sourceEdit.setPlaceholderText("Image URL")
-            self.bookKeepingSourceEdit.setPlaceholderText("Uses the web URL as source")
 
     def _browseLocalFile(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select texture image", "", "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
@@ -867,13 +867,9 @@ class AddTextureDialog(QDialog):
         sourceType = self.sourceTypeCombo.currentText()
         source = self.sourceEdit.text().strip()
         name = self.nameEdit.text().strip()
-        bookkeepingSource = self.bookkeepingSourceEdit.text().strip()
-        if sourceType == "Web URL":
-            bookkeepingSource = source
-        data = {"SOURCE_TYPE": "LOCAL" if sourceType == "Local file" else "WEB", "SOURCE": source, "NAME": name, "BOOKKEEPING_SOURCE": bookkeepingSource}
+        data = {"SOURCE_TYPE": "LOCAL" if sourceType == "Local file" else "WEB", "SOURCE": source, "NAME": name}
         if self.textureType == "SKYBOX":
             data["COORDINATES"] = self.skyboxCoordinatesCombo.currentText()
-
         return data
 
     def accept(self):
