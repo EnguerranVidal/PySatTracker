@@ -5,7 +5,6 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class LinePlot(QWidget):
@@ -14,8 +13,9 @@ class LinePlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PlotWidget(self)
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -33,15 +33,18 @@ class LinePlot(QWidget):
         colorName = QColor(color).name()
         xRequestIndex, yRequestIndex = self.requestIndexProvider(), self.requestIndexProvider()
         if lineConfiguration is None:
-            lineConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': None, 'X_VARIABLE': None, 'Y_OBJECT': None, 'Y_VARIABLE': None, 'RESOLUTION': 361, 'X_REQUEST_ID': xRequestIndex, 'Y_REQUEST_ID': yRequestIndex}
+            lineConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'X_OBJECT': None, 'X_VARIABLE': None, 'X_UNIT': None, 'Y_OBJECT': None, 'Y_VARIABLE': None, 'Y_UNIT': None, 'RESOLUTION': 361, 'X_REQUEST_ID': xRequestIndex, 'Y_REQUEST_ID': yRequestIndex}
             self.configuration['LINES'].append(lineConfiguration)
+        else:
+            lineConfiguration.setdefault('X_UNIT', self._defaultUnitKey(lineConfiguration.get('X_VARIABLE')))
+            lineConfiguration.setdefault('Y_UNIT', self._defaultUnitKey(lineConfiguration.get('Y_VARIABLE')))
         lineConfiguration['X_REQUEST_ID'] = xRequestIndex
         lineConfiguration['Y_REQUEST_ID'] = yRequestIndex
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
         self.plotItems.append(item)
-        self.dataRequestCreated.emit(xRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['X_OBJECT'], lineConfiguration['X_VARIABLE'], lineConfiguration['RESOLUTION']))
-        self.dataRequestCreated.emit(yRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['Y_OBJECT'], lineConfiguration['Y_VARIABLE'], lineConfiguration['RESOLUTION']))
+        self.dataRequestCreated.emit(xRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['X_OBJECT'], lineConfiguration['X_VARIABLE'], lineConfiguration['RESOLUTION'], lineConfiguration.get('X_UNIT')))
+        self.dataRequestCreated.emit(yRequestIndex, self._buildDataRequest(self.configuration['TIME'].copy(), lineConfiguration['Y_OBJECT'], lineConfiguration['Y_VARIABLE'], lineConfiguration['RESOLUTION'], lineConfiguration.get('Y_UNIT')))
 
     def setConfiguration(self, configuration):
         self.destroyDataRequest()
@@ -100,21 +103,21 @@ class LinePlot(QWidget):
                     plotItem.setData([], [])
 
     @staticmethod
-    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution):
-        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution}
+    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution, unit=None):
+        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution, 'UNIT': unit}
 
     def createDataRequest(self):
         for line in self.configuration['LINES']:
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('X_OBJECT'), line.get('X_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('X_OBJECT'), line.get('X_VARIABLE'), line.get('RESOLUTION'), line.get('X_UNIT'))
             self.dataRequestCreated.emit(line.get('X_REQUEST_ID'), request)
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('Y_OBJECT'), line.get('Y_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('Y_OBJECT'), line.get('Y_VARIABLE'), line.get('RESOLUTION'), line.get('Y_UNIT'))
             self.dataRequestCreated.emit(line.get('Y_REQUEST_ID'), request)
 
     def updateDataRequest(self):
         for line in self.configuration['LINES']:
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('X_OBJECT'), line.get('X_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('X_OBJECT'), line.get('X_VARIABLE'), line.get('RESOLUTION'), line.get('X_UNIT'))
             self.dataRequestUpdated.emit(line.get('X_REQUEST_ID'), request)
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('Y_OBJECT'), line.get('Y_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('Y_OBJECT'), line.get('Y_VARIABLE'), line.get('RESOLUTION'), line.get('Y_UNIT'))
             self.dataRequestUpdated.emit(line.get('Y_REQUEST_ID'), request)
 
     def destroyDataRequest(self):
@@ -123,6 +126,14 @@ class LinePlot(QWidget):
                 self.dataRequestDestroyed.emit(line.get('X_REQUEST_ID'))
             if line.get('Y_REQUEST_ID'):
                 self.dataRequestDestroyed.emit(line.get('Y_REQUEST_ID'))
+
+    def _defaultUnitKey(self, variableName):
+        if self.variableRegistry is None or variableName is None:
+            return None
+        variable = self.variableRegistry.getVariable(variableName)
+        if variable is None:
+            return None
+        return variable.defaultUnit.key
 
     def closeEvent(self, event):
         self.destroyDataRequest()
@@ -341,8 +352,8 @@ class LineSettingsPage(QWidget):
         self.line = line
         self.linePlot = linePlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.linePlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL LINE SETTINGS
         self.generalGroup = QGroupBox(f"General {self.line['NAME']} Settings")
         self.nameEdit = QLineEdit(self.line['NAME'])
@@ -382,11 +393,16 @@ class LineSettingsPage(QWidget):
         self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         index = self.xVariableComboBox.findData(self.line['X_VARIABLE'])
         self.xVariableComboBox.setCurrentIndex(index if index != -1 else 0)
+        self.xUnitComboBox = QComboBox()
+        self._fillUnitCombo(self.xUnitComboBox, self.xVariableComboBox.currentData(), self.line.get('X_UNIT'))
+        self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.xVariableComboBox.currentTextChanged.connect(self._updateVariableX)
         self.xObjectComboBox.currentTextChanged.connect(self._updateObjectX)
+        self.xUnitComboBox.currentIndexChanged.connect(self._updateUnitX)
         xLayout = QFormLayout(self.xGroup)
         xLayout.addRow('Object:', self.xObjectComboBox)
         xLayout.addRow('Variable:', self.xVariableComboBox)
+        xLayout.addRow('Unit:', self.xUnitComboBox)
         self.yGroup = QGroupBox('Y Axis')
         self.yObjectComboBox = QComboBox()
         self.fillObjectCombo(self.yObjectComboBox)
@@ -396,11 +412,16 @@ class LineSettingsPage(QWidget):
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         index = self.yVariableComboBox.findData(self.line['Y_VARIABLE'])
         self.yVariableComboBox.setCurrentIndex(index if index != -1 else 0)
+        self.yUnitComboBox = QComboBox()
+        self._fillUnitCombo(self.yUnitComboBox, self.yVariableComboBox.currentData(), self.line.get('Y_UNIT'))
+        self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.yVariableComboBox.currentTextChanged.connect(self._updateVariableY)
         self.yObjectComboBox.currentTextChanged.connect(self._updateObjectY)
+        self.yUnitComboBox.currentIndexChanged.connect(self._updateUnitY)
         yLayout = QFormLayout(self.yGroup)
         yLayout.addRow('Object:', self.yObjectComboBox)
         yLayout.addRow('Variable:', self.yVariableComboBox)
+        yLayout.addRow('Unit:', self.yUnitComboBox)
         self.swapButton = QPushButton('Swap Axes')
         self.swapButton.clicked.connect(self._swapAxes)
         self.axesGroup = QGroupBox('Axes Settings')
@@ -421,6 +442,7 @@ class LineSettingsPage(QWidget):
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.axesGroup)
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.line['NAME'] = text
@@ -494,28 +516,68 @@ class LineSettingsPage(QWidget):
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
 
+    def _fillUnitCombo(self, combo: QComboBox, variableName, selectedUnitKey=None):
+        combo.blockSignals(True)
+        combo.clear()
+        if self.variableRegistry is None or variableName is None:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        allowedUnits = self.variableRegistry.getAllowedUnits(variableName)
+        defaultUnit = self.variableRegistry.getDefaultUnit(variableName)
+        if not allowedUnits:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        for unit in allowedUnits:
+            label = unit.label if unit.label else "unitless"
+            combo.addItem(label, unit.key)
+        targetUnitKey = selectedUnitKey
+        if targetUnitKey is None and defaultUnit is not None:
+            targetUnitKey = defaultUnit.key
+        index = combo.findData(targetUnitKey)
+        combo.setCurrentIndex(index if index != -1 else 0)
+        combo.setEnabled(True)
+        combo.blockSignals(False)
+
     def _swapAxes(self):
         self.xObjectComboBox.blockSignals(True)
         self.yObjectComboBox.blockSignals(True)
         self.xVariableComboBox.blockSignals(True)
         self.yVariableComboBox.blockSignals(True)
-        xObject, yObject = self.xObjectComboBox.currentData(), self.yObjectComboBox.currentData()
-        xVariable, yVariable = self.xVariableComboBox.currentData(), self.yVariableComboBox.currentData()
+        self.xUnitComboBox.blockSignals(True)
+        self.yUnitComboBox.blockSignals(True)
+        xObject = self.xObjectComboBox.currentData()
+        yObject = self.yObjectComboBox.currentData()
+        xVariable = self.xVariableComboBox.currentData()
+        yVariable = self.yVariableComboBox.currentData()
+        xUnit = self.xUnitComboBox.currentData()
+        yUnit = self.yUnitComboBox.currentData()
         self.xObjectComboBox.setCurrentIndex(self.xObjectComboBox.findData(yObject))
         self.yObjectComboBox.setCurrentIndex(self.yObjectComboBox.findData(xObject))
         self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         self.xVariableComboBox.setCurrentIndex(self.xVariableComboBox.findData(yVariable))
         self.yVariableComboBox.setCurrentIndex(self.yVariableComboBox.findData(xVariable))
+        self._fillUnitCombo(self.xUnitComboBox, yVariable, yUnit)
+        self._fillUnitCombo(self.yUnitComboBox, xVariable, xUnit)
+        self.line['X_OBJECT'] = self.xObjectComboBox.currentData()
+        self.line['Y_OBJECT'] = self.yObjectComboBox.currentData()
+        self.line['X_VARIABLE'] = self.xVariableComboBox.currentData()
+        self.line['Y_VARIABLE'] = self.yVariableComboBox.currentData()
+        self.line['X_UNIT'] = self.xUnitComboBox.currentData()
+        self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.xObjectComboBox.blockSignals(False)
         self.yObjectComboBox.blockSignals(False)
         self.xVariableComboBox.blockSignals(False)
         self.yVariableComboBox.blockSignals(False)
-        self._updateObjectX(None)
-        self._updateObjectY(None)
-        self._updateVariableX(None)
-        self._updateVariableY(None)
+        self.xUnitComboBox.blockSignals(False)
+        self.yUnitComboBox.blockSignals(False)
+        self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateSwapButtonState(self):
         xObject, yObject = self.xObjectComboBox.currentData(), self.yObjectComboBox.currentData()
@@ -526,27 +588,81 @@ class LineSettingsPage(QWidget):
     def _updateObjectX(self, text):
         self._fillVariableCombo(self.xVariableComboBox, self.xObjectComboBox)
         self.line['X_OBJECT'] = self.xObjectComboBox.currentData()
+        self.line['X_VARIABLE'] = self.xVariableComboBox.currentData()
         self.xVariableComboBox.setEnabled(self.xObjectComboBox.currentData() is not None)
+        self._fillUnitCombo(self.xUnitComboBox, self.line['X_VARIABLE'], self.line.get('X_UNIT'))
+        self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateObjectY(self, text):
         self._fillVariableCombo(self.yVariableComboBox, self.yObjectComboBox)
         self.line['Y_OBJECT'] = self.yObjectComboBox.currentData()
+        self.line['Y_VARIABLE'] = self.yVariableComboBox.currentData()
         self.yVariableComboBox.setEnabled(self.yObjectComboBox.currentData() is not None)
+        self._fillUnitCombo(self.yUnitComboBox, self.line['Y_VARIABLE'], self.line.get('Y_UNIT'))
+        self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateVariableX(self, text):
         self.line['X_VARIABLE'] = self.xVariableComboBox.currentData()
+        defaultUnit = self.variableRegistry.getDefaultUnit(self.line['X_VARIABLE']) if self.variableRegistry is not None else None
+        self._fillUnitCombo(self.xUnitComboBox, self.line['X_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
+        self.line['X_UNIT'] = self.xUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
 
     def _updateVariableY(self, text):
         self.line['Y_VARIABLE'] = self.yVariableComboBox.currentData()
+        defaultUnit = self.variableRegistry.getDefaultUnit(self.line['Y_VARIABLE']) if self.variableRegistry is not None else None
+        self._fillUnitCombo(self.yUnitComboBox, self.line['Y_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
+        self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
         self.linePlot.updateDataRequest()
         self._updateSwapButtonState()
+        self._applyAutomaticLegendName()
+
+    def _updateUnitX(self, index):
+        self.line['X_UNIT'] = self.xUnitComboBox.currentData()
+        self.linePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateUnitY(self, index):
+        self.line['Y_UNIT'] = self.yUnitComboBox.currentData()
+        self.linePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.line['RESOLUTION'] = value
         self.linePlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _axisLegendName(self, objectCombo: QComboBox, variableCombo: QComboBox, unitCombo: QComboBox):
+        objectName = objectCombo.currentText() if objectCombo.currentData() is not None else "NONE"
+        variableName = variableCombo.currentData() if variableCombo.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(unitCombo.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel})"
+        return f"{objectName} - {variableName}"
+
+    def _automaticLegendName(self):
+        yName = self._axisLegendName(self.yObjectComboBox, self.yVariableComboBox, self.yUnitComboBox)
+        xName = self._axisLegendName(self.xObjectComboBox, self.xVariableComboBox, self.xUnitComboBox)
+        return f"{yName} vs {xName}"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)

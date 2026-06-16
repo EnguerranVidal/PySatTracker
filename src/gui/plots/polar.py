@@ -8,8 +8,8 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime, QRectF, QPointF
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
+from src.core.quantities import AngleQuantity
 from src.gui.utilities import upperBoundary
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class PolarPlot(QWidget):
@@ -18,8 +18,9 @@ class PolarPlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PolarGraph(self)
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -74,52 +75,52 @@ class PolarPlot(QWidget):
     def _updatePlotItems(self, newPlotData: dict):
         updatedRequestIndices = set(newPlotData.keys())
         for i, line in enumerate(self.configuration['LINES']):
-            argumentIndex, moduleIndex = line.get('ARGUMENT_REQUEST_ID'), line.get('MODULE_REQUEST_ID')
-            argumentUpdated, moduleUpdated = argumentIndex in updatedRequestIndices, moduleIndex in updatedRequestIndices
-            argumentDefined, moduleDefined = line.get('ARGUMENT_VARIABLE') is not None, line.get('MODULE_VARIABLE') is not None
+            argumentIndex = line.get('ARGUMENT_REQUEST_ID')
+            moduleIndex = line.get('MODULE_REQUEST_ID')
+            argumentUpdated = argumentIndex in updatedRequestIndices
+            moduleUpdated = moduleIndex in updatedRequestIndices
+            argumentDefined = line.get('ARGUMENT_VARIABLE') is not None
+            moduleDefined = line.get('MODULE_VARIABLE') is not None
             plotItem = self.plotItems[i]
             if argumentUpdated and moduleUpdated:
-                argumentPlotData, modulePlotData = newPlotData.get(argumentIndex), newPlotData.get(moduleIndex)
+                argumentPlotData = newPlotData.get(argumentIndex)
+                modulePlotData = newPlotData.get(moduleIndex)
                 if argumentPlotData is None or modulePlotData is None:
                     self.plot.updatePolar(plotItem, [], [])
                     continue
-                argumentValues, moduleValues = argumentPlotData.get("VALUES", []), modulePlotData.get("VALUES", [])
+                argumentValues = argumentPlotData.get("VALUES", [])
+                moduleValues = modulePlotData.get("VALUES", [])
                 nbDataPoints = min(len(argumentValues), len(moduleValues))
                 if nbDataPoints == 0:
                     self.plot.updatePolar(plotItem, [], [])
                     continue
-                argumentValues = np.degrees(argumentValues)
-                argumentCleanDataValues, moduleCleanDataValues = [], []
-                for argument, module in zip(argumentValues[:nbDataPoints], moduleValues[:nbDataPoints]):
-                    if argument is None or module is None:
-                        continue
-                    argumentCleanDataValues.append(argument)
-                    moduleCleanDataValues.append(module)
-                self.plot.updatePolar(plotItem, moduleCleanDataValues, argumentCleanDataValues)
+                argumentValues = np.asarray(argumentValues[:nbDataPoints], dtype=float)
+                moduleValues = np.asarray(moduleValues[:nbDataPoints], dtype=float)
+                validMask = np.isfinite(argumentValues) & np.isfinite(moduleValues)
+                self.plot.updatePolar(plotItem, moduleValues[validMask], argumentValues[validMask],)
             elif argumentUpdated or moduleUpdated:
                 self.plot.updatePolar(plotItem, [], [])
             else:
                 if argumentDefined and moduleDefined:
                     continue
-                else:
-                    self.plot.updatePolar(plotItem, [], [])
+                self.plot.updatePolar(plotItem, [], [])
 
     @staticmethod
-    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution):
-        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution}
+    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution, unit=None):
+        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution, 'UNIT': unit}
 
     def createDataRequest(self):
         for line in self.configuration['LINES']:
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('ARGUMENT_OBJECT'), line.get('ARGUMENT_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('ARGUMENT_OBJECT'), line.get('ARGUMENT_VARIABLE'), line.get('RESOLUTION'), line.get('ARGUMENT_UNIT'))
             self.dataRequestCreated.emit(line.get('ARGUMENT_REQUEST_ID'), request)
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('MODULE_OBJECT'), line.get('MODULE_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('MODULE_OBJECT'), line.get('MODULE_VARIABLE'), line.get('RESOLUTION'), line.get('MODULE_UNIT'))
             self.dataRequestCreated.emit(line.get('MODULE_REQUEST_ID'), request)
 
     def updateDataRequest(self):
         for line in self.configuration['LINES']:
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('ARGUMENT_OBJECT'), line.get('ARGUMENT_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('ARGUMENT_OBJECT'), line.get('ARGUMENT_VARIABLE'), line.get('RESOLUTION'), line.get('ARGUMENT_UNIT'))
             self.dataRequestUpdated.emit(line.get('ARGUMENT_REQUEST_ID'), request)
-            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('MODULE_OBJECT'), line.get('MODULE_VARIABLE'), line.get('RESOLUTION'))
+            request = self._buildDataRequest(self.configuration['TIME'].copy(), line.get('MODULE_OBJECT'), line.get('MODULE_VARIABLE'), line.get('RESOLUTION'), line.get('MODULE_UNIT'))
             self.dataRequestUpdated.emit(line.get('MODULE_REQUEST_ID'), request)
 
     def destroyDataRequest(self):
@@ -128,6 +129,14 @@ class PolarPlot(QWidget):
                 self.dataRequestDestroyed.emit(line.get('ARGUMENT_REQUEST_ID'))
             if line.get('MODULE_REQUEST_ID'):
                 self.dataRequestDestroyed.emit(line.get('MODULE_REQUEST_ID'))
+
+    def _defaultUnitKey(self, variableName):
+        if self.variableRegistry is None or variableName is None:
+            return None
+        variable = self.variableRegistry.getVariable(variableName)
+        if variable is None:
+            return None
+        return variable.defaultUnit.key
 
     def closeEvent(self, event):
         self.destroyDataRequest()
@@ -345,8 +354,8 @@ class PolarLineSettingsPage(QWidget):
         self.line = line
         self.polarPlot = polarPlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.polarPlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL LINE SETTINGS
         self.generalGroup = QGroupBox(f"General {self.line['NAME']} Settings")
         self.nameEdit = QLineEdit(self.line['NAME'])
@@ -383,14 +392,19 @@ class PolarLineSettingsPage(QWidget):
         index = self.argumentObjectComboBox.findData(self.line['ARGUMENT_OBJECT'])
         self.argumentObjectComboBox.setCurrentIndex(index if index != -1 else 0)
         self.argumentVariableComboBox = QComboBox()
-        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox)
+        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox, AngleQuantity)
         index = self.argumentVariableComboBox.findData(self.line['ARGUMENT_VARIABLE'])
         self.argumentVariableComboBox.setCurrentIndex(index if index != -1 else 0)
-        self.argumentVariableComboBox.currentTextChanged.connect(self._updateVariableX)
-        self.argumentObjectComboBox.currentTextChanged.connect(self._updateObjectX)
+        self.argumentUnitComboBox = QComboBox()
+        self._fillUnitCombo(self.argumentUnitComboBox, self.argumentVariableComboBox.currentData(), self.line.get('ARGUMENT_UNIT'))
+        self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
+        self.argumentVariableComboBox.currentTextChanged.connect(self._updateVariableArgument)
+        self.argumentObjectComboBox.currentTextChanged.connect(self._updateObjectArgument)
+        self.argumentUnitComboBox.currentIndexChanged.connect(self._updateUnitArgument)
         argumentLayout = QFormLayout(self.argumentGroup)
         argumentLayout.addRow('Object:', self.argumentObjectComboBox)
         argumentLayout.addRow('Variable:', self.argumentVariableComboBox)
+        argumentLayout.addRow('Unit:', self.argumentUnitComboBox)
         self.moduleGroup = QGroupBox('Module')
         self.moduleObjectComboBox = QComboBox()
         self.fillObjectCombo(self.moduleObjectComboBox)
@@ -400,11 +414,16 @@ class PolarLineSettingsPage(QWidget):
         self._fillVariableCombo(self.moduleVariableComboBox, self.moduleObjectComboBox)
         index = self.moduleVariableComboBox.findData(self.line['MODULE_VARIABLE'])
         self.moduleVariableComboBox.setCurrentIndex(index if index != -1 else 0)
-        self.moduleVariableComboBox.currentTextChanged.connect(self._updateVariableY)
-        self.moduleObjectComboBox.currentTextChanged.connect(self._updateObjectY)
+        self.moduleUnitComboBox = QComboBox()
+        self._fillUnitCombo(self.moduleUnitComboBox, self.moduleVariableComboBox.currentData(), self.line.get('MODULE_UNIT'))
+        self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
+        self.moduleVariableComboBox.currentTextChanged.connect(self._updateVariableModule)
+        self.moduleObjectComboBox.currentTextChanged.connect(self._updateObjectModule)
+        self.moduleUnitComboBox.currentIndexChanged.connect(self._updateUnitModule)
         moduleLayout = QFormLayout(self.moduleGroup)
         moduleLayout.addRow('Object:', self.moduleObjectComboBox)
         moduleLayout.addRow('Variable:', self.moduleVariableComboBox)
+        moduleLayout.addRow('Unit:', self.moduleUnitComboBox)
         self.axesGroup = QGroupBox('Axes Settings')
         self.resolutionSpinBox = QSpinBox()
         self.resolutionSpinBox.setRange(2, 10000)
@@ -421,6 +440,7 @@ class PolarLineSettingsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.axesGroup)
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.line['NAME'] = text
@@ -481,42 +501,127 @@ class PolarLineSettingsPage(QWidget):
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
 
-    def _fillVariableCombo(self, combo: QComboBox, objectCombo: QComboBox = None):
+    def _fillVariableCombo(self, combo: QComboBox, objectCombo: QComboBox = None, quantityType=None):
         combo.blockSignals(True)
         currentVariable = combo.currentData()
         combo.clear()
         combo.addItem("NONE", None)
-        if objectCombo.currentData() is not None:
+        if objectCombo is not None and objectCombo.currentData() is not None:
             combo.insertSeparator(combo.count())
-            for variable in self.engineVariables:
-                combo.addItem(variable, variable)
+            for variableName in self.engineVariables:
+                variable = self.variableRegistry.getVariable(variableName) if self.variableRegistry is not None else None
+                if variable is None:
+                    continue
+                if quantityType is not None and variable.quantityType is not quantityType:
+                    continue
+                combo.addItem(variableName, variableName)
         index = combo.findData(currentVariable)
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
 
-    def _updateObjectX(self, text):
-        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox)
-        self.line['ARGUMENT_OBJECT'] = self.argumentObjectComboBox.currentData()
-        self.argumentVariableComboBox.setEnabled(self.argumentObjectComboBox.currentData() is not None)
-        self.polarPlot.updateDataRequest()
+    def _fillUnitCombo(self, combo: QComboBox, variableName, selectedUnitKey=None):
+        combo.blockSignals(True)
+        combo.clear()
+        if self.variableRegistry is None or variableName is None:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        allowedUnits = self.variableRegistry.getAllowedUnits(variableName)
+        defaultUnit = self.variableRegistry.getDefaultUnit(variableName)
+        if not allowedUnits:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        for unit in allowedUnits:
+            label = unit.label if unit.label else "unitless"
+            combo.addItem(label, unit.key)
+        targetUnitKey = selectedUnitKey
+        if targetUnitKey is None and defaultUnit is not None:
+            targetUnitKey = defaultUnit.key
+        index = combo.findData(targetUnitKey)
+        combo.setCurrentIndex(index if index != -1 else 0)
+        combo.setEnabled(True)
+        combo.blockSignals(False)
 
-    def _updateObjectY(self, text):
+    def _updateObjectArgument(self, text):
+        self._fillVariableCombo(self.argumentVariableComboBox, self.argumentObjectComboBox, AngleQuantity)
+        self.line['ARGUMENT_OBJECT'] = self.argumentObjectComboBox.currentData()
+        self.line['ARGUMENT_VARIABLE'] = self.argumentVariableComboBox.currentData()
+        self.argumentVariableComboBox.setEnabled(self.argumentObjectComboBox.currentData() is not None)
+        self._fillUnitCombo(self.argumentUnitComboBox, self.line['ARGUMENT_VARIABLE'], self.line.get('ARGUMENT_UNIT'))
+        self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
+        self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateObjectModule(self, text):
         self._fillVariableCombo(self.moduleVariableComboBox, self.moduleObjectComboBox)
         self.line['MODULE_OBJECT'] = self.moduleObjectComboBox.currentData()
-        self.moduleVariableComboBox.setEnabled(self.moduleObjectComboBox.currentData() is not None)
-        self.polarPlot.updateDataRequest()
-
-    def _updateVariableX(self, text):
-        self.line['ARGUMENT_VARIABLE'] = self.argumentVariableComboBox.currentData()
-        self.polarPlot.updateDataRequest()
-
-    def _updateVariableY(self, text):
         self.line['MODULE_VARIABLE'] = self.moduleVariableComboBox.currentData()
+        self.moduleVariableComboBox.setEnabled(self.moduleObjectComboBox.currentData() is not None)
+        self._fillUnitCombo(self.moduleUnitComboBox, self.line['MODULE_VARIABLE'], self.line.get('MODULE_UNIT'))
+        self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
         self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateVariableArgument(self, text):
+        self.line['ARGUMENT_VARIABLE'] = self.argumentVariableComboBox.currentData()
+        defaultUnit = self.variableRegistry.getDefaultUnit(self.line['ARGUMENT_VARIABLE']) if self.variableRegistry is not None else None
+        self._fillUnitCombo(self.argumentUnitComboBox, self.line['ARGUMENT_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
+        self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
+        self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateVariableModule(self, text):
+        self.line['MODULE_VARIABLE'] = self.moduleVariableComboBox.currentData()
+        defaultUnit = self.variableRegistry.getDefaultUnit(self.line['MODULE_VARIABLE']) if self.variableRegistry is not None else None
+        self._fillUnitCombo(self.moduleUnitComboBox, self.line['MODULE_VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
+        self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
+        self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateUnitArgument(self, index):
+        self.line['ARGUMENT_UNIT'] = self.argumentUnitComboBox.currentData()
+        self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateUnitModule(self, index):
+        self.line['MODULE_UNIT'] = self.moduleUnitComboBox.currentData()
+        self.polarPlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.line['RESOLUTION'] = value
         self.polarPlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _axisLegendName(self, objectCombo: QComboBox, variableCombo: QComboBox, unitCombo: QComboBox):
+        objectName = objectCombo.currentText() if objectCombo.currentData() is not None else "NONE"
+        variableName = variableCombo.currentData() if variableCombo.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(unitCombo.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel})"
+        return f"{objectName} - {variableName}"
+
+    def _automaticLegendName(self):
+        moduleName = self._axisLegendName(self.moduleObjectComboBox, self.moduleVariableComboBox, self.moduleUnitComboBox)
+        argumentName = self._axisLegendName(self.argumentObjectComboBox, self.argumentVariableComboBox, self.argumentUnitComboBox)
+        return f"{moduleName} vs {argumentName}"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)
 
 
 class PolarGraph(PlotWidget):

@@ -6,7 +6,6 @@ from PyQt5.QtCore import Qt, pyqtSignal, QDateTime
 from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
-from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 
 
 class TimeSeriesPlot(QWidget):
@@ -15,8 +14,9 @@ class TimeSeriesPlot(QWidget):
     dataRequestUpdated = pyqtSignal(int, dict)
     dataRequestDestroyed = pyqtSignal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, variableRegistry=None):
         super().__init__(parent)
+        self.variableRegistry = variableRegistry
         self.plot = PlotWidget(axisItems={'bottom': pg.DateAxisItem(orientation='bottom')})
         self.plot.addLegend()
         layout = QVBoxLayout(self)
@@ -34,14 +34,14 @@ class TimeSeriesPlot(QWidget):
         colorName = QColor(color).name()
         requestIndex = self.requestIndexProvider()
         if seriesConfiguration is None:
-            seriesConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'OBJECT': None, 'VARIABLE': None, 'RESOLUTION': 361, 'REQUEST_ID': requestIndex,
+            seriesConfiguration = {'NAME': name, 'COLOR': colorName, 'WIDTH': width, 'STYLE': style, 'OBJECT': None, 'VARIABLE': None, 'UNIT': None, 'RESOLUTION': 361, 'REQUEST_ID': requestIndex,
                                  'TIME': {'MODE': 'REAL', 'BEFORE': 30.0, 'BEFORE_UNIT': 'minutes', 'AFTER': 30.0, 'AFTER_UNIT': 'minutes', 'START': None, 'END': None}}
             self.configuration['SERIES'].append(seriesConfiguration)
         seriesConfiguration['REQUEST_ID'] = requestIndex
         pen = mkPen(QColor(colorName), width=width, style=style)
         item = self.plot.plot([], [], pen=pen, name=name)
         self.plotItems.append(item)
-        self.dataRequestCreated.emit(requestIndex, self._buildDataRequest(seriesConfiguration['TIME'].copy(), seriesConfiguration['OBJECT'], seriesConfiguration['VARIABLE'], seriesConfiguration['RESOLUTION']))
+        self.dataRequestCreated.emit(requestIndex, self._buildDataRequest(seriesConfiguration['TIME'].copy(), seriesConfiguration['OBJECT'], seriesConfiguration['VARIABLE'], seriesConfiguration['RESOLUTION'], seriesConfiguration.get('UNIT')))
 
     def setConfiguration(self, configuration):
         self.destroyDataRequest()
@@ -101,23 +101,31 @@ class TimeSeriesPlot(QWidget):
                     plotItem.setData([], [])
 
     @staticmethod
-    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution):
-        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution}
+    def _buildDataRequest(timeConfiguration, objectIndex, variable, resolution, unit=None):
+        return {'TIME': timeConfiguration, 'OBJECT': objectIndex, 'VARIABLE': variable, 'RESOLUTION': resolution, 'UNIT': unit}
 
     def createDataRequest(self):
         for series in self.configuration['SERIES']:
-            request = self._buildDataRequest(series['TIME'].copy(), series.get('OBJECT'), series.get('VARIABLE'), series.get('RESOLUTION'))
+            request = self._buildDataRequest(series['TIME'].copy(), series.get('OBJECT'), series.get('VARIABLE'), series.get('RESOLUTION'), series.get('UNIT'))
             self.dataRequestCreated.emit(series.get('REQUEST_ID'), request)
 
     def updateDataRequest(self):
         for series in self.configuration['SERIES']:
-            request = self._buildDataRequest(series['TIME'].copy(), series.get('OBJECT'), series.get('VARIABLE'), series.get('RESOLUTION'))
+            request = self._buildDataRequest(series['TIME'].copy(), series.get('OBJECT'), series.get('VARIABLE'), series.get('RESOLUTION'), series.get('UNIT'))
             self.dataRequestUpdated.emit(series.get('REQUEST_ID'), request)
 
     def destroyDataRequest(self):
         for series in self.configuration['SERIES']:
             if series.get('REQUEST_ID'):
                 self.dataRequestDestroyed.emit(series.get('REQUEST_ID'))
+
+    def _defaultUnitKey(self, variableName):
+        if self.variableRegistry is None or variableName is None:
+            return None
+        variable = self.variableRegistry.getVariable(variableName)
+        if variable is None:
+            return None
+        return variable.defaultUnit.key
 
     def closeEvent(self, event):
         self.destroyDataRequest()
@@ -219,8 +227,8 @@ class TimeSeriesSettingsPage(QWidget):
         self.timeSeries = timeSeries
         self.timePlot = timePlot
         self.owner = owner if owner is not None else parent
-        orbitalEngine = OrbitalMechanicsEngine()
-        self.engineVariables = orbitalEngine.getAvailableVariables()
+        self.variableRegistry = self.timePlot.variableRegistry
+        self.engineVariables = self.variableRegistry.getAvailableVariables() if self.variableRegistry is not None else []
         # GENERAL SERIES SETTINGS
         self.generalGroup = QGroupBox(f"General {self.timeSeries['NAME']} Settings")
         self.nameEdit = QLineEdit(self.timeSeries['NAME'])
@@ -260,8 +268,12 @@ class TimeSeriesSettingsPage(QWidget):
         self._fillVariableCombo(self.variableComboBox, self.objectComboBox)
         index = self.variableComboBox.findData(self.timeSeries['VARIABLE'])
         self.variableComboBox.setCurrentIndex(index if index != -1 else 0)
+        self.unitComboBox = QComboBox()
+        self._fillUnitCombo(self.unitComboBox, self.variableComboBox.currentData(), self.timeSeries.get('UNIT'))
+        self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.variableComboBox.currentTextChanged.connect(self._updateVariable)
         self.objectComboBox.currentTextChanged.connect(self._updateObject)
+        self.unitComboBox.currentIndexChanged.connect(self._updateUnit)
         self.resolutionSpinBox = QSpinBox()
         self.resolutionSpinBox.setRange(2, 10000)
         self.resolutionSpinBox.setValue(self.timeSeries.get('RESOLUTION', 361))
@@ -270,6 +282,7 @@ class TimeSeriesSettingsPage(QWidget):
         variableLayout = QFormLayout(self.variableGroup)
         variableLayout.addRow('Object:', self.objectComboBox)
         variableLayout.addRow('Variable:', self.variableComboBox)
+        variableLayout.addRow('Unit:', self.unitComboBox)
         variableLayout.addRow('Resolution:', self.resolutionSpinBox)
 
         # TIME SETTINGS
@@ -349,6 +362,7 @@ class TimeSeriesSettingsPage(QWidget):
         layout.addWidget(self.generalGroup)
         layout.addWidget(self.variableGroup)
         layout.addWidget(self.timeGroup)
+        self._applyAutomaticLegendName()
 
     def _updateName(self, text):
         self.timeSeries['NAME'] = text
@@ -422,15 +436,54 @@ class TimeSeriesSettingsPage(QWidget):
         combo.setCurrentIndex(index if index != -1 else 0)
         combo.blockSignals(False)
 
+    def _fillUnitCombo(self, combo: QComboBox, variableName, selectedUnitKey=None):
+        combo.blockSignals(True)
+        combo.clear()
+        if self.variableRegistry is None or variableName is None:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        allowedUnits = self.variableRegistry.getAllowedUnits(variableName)
+        defaultUnit = self.variableRegistry.getDefaultUnit(variableName)
+        if not allowedUnits:
+            combo.addItem("NONE", None)
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+        for unit in allowedUnits:
+            label = unit.label if unit.label else "unitless"
+            combo.addItem(label, unit.key)
+        targetUnitKey = selectedUnitKey
+        if targetUnitKey is None and defaultUnit is not None:
+            targetUnitKey = defaultUnit.key
+        index = combo.findData(targetUnitKey)
+        combo.setCurrentIndex(index if index != -1 else 0)
+        combo.setEnabled(True)
+        combo.blockSignals(False)
+
     def _updateObject(self, text):
         self._fillVariableCombo(self.variableComboBox, self.objectComboBox)
         self.timeSeries['OBJECT'] = self.objectComboBox.currentData()
+        self.timeSeries['VARIABLE'] = self.variableComboBox.currentData()
         self.variableComboBox.setEnabled(self.objectComboBox.currentData() is not None)
+        self._fillUnitCombo(self.unitComboBox, self.timeSeries['VARIABLE'], self.timeSeries.get('UNIT'))
+        self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateVariable(self, text):
         self.timeSeries['VARIABLE'] = self.variableComboBox.currentData()
+        defaultUnit = self.variableRegistry.getDefaultUnit(self.timeSeries['VARIABLE']) if self.variableRegistry is not None else None
+        self._fillUnitCombo(self.unitComboBox, self.timeSeries['VARIABLE'], defaultUnit.key if defaultUnit is not None else None)
+        self.timeSeries['UNIT'] = self.unitComboBox.currentData()
         self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
+
+    def _updateUnit(self, index):
+        self.timeSeries['UNIT'] = self.unitComboBox.currentData()
+        self.timePlot.updateDataRequest()
+        self._applyAutomaticLegendName()
 
     def _updateResolution(self, value):
         self.timeSeries['RESOLUTION'] = value
@@ -475,3 +528,26 @@ class TimeSeriesSettingsPage(QWidget):
     def _endChanged(self, dt):
         self.timeSeries['TIME']['END'] = dt.toString(Qt.ISODate)
         self.timePlot.updateDataRequest()
+
+    def _unitLabel(self, unitKey):
+        if self.variableRegistry is None or unitKey is None:
+            return ""
+        unit = self.variableRegistry.getUnit(unitKey)
+        if unit is None:
+            return str(unitKey)
+        return unit.label if unit.label else "unitless"
+
+    def _automaticLegendName(self):
+        objectName = self.objectComboBox.currentText() if self.objectComboBox.currentData() is not None else "NONE"
+        variableName = self.variableComboBox.currentData() if self.variableComboBox.currentData() is not None else "NONE"
+        unitLabel = self._unitLabel(self.unitComboBox.currentData())
+        if unitLabel:
+            return f"{objectName} - {variableName} ({unitLabel}) vs Time"
+        return f"{objectName} - {variableName} vs Time"
+
+    def _applyAutomaticLegendName(self):
+        name = self._automaticLegendName()
+        self.nameEdit.blockSignals(True)
+        self.nameEdit.setText(name)
+        self.nameEdit.blockSignals(False)
+        self._updateName(name)

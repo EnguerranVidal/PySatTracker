@@ -79,10 +79,12 @@ class PlotCalculationTask(QRunnable):
         if not self._isValidRequest() or self.tleDatabase is None:
             return
         julianDates, fractions = self.buildRequestTimeArray(self.simulationTime)
-        values = self._computeValues(julianDates, fractions)
+        values, unitKey, dimensionKey = self._computeValues(julianDates, fractions)
+        if values is None:
+            return
         fullJulianDates = julianDates + fractions
         times = self.engine.julianDateArrayToDatetimeArray(fullJulianDates)
-        result = {"TIME": times, "VALUES": values}
+        result = {"TIME": times, "VALUES": values, "UNIT": unitKey, "DIMENSION": dimensionKey}
         self.callback(self.requestId, result)
 
     def buildRequestTimeArray(self, simulationTime: datetime):
@@ -117,14 +119,19 @@ class PlotCalculationTask(QRunnable):
         satObject = None
         if self.request.get('OBJECT') is not None:
             satObject = self.tleDatabase.getSatrec(self.request['OBJECT'])
-        variableName = self.request.get('VARIABLE').upper()
-        fullJulianDates = julianDates + fractions
-        state = self.engine.satelliteState(satObject, fullJulianDates)
+        variableName = self.request.get('VARIABLE')
+        if variableName is None:
+            return None, None, None
+        variableName = str(variableName).upper()
         variable = self.variableRegistry.getVariable(variableName)
         if variable is None:
-            return None
-        values = variable.compute(self.engine, state, fullJulianDates)
-        return values
+            return None, None, None
+        fullJulianDates = julianDates + fractions
+        state = self.engine.satelliteState(satObject, fullJulianDates)
+        requestedUnitKey = self.request.get('UNIT')
+        requestedUnit = self.variableRegistry.getUnit(requestedUnitKey) if requestedUnitKey else None
+        quantity = variable.compute(self.engine, state, fullJulianDates, unit=requestedUnit)
+        return quantity.values, quantity.unit.key, quantity.dimension.key
 
 class PlotRequestRegistryWindow(QTableWidget):
     def __init__(self, registry, parent=None):

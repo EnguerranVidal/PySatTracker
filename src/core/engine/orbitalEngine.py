@@ -578,10 +578,3 @@ class OrbitalMechanicsEngine:
         exposure = self.solarExposure(fullJulianDates, positions)
         magnitude = np.where(exposure == 1, standardMagnitude + 5.0 * np.log10(obsObjectDistance / 1000.0) + phaseMagnitude, np.nan)
         return self._maybeScalar(magnitude, scalar)
-
-    @staticmethod
-    def getAvailableVariables():
-        return ["ALTITUDE", "LATITUDE", "LONGITUDE", "R_ECI_X", "R_ECI_Y", "R_ECI_Z", "V_ECI_X", "V_ECI_Y", "V_ECI_Z",
-                "SOLAR_EXPOSURE", "FLIGHT_PATH_ANGLE", "RADIAL_VELOCITY", "TANGENTIAL_VELOCITY",
-                "TRUE_ANOMALY", "INCLINATION", "RAAN", "ARGUMENT_OF_PERIGEE", "ECCENTRICITY", "MEAN_MOTION", "MEAN_ANOMALY",
-                "GROUND_SPEED", "SPECIFIC_ENERGY", "SEMI_MAJOR_AXIS", "ORBITAL_PERIOD"]

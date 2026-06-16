@@ -14,6 +14,7 @@ from src.gui.plots.requests import PlotRequestRegistryWindow, PlotRequestManager
 from src.gui.plots.line import LinePlot
 from src.gui.plots.time import TimeSeriesPlot
 from src.gui.plots.polar import PolarPlot
+from src.gui.plots.scatter import ScatterPlot
 from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog, TextureEditorDialog
 from src.gui.view3d.general import View3dWidget
 from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
@@ -256,6 +257,11 @@ class MainWindow(QMainWindow):
         self.addPolarPlotAction.setIcon(self.icons['POLAR'])
         self.addPolarPlotAction.setStatusTip('Add a Polar Plot to the Current Plot Tab')
         self.addPolarPlotAction.triggered.connect(self._addPolarPlot)
+        # ADD SCATTER PLOT
+        self.addScatterPlotAction = QAction('&Add Scatter Plot', self)
+        self.addScatterPlotAction.setIcon(self.icons['SCATTER'])
+        self.addScatterPlotAction.setStatusTip('Add a Scatter Plot to the Current Plot Tab')
+        self.addScatterPlotAction.triggered.connect(self._addScatterPlot)
 
         # OPEN DATA ENGINE REQUESTS REGISTRY
         self.openEngineRegistryAction = QAction('&Data Registry', self)
@@ -323,6 +329,7 @@ class MainWindow(QMainWindow):
         self.plotMenu.addAction(self.addTimeSeriesAction)
         self.plotMenu.addAction(self.addLinePlotAction)
         self.plotMenu.addAction(self.addPolarPlotAction)
+        self.plotMenu.addAction(self.addScatterPlotAction)
         ### TOOLS MENU ###
         self.toolsMenu = self.menuBar.addMenu('&Tools')
         self.simulationMenu = self.toolsMenu.addMenu('&Simulation')
@@ -365,6 +372,7 @@ class MainWindow(QMainWindow):
         self.plotViewToolBar.addAction(self.addTimeSeriesAction)
         self.plotViewToolBar.addAction(self.addLinePlotAction)
         self.plotViewToolBar.addAction(self.addPolarPlotAction)
+        self.plotViewToolBar.addAction(self.addScatterPlotAction)
 
         # ADDING ALL TOOLBARS TO THE MAIN WINDOW
         self.addToolBar(self.mainToolBar)
@@ -410,6 +418,7 @@ class MainWindow(QMainWindow):
         self.icons['LINE_PLOT'] = QIcon(os.path.join(self.iconPath, 'line-plot.png'))
         self.icons['TIME_SERIES'] = QIcon(os.path.join(self.iconPath, 'time-series.png'))
         self.icons['POLAR'] = QIcon(os.path.join(self.iconPath, 'polar.png'))
+        self.icons['SCATTER'] = QIcon(os.path.join(self.iconPath, 'scatter.png'))
         self.icons['PLAY'] = QIcon(os.path.join(self.iconPath, 'play.png'))
         self.icons['PAUSE'] = QIcon(os.path.join(self.iconPath, 'pause.png'))
         self.icons['FAST_FORWARD'] = QIcon(os.path.join(self.iconPath, 'fast-forward.png'))
@@ -645,6 +654,9 @@ class MainWindow(QMainWindow):
     def _addPolarPlot(self):
         self.centralViewWidget.addPolarPlot()
 
+    def _addScatterPlot(self):
+        self.centralViewWidget.addScatterPlot()
+
     def _onObjectViewConfigChanged(self, noradIndex, newConfiguration):
         self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = newConfiguration
         self.saveSettings()
@@ -856,7 +868,7 @@ class CentralViewWidget(QWidget):
         # MAIN TABS
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
-        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir)
+        self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir, variableRegistry=self.variableRegistry)
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)
@@ -995,9 +1007,11 @@ class CentralViewWidget(QWidget):
                     self.addTimeSeriesPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
                 if dockWidgetConfiguration["PLOT_TYPE"] == "POLAR":
                     self.addPolarPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
+                if dockWidgetConfiguration["PLOT_TYPE"] == "SCATTER":
+                    self.addScatterPlot(configuration=dockWidgetConfiguration["CONFIGURATION"], title=title, area=area)
 
     def addLinePlot(self, configuration=None, title=None, area=None):
-        linePlot = LinePlot(self)
+        linePlot = LinePlot(self, variableRegistry=self.variableRegistry)
         linePlot.requestIndexProvider = self.generateRequestIndex
         linePlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         linePlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
@@ -1009,7 +1023,7 @@ class CentralViewWidget(QWidget):
         self.plotViewWidget.addNewPlot(widget=linePlot, title=title, area=area)
 
     def addTimeSeriesPlot(self, configuration=None, title=None, area=None):
-        timeSeriesPlot = TimeSeriesPlot(self)
+        timeSeriesPlot = TimeSeriesPlot(self, variableRegistry=self.variableRegistry)
         timeSeriesPlot.requestIndexProvider = self.generateRequestIndex
         timeSeriesPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         timeSeriesPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
@@ -1021,7 +1035,7 @@ class CentralViewWidget(QWidget):
         self.plotViewWidget.addNewPlot(widget=timeSeriesPlot, title=title, area=area)
 
     def addPolarPlot(self, configuration=None, title=None, area=None):
-        polarPlot = PolarPlot(self)
+        polarPlot = PolarPlot(self, variableRegistry=self.variableRegistry)
         polarPlot.requestIndexProvider = self.generateRequestIndex
         polarPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
         polarPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
@@ -1031,6 +1045,18 @@ class CentralViewWidget(QWidget):
         if configuration is not None:
             polarPlot.setConfiguration(configuration)
         self.plotViewWidget.addNewPlot(widget=polarPlot, title=title, area=area)
+
+    def addScatterPlot(self, configuration=None, title=None, area=None):
+        scatterPlot = ScatterPlot(self, variableRegistry=self.variableRegistry)
+        scatterPlot.requestIndexProvider = self.generateRequestIndex
+        scatterPlot.dataRequestCreated.connect(self._onPlotDataRequestCreated)
+        scatterPlot.dataRequestUpdated.connect(self._onPlotDataRequestUpdated)
+        scatterPlot.dataRequestDestroyed.connect(self._onPlotDataRequestDestroyed)
+        self.activeObjectsChanged.connect(scatterPlot.setActiveObjects)
+        scatterPlot.setActiveObjects(self.activeObjects)
+        if configuration is not None:
+            scatterPlot.setConfiguration(configuration)
+        self.plotViewWidget.addNewPlot(widget=scatterPlot, title=title, area=area)
 
     def closeEvent(self, event):
         self.orbitWorker.stop()
