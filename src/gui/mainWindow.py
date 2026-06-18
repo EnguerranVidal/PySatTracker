@@ -7,6 +7,7 @@ from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QThread, QUrl, Q_ARG, QMetaObject
 from PyQt5.QtWidgets import *
 
+from gui.passes import VisiblePassesWidget
 from src.core.objects import ActiveObjectsEditorWidget, ActiveObjectsModel, ObjectInfoDockWidget, ObjectViewConfigDockWidget
 from src.gui.map2d import Map2dWidget
 from src.gui.plots.general import PlotViewTabWidget
@@ -97,6 +98,12 @@ class MainWindow(QMainWindow):
         self.openPlotViewAction.setIcon(self.icons['PLOT'])
         self.openPlotViewAction.setStatusTip('Open Plot View')
         self.openPlotViewAction.triggered.connect(self._openPlotView)
+        # OPEN VISIBLE PASSES
+        self.openVisiblePassesAction = QAction('&Open Visible Passes', self, checkable=True)
+        self.openVisiblePassesAction.setChecked(self.settings['CURRENT_TAB'] == 'VISIBLE_PASSES')
+        self.openVisiblePassesAction.setIcon(self.icons['BINOCULARS'])
+        self.openVisiblePassesAction.setStatusTip('Open Visible Passes')
+        self.openVisiblePassesAction.triggered.connect(self._openVisiblePasses)
         # SET AS DEFAULT VIEW CONFIGURATION
         self.setViewConfigAsDefaultAction = QAction('&Set as Default', self)
         self.setViewConfigAsDefaultAction.setStatusTip('Set Current Object\'s View Configuration as Default')
@@ -349,6 +356,7 @@ class MainWindow(QMainWindow):
         self.mainToolBar.addAction(self.open3dViewAction)
         self.mainToolBar.addAction(self.open2dMapAction)
         self.mainToolBar.addAction(self.openPlotViewAction)
+        self.mainToolBar.addAction(self.openVisiblePassesAction)
         # 3D VIEW TOOLBAR
         self.view3dToolBar = QToolBar('3D View Toolbar', self)
         self.view3dToolBar.addAction(self.showEarthAction)
@@ -393,6 +401,10 @@ class MainWindow(QMainWindow):
             self.view3dToolBar.setVisible(False)
             self.map2dToolBar.setVisible(False)
             self.plotViewToolBar.setVisible(True)
+        elif tabName == 'VISIBLE_PASSES':
+            self.view3dToolBar.setVisible(False)
+            self.map2dToolBar.setVisible(False)
+            self.plotViewToolBar.setVisible(False)
         else:
             self.view3dToolBar.setVisible(False)
             self.map2dToolBar.setVisible(False)
@@ -403,6 +415,7 @@ class MainWindow(QMainWindow):
         self.icons['SATELLITE_GLOBE'] = QIcon(os.path.join(self.iconPath, 'satellite-globe.png'))
         self.icons['MAP'] = QIcon(os.path.join(self.iconPath, 'map.png'))
         self.icons['PLOT'] = QIcon(os.path.join(self.iconPath, 'plot.png'))
+        self.icons['BINOCULARS'] = QIcon(os.path.join(self.iconPath, 'binoculars.png'))
         self.icons['EARTH'] = QIcon(os.path.join(self.iconPath, 'earth.png'))
         self.icons['EARTH_GRID'] = QIcon(os.path.join(self.iconPath, 'earth-grid.png'))
         self.icons['ECI'] = QIcon(os.path.join(self.iconPath, 'eci.png'))
@@ -597,6 +610,8 @@ class MainWindow(QMainWindow):
             self.objectViewConfigDock.setViewMode('3D')
         if self.settings['CURRENT_TAB'] == 'PLOT_VIEW':
             self.objectViewConfigDock.setVisible(False)
+        if self.settings['CURRENT_TAB'] == 'VISIBLE_PASSES':
+            self.objectViewConfigDock.setVisible(False)
 
     def loadSettings(self):
         self.settings = loadSettingsJson(self.settingsPath)
@@ -622,6 +637,7 @@ class MainWindow(QMainWindow):
         self.open2dMapAction.setChecked(True)
         self.open3dViewAction.setChecked(False)
         self.openPlotViewAction.setChecked(False)
+        self.openVisiblePassesAction.setChecked(False)
 
     def _open3dView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
@@ -629,12 +645,21 @@ class MainWindow(QMainWindow):
         self.open2dMapAction.setChecked(False)
         self.open3dViewAction.setChecked(True)
         self.openPlotViewAction.setChecked(False)
+        self.openVisiblePassesAction.setChecked(False)
 
     def _openPlotView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, 'PLOT_VIEW'))
         self.open2dMapAction.setChecked(False)
         self.open3dViewAction.setChecked(False)
         self.openPlotViewAction.setChecked(True)
+        self.openVisiblePassesAction.setChecked(False)
+
+    def _openVisiblePasses(self):
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, 'VISIBLE_PASSES'))
+        self.open2dMapAction.setChecked(False)
+        self.open3dViewAction.setChecked(False)
+        self.openPlotViewAction.setChecked(False)
+        self.openVisiblePassesAction.setChecked(True)
 
     def _addPlotTab(self):
         self.centralViewWidget.plotViewWidget.addNewTab()
@@ -826,7 +851,7 @@ class CentralViewWidget(QWidget):
     activeObjectsChanged = pyqtSignal(object)
     stackedChanged = pyqtSignal(int)
     timeLineModeChanged = pyqtSignal(str)
-    TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW'}
+    TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW', 3: 'VISIBLE_PASSES'}
     TIMELINE_MODES = {0: 'UTC', 1: 'LOCAL', 2: 'DELTA'}
 
     def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None, timeLineMode='UTC'):
@@ -869,10 +894,12 @@ class CentralViewWidget(QWidget):
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
         self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir, variableRegistry=self.variableRegistry)
+        self.visiblePassesWidget = VisiblePassesWidget(currentDir=self.currentDir)
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)
         self.stackedWidget.addWidget(self.plotViewWidget)
+        self.stackedWidget.addWidget(self.visiblePassesWidget)
         self.stackedWidget.setCurrentIndex(getKeyFromValue(self.TABS, currentTab))
 
         self.orbitWorker.positionsReady.connect(self._onPositionsReady)
@@ -880,7 +907,7 @@ class CentralViewWidget(QWidget):
         self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
         self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
         self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
-
+        self.passesViewVisible = (self.stackedWidget.currentWidget() is self.visiblePassesWidget)
         # MAIN LAYOUT
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -891,6 +918,7 @@ class CentralViewWidget(QWidget):
         self.map2dVisible = (self.stackedWidget.currentWidget() is self.map2dWidget)
         self.view3dVisible = (self.stackedWidget.currentWidget() is self.view3dWidget)
         self.plotViewVisible = (self.stackedWidget.currentWidget() is self.plotViewWidget)
+        self.passesViewVisible = (self.stackedWidget.currentWidget() is self.visiblePassesWidget)
         currentTime = self.clock.currentDateTime
         if not self.clock.isRunning:
             if self.map2dVisible or self.view3dVisible:
@@ -903,6 +931,8 @@ class CentralViewWidget(QWidget):
             self._refresh3dView()
         if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
             self._refreshPlotView()
+        if self.passesViewVisible:
+            pass
         self.stackedChanged.emit(index)
 
     def _onPositionsReady(self, positions: dict):
@@ -915,6 +945,8 @@ class CentralViewWidget(QWidget):
             self._refresh3dView()
         if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
             self._refreshPlotView()
+        if self.passesViewVisible:
+            pass
 
     def setDatabases(self, tleDatabase, starDatabase):
         self.tleDatabase, self.starDatabase = tleDatabase, starDatabase
@@ -933,6 +965,8 @@ class CentralViewWidget(QWidget):
             self._refresh3dView()
         if self.plotViewVisible and self.lastPositions['PLOT_VIEW']:
             self._refreshPlotView()
+        if self.passesViewVisible:
+            pass
 
     def setDisplayConfiguration(self, displayConfiguration):
         self.displayConfiguration = displayConfiguration

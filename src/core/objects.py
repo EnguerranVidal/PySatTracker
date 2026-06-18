@@ -988,7 +988,7 @@ class ObjectViewConfigDockWidget(QDockWidget):
             self._loading = False
 
     def applyGlobalVisibility(self, viewConfig: dict, currentTab: str):
-        if currentTab == 'PLOT_VIEW':
+        if currentTab == 'PLOT_VIEW' or currentTab == 'VISIBLE_PASSES':
             return
         is2D = currentTab == '2D_MAP'
         showOrbitPaths = True
