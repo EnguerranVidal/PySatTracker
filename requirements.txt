@@ -3,6 +3,7 @@ pyqt5
 matplotlib
 imageio
 pyqtgraph
+PyQtWebEngine
 pandas
 requests
 sgp4
