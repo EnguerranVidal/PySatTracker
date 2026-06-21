@@ -1,11 +1,19 @@
+from dataclasses import dataclass
+
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
 
+@dataclass
+class VisiblePassesRequest:
+    longitude: float
+    latitude: float
+    timeSpan: str = "Tonight"
+
 
 class VisiblePassesWidget(QMainWindow):
-    passesRequest = pyqtSignal(list)
+    passesRequest = pyqtSignal(VisiblePassesRequest)
 
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
@@ -16,12 +24,12 @@ class VisiblePassesWidget(QMainWindow):
         self.settingsDockWidget.passesRequest.connect(self._requestPasses)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
 
-    def _requestPasses(self, settings: dict):
-        self.passesRequest.emit(settings)
+    def _requestPasses(self, passRequest: VisiblePassesRequest):
+        self.passesRequest.emit(passRequest)
 
 
 class VisiblePassesSettingsWidget(QDockWidget):
-    passesRequest = pyqtSignal(dict)
+    passesRequest = pyqtSignal(VisiblePassesRequest)
 
     def __init__(self, parent=None):
         super().__init__("Pass Request Settings", parent)
@@ -71,10 +79,12 @@ class VisiblePassesSettingsWidget(QDockWidget):
         self.setWidget(content)
 
     def _onFindClicked(self):
-        pass
-
-    def _onSettingsChanged(self):
-        pass
+        try:
+            request = self._getRequest()
+            self.findVisiblePassesButton.setEnabled(False)
+            self.passesRequest.emit(request)
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid Request", str(e))
 
     def _openLocationDialog(self):
         try:
@@ -86,6 +96,14 @@ class VisiblePassesSettingsWidget(QDockWidget):
         if dialog.exec_() == QDialog.Accepted:
             self.locationLatitudeLineEdit.setText(f"{dialog.selectedLatitude:.6f}")
             self.locationLongitudeLineEdit.setText(f"{dialog.selectedLongitude:.6f}")
+
+    def _getRequest(self):
+        request = VisiblePassesRequest(
+            longitude=float(self.locationLatitudeLineEdit.text() or 40.7128),
+            latitude=float(self.locationLongitudeLineEdit.text() or -74.0060),
+            timeSpan=self.timeSpanButtonGroup.checkedButton().text() if self.timeSpanButtonGroup.checkedButton() else "Tonight"
+        )
+        return request
 
 
 class VisiblePassesViewWidget(QWidget):
@@ -179,18 +197,17 @@ class SetLocationDialog(QDialog):
         self.channel.registerObject("mapHandler", self.mapHandler)
         self.mapView.page().setWebChannel(self.channel)
 
-    def _updateCoordinatesFromMap(self, latitude: float, longitude: float):
-        self.latitudeLineEdit.setText(f"{latitude:.6f}")
+    def _updateCoordinatesFromMap(self, longitude: float, latitude: float):
         self.longitudeLineEdit.setText(f"{longitude:.6f}")
+        self.latitudeLineEdit.setText(f"{latitude:.6f}")
         self.selectedLongitude, self.selectedLatitude = longitude, latitude
 
     def accept(self):
         try:
-            latitude = float(self.latitudeLineEdit.text().strip())
-            longitude = float(self.longitudeLineEdit.text().strip())
-            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            longitude, latitude = float(self.longitudeLineEdit.text().strip()), float(self.latitudeLineEdit.text().strip())
+            if not (-180 <= longitude <= 180 and -90 <= latitude <= 90):
                 raise ValueError
-            self.selectedLatitude, self.selectedLongitude = latitude, longitude
+            self.selectedLongitude, self.selectedLatitude = longitude, latitude
             super().accept()
         except ValueError:
             QMessageBox.warning(self, "Invalid Coordinates", "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).")
@@ -204,8 +221,7 @@ class MapHandler(QObject):
         try:
             import json
             coordinates = json.loads(data)
-            latitude = float(coordinates.get('lat', 0))
-            longitude = float(coordinates.get('lon', 0))
-            self.coordinatesChanged.emit(latitude, longitude)
+            longitude, latitude = float(coordinates.get('lon', 0)), float(coordinates.get('lat', 0))
+            self.coordinatesChanged.emit(longitude, latitude)
         except Exception:
             pass
