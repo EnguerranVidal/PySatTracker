@@ -1,15 +1,9 @@
-from dataclasses import dataclass
-
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QThreadPool
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
 
-@dataclass
-class VisiblePassesRequest:
-    longitude: float
-    latitude: float
-    timeSpan: str = "Tonight"
+from src.gui.passes.requests import VisiblePassesRequest, VisiblePassesCalculationTask
 
 
 class VisiblePassesWidget(QMainWindow):
@@ -18,6 +12,8 @@ class VisiblePassesWidget(QMainWindow):
     def __init__(self, parent=None, currentDir:str = None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.threadPool = QThreadPool.globalInstance()
+        self.threadPool.setMaxThreadCount(4)
         self.viewWidget = VisiblePassesViewWidget(self)
         self.setCentralWidget(self.viewWidget)
         self.settingsDockWidget = VisiblePassesSettingsWidget(self)
@@ -25,7 +21,9 @@ class VisiblePassesWidget(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
 
     def _requestPasses(self, passRequest: VisiblePassesRequest):
-        self.passesRequest.emit(passRequest)
+        self.viewWidget.start_progress(total_satellites=5)
+        task = VisiblePassesCalculationTask(passRequest, self._on_calculation_finished)
+        self.threadPool.start(task)
 
 
 class VisiblePassesSettingsWidget(QDockWidget):

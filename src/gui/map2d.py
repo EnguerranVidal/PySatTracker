@@ -88,6 +88,8 @@ class Map2dWidget(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, 0)
 
     def _lonlatToCartesian(self, longitude, latitude):
+        if longitude is None or latitude is None:
+            return 0, 0
         longitude, latitude = np.asarray(longitude), np.asarray(latitude)
         return (longitude + 180) / 360 * self.mapWidth, (latitude + 90) / 180 * self.mapHeight
 
