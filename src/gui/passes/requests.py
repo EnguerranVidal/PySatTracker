@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from PyQt5.QtCore import Qt, QObject, QTimer, pyqtSignal, pyqtSlot, QMetaObject, Q_ARG, QThreadPool, QRunnable
 
@@ -10,26 +11,33 @@ class VisiblePassesRequest:
     timeSpan: str = "Tonight"
 
 
+class VisiblePassesCalculationSignals(QObject):
+    progress = pyqtSignal(int)
+    result = pyqtSignal(list)
+
+
 class VisiblePassesCalculationTask(QRunnable):
-    def __init__(self, request: VisiblePassesRequest, callback):
+    def __init__(self, request: VisiblePassesRequest, tleDatabase=None):
         super().__init__()
         self.request = request
-        self.callback = callback
+        self.tleDatabase = tleDatabase
+        self.signals = VisiblePassesCalculationSignals()
         self.setAutoDelete(True)
 
     def run(self):
         try:
-            satellites = ["ISS", "STARLINK-1234", "STARLINK-5678", "METEOR-M", "HST"]
             results = []
-            for i, sat_name in enumerate(satellites):
-                results.append(0)
-                progress = i + 1
-                QMetaObject.invokeMethod(self, "_emitProgress", Qt.QueuedConnection, Q_ARG(int, progress))
-            self.callback(results)
+            noradIndices = self.tleDatabase.dataFrame["NORAD_CAT_ID"].dropna().astype(int).to_list()
+            for i, noradIndex in enumerate(noradIndices):
+                try:
+                    results.append(0)
+                except Exception as e:
+                    print(f"Skipping NORAD {noradIndex}: {e}")
+                self.signals.progress.emit(i + 1)
+            self.signals.result.emit(results)
         except Exception as e:
             print(f"Calculation error: {e}")
-            self.callback([])
+            self.signals.result.emit([])
 
-    @pyqtSlot(int)
-    def _emitProgress(self, progress: int):
+    def _timeSpanBounds(self, now: datetime):
         pass

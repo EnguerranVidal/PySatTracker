@@ -7,7 +7,7 @@ from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QThread, QUrl, Q_ARG, QMetaObject
 from PyQt5.QtWidgets import *
 
-from gui.passes import VisiblePassesWidget
+from src.gui.passes.general import VisiblePassesWidget
 from src.core.objects import ActiveObjectsEditorWidget, ActiveObjectsModel, ObjectInfoDockWidget, ObjectViewConfigDockWidget
 from src.gui.map2d import Map2dWidget
 from src.gui.plots.general import PlotViewTabWidget
@@ -952,6 +952,7 @@ class CentralViewWidget(QWidget):
         self.tleDatabase, self.starDatabase = tleDatabase, starDatabase
         self.orbitWorker.tleDatabase = tleDatabase
         self.requestManager.tleDatabase = tleDatabase
+        self.visiblePassesWidget.tleDatabase = tleDatabase
 
     def setActiveObjects(self, activeObjects: ActiveObjectsModel):
         self.activeObjects = activeObjects

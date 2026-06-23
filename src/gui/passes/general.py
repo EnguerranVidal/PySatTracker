@@ -7,11 +7,10 @@ from src.gui.passes.requests import VisiblePassesRequest, VisiblePassesCalculati
 
 
 class VisiblePassesWidget(QMainWindow):
-    passesRequest = pyqtSignal(VisiblePassesRequest)
-
-    def __init__(self, parent=None, currentDir:str = None):
+    def __init__(self, parent=None, currentDir:str = None, tleDatabase=None):
         super().__init__(parent)
         self.currentDir = currentDir
+        self.tleDatabase = tleDatabase
         self.threadPool = QThreadPool.globalInstance()
         self.threadPool.setMaxThreadCount(4)
         self.viewWidget = VisiblePassesViewWidget(self)
@@ -19,11 +18,25 @@ class VisiblePassesWidget(QMainWindow):
         self.settingsDockWidget = VisiblePassesSettingsWidget(self)
         self.settingsDockWidget.passesRequest.connect(self._requestPasses)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
+        self.viewWidget.showDefault()
 
     def _requestPasses(self, passRequest: VisiblePassesRequest):
-        self.viewWidget.start_progress(total_satellites=5)
-        task = VisiblePassesCalculationTask(passRequest, self._on_calculation_finished)
+        total = 0
+        if self.tleDatabase is not None and self.tleDatabase.dataFrame is not None:
+            total = len(self.tleDatabase.dataFrame)
+        self.viewWidget.showProgress(total=max(total, 1))
+        task = VisiblePassesCalculationTask(passRequest)
+        task.signals.progress.connect(self.viewWidget.updateProgress)
+        task.signals.result.connect(self._onCalculationsDone)
         self.threadPool.start(task)
+
+    def _onCalculationsDone(self, results: list):
+        self.settingsDockWidget.resetFindButton()
+        if results:
+            self.viewWidget.showResults(results)
+        else:
+            self.viewWidget.showDefault()
+            QMessageBox.information(self, "Result", "No passes found.")
 
 
 class VisiblePassesSettingsWidget(QDockWidget):
@@ -41,8 +54,8 @@ class VisiblePassesSettingsWidget(QDockWidget):
         self.setLocationButton = QPushButton("Set Location")
         self.setLocationButton.setMinimumWidth(110)
         self.setLocationButton.clicked.connect(self._openLocationDialog)
-        self.locationLongitudeLineEdit = QLineEdit()
-        self.locationLatitudeLineEdit = QLineEdit()
+        self.locationLongitudeLineEdit = QLineEdit("-74.0060")
+        self.locationLatitudeLineEdit = QLineEdit("40.7128")
         locationLayout = QHBoxLayout()
         locationLayout.addWidget(self.setLocationButton)
         locationLayout.addWidget(self.locationLongitudeLineEdit)
@@ -80,9 +93,14 @@ class VisiblePassesSettingsWidget(QDockWidget):
         try:
             request = self._getRequest()
             self.findVisiblePassesButton.setEnabled(False)
+            self.findVisiblePassesButton.setText("Computing...")
             self.passesRequest.emit(request)
         except ValueError as e:
             QMessageBox.warning(self, "Invalid Request", str(e))
+
+    def resetFindButton(self):
+        self.findVisiblePassesButton.setEnabled(True)
+        self.findVisiblePassesButton.setText("Find Visible Passes")
 
     def _openLocationDialog(self):
         try:
@@ -97,8 +115,8 @@ class VisiblePassesSettingsWidget(QDockWidget):
 
     def _getRequest(self):
         request = VisiblePassesRequest(
-            longitude=float(self.locationLatitudeLineEdit.text() or 40.7128),
-            latitude=float(self.locationLongitudeLineEdit.text() or -74.0060),
+            longitude=float(self.locationLongitudeLineEdit.text() or -74.0060),
+            latitude=float(self.locationLatitudeLineEdit.text() or 40.7128),
             timeSpan=self.timeSpanButtonGroup.checkedButton().text() if self.timeSpanButtonGroup.checkedButton() else "Tonight"
         )
         return request
@@ -107,6 +125,50 @@ class VisiblePassesSettingsWidget(QDockWidget):
 class VisiblePassesViewWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.stackedWidget = QStackedWidget(self)
+        self.defaultPage = QWidget()
+        self.stackedWidget.addWidget(self.defaultPage)
+
+        # CALCULATION TASK PROGRESS BAR
+        self.progressPage = QWidget()
+        self.progressLabel = QLabel("Computing visible passes...")
+        self.progressLabel.setAlignment(Qt.AlignCenter)
+        self.progressLabel.setStyleSheet("font-size: 16px;")
+        self.progressBar = QProgressBar()
+        self.progressBar.setRange(0, 100)
+        self.progressBar.setMinimumHeight(25)
+        progressLayout = QVBoxLayout(self.progressPage)
+        progressLayout.setAlignment(Qt.AlignCenter)
+        progressLayout.addWidget(self.progressLabel)
+        progressLayout.addWidget(self.progressBar)
+        progressLayout.addStretch()
+        self.stackedWidget.addWidget(self.progressPage)
+
+        # VISIBLE PASSES RESULTS PAGE
+        self.resultsPage = QWidget()
+        self.resultsLabel = QLabel("Results will appear here...")
+        self.resultsLabel.setAlignment(Qt.AlignCenter)
+        resultsLayout = QVBoxLayout(self.resultsPage)
+        resultsLayout.addWidget(self.resultsLabel)
+        self.stackedWidget.addWidget(self.resultsPage)
+
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+        mainLayout.addWidget(self.stackedWidget)
+
+    def showDefault(self):
+        self.stackedWidget.setCurrentIndex(0)
+
+    def showProgress(self, total: int = 100):
+        self.stackedWidget.setCurrentIndex(1)
+        self.progressBar.setRange(0, total)
+        self.progressBar.setValue(0)
+
+    def updateProgress(self, value: int):
+        self.progressBar.setValue(value)
+
+    def showResults(self, results: list = None):
+        self.stackedWidget.setCurrentIndex(2)
 
 
 class SetLocationDialog(QDialog):
