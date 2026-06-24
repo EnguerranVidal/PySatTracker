@@ -1,10 +1,7 @@
 import os
-import time
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-
-from PyQt5.QtCore import QObject, pyqtSignal
 from sgp4.api import Satrec, jday
 
 
@@ -25,9 +22,10 @@ class TLEDatabase:
     SATCAT_ORBITAL_COLUMNS = {'INCLINATION', 'PERIOD', 'APOGEE', 'PERIGEE'}
     UPDATE_INTERVAL = timedelta(days=2)
 
-    def __init__(self, dataDir='data'):
+    def __init__(self, dataDir: str = "data", statusCallback=None):
         self.dataDir, self.tleDataDir = dataDir, os.path.join(dataDir, 'norad')
-        self.rows = []  # <<< FAST ACCUMULATION LIST
+        self.rows = []
+        self.statusCallback = statusCallback
         self.dataFrame = None
         os.makedirs(self.tleDataDir, exist_ok=True)
         self._satrecCache = {}
@@ -41,7 +39,8 @@ class TLEDatabase:
     def _download(self, tag, url):
         localPath = os.path.join(self.tleDataDir, f'{tag}.txt')
         if self._fileNeedsUpdate(localPath):
-            print(f'Downloading {tag}...')
+            if self.statusCallback:
+                self.statusCallback(f"Downloading {tag}...")
             res = requests.get(url, timeout=10)
             res.raise_for_status()
             with open(localPath, 'w', encoding='utf-8') as f:
@@ -51,31 +50,31 @@ class TLEDatabase:
     def _loadSatCat(self):
         path = os.path.join(self.dataDir, self.SATCAT_FILENAME)
         if self._fileNeedsUpdate(path):
-            print('Downloading SATCAT...')
+            if self.statusCallback:
+                self.statusCallback(f"Downloading SATCAT catalog...")
             import requests
             r = requests.get(self.SATCAT_URL, timeout=10)
             r.raise_for_status()
             with open(path, 'wb') as f:
                 f.write(r.content)
+        if self.statusCallback:
+            self.statusCallback(f"Loading SATCAT catalog...")
         self.satcat = pd.read_csv(path)
 
     @staticmethod
     def _parseTLE(name, line1, line2, tag=None, source=None):
         noradIndex = int(line1[2:7])
-
         # EPOCH CONVERSION
         epochString = line1[18:32]
         year = 2000 + int(epochString[:2]) if int(epochString[:2]) < 57 else 1900 + int(epochString[:2])
         epochBase = datetime(year, 1, 1) + timedelta(days=float(epochString[2:]) - 1)
         jdEpoch = jday(year, epochBase.month, epochBase.day, epochBase.hour, epochBase.minute, epochBase.second + epochBase.microsecond / 1e6)
-
         # ORBITAL ELEMENTS
         bStar = float(f'{line1[53]}0.{line1[54:59]}e{line1[59:61]}')
         inclination, eccentricity = float(line2[8:16]), float(f'0.{line2[26:33]}')
         raan, argPerigee = float(line2[17:25]), float(line2[34:42])
         meanAnomaly, meanMotion = float(line2[43:51]), float(line2[52:63])
         revNumber = int(line2[63:68])
-
         return {
             'OBJECT_NAME': name, 'NORAD_CAT_ID': noradIndex, 'EPOCH': jdEpoch,
             'MEAN_MOTION': meanMotion, 'ECCENTRICITY': eccentricity, 'INCLINATION': inclination,
@@ -85,6 +84,8 @@ class TLEDatabase:
         }
 
     def loadSource(self, tag):
+        if self.statusCallback:
+            self.statusCallback(f"Loading {tag} TLE file...")
         if tag not in self.CELESTRAK_SOURCES:
             raise ValueError(f'Unknown CelesTrak tag: {tag}')
         path = self._download(tag, self.CELESTRAK_SOURCES[tag])
@@ -120,25 +121,3 @@ class TLEDatabase:
     def getObjectName(self, noradIndex):
         row = self.dataFrame[self.dataFrame['NORAD_CAT_ID'] == noradIndex].iloc[0]
         return row['OBJECT_NAME']
-
-
-class TLELoaderWorker(QObject):
-    progress = pyqtSignal(int)
-    status = pyqtSignal(str)
-    finished = pyqtSignal(object)
-
-    def __init__(self, tleDir):
-        super().__init__()
-        self.tleDir = tleDir
-
-    def run(self):
-        db = TLEDatabase(self.tleDir)
-        total = len(TLEDatabase.CELESTRAK_SOURCES)
-        step = 100 / total
-        current = 0
-        for tag in TLEDatabase.CELESTRAK_SOURCES:
-            db.loadSource(tag)
-            current += step
-            self.progress.emit(int(current))
-        db.finalize()
-        self.finished.emit(db)

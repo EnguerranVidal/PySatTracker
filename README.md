@@ -1,9 +1,9 @@
 # PySatTracker
-[![GitHub watchers](https://badgen.net/github/watchers/EnguerranVidal/PySatTracker/)](https://GitHub.com/EnguerranVidal/PySatTracker/watchers/) [![GitHub stars](https://badgen.net/github/stars/EnguerranVidal/PySatTracker)](https://GitHub.com/EnguerranVidal/PySatTracker/stargazers/)
+[![GitHub watchers](https://badgen.net/github/watchers/EnguerranVidal/PyStrato/)](https://GitHub.com/EnguerranVidal/PyStrato/watchers/) [![GitHub stars](https://badgen.net/github/stars/EnguerranVidal/PyStrato)](https://GitHub.com/EnguerranVidal/PyStrato/stargazers/)
 ![GitHub license](https://img.shields.io/github/license/EnguerranVidal/PySatTracker)
 
-[![GitHub branches](https://badgen.net/github/branches/EnguerranVidal/PySatTracker)](https://github.com/EnguerranVidal/PySatTracker/)
-[![GitHub commits](https://badgen.net/github/commits/EnguerranVidal/PySatTracker)](https://github.com/EnguerranVidal/PySatTracker/) 
+[![GitHub branches](https://badgen.net/github/branches/EnguerranVidal/PyStrato)](https://github.com/EnguerranVidal/PyStrato/)
+[![GitHub commits](https://badgen.net/github/commits/EnguerranVidal/PyStrato)](https://github.com/EnguerranVidal/PyStrato/) 
 ![GitHub last commit](https://img.shields.io/github/last-commit/EnguerranVidal/PySatTracker)
 ![Github issus open](https://img.shields.io/github/issues-raw/EnguerranVidal/PySatTracker)
 ![Github issus closed](https://img.shields.io/github/issues-closed-raw/EnguerranVidal/PySatTracker)
@@ -19,6 +19,7 @@
 
 <div style="text-align: justify"> The tool uses a Two Line Elements database extracted daily from the <a href="https://celestrak.org">Celestrak</a> archive, featuring all currently active satellites in orbit around Earth. </div>
 
+<div style="text-align: justify"> Some icons by <a href="https://icons8.com/">Icons8</a>. </div>
 ## INSTALLATION
 
 1. Cloning the Github Repository.
@@ -74,4 +75,5 @@ python3 main.py
 | Reentries Predictions | Predict satellite reentries | Planned |
 | Orbital Calculations Optimization | Optimize orbital calculations for GPU usage | Planned |
 
+Icons 
 <p align="left">(<a href="#readme-top">back to top</a>)</p>
