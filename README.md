@@ -20,6 +20,7 @@
 <div style="text-align: justify"> The tool uses a Two Line Elements database extracted daily from the <a href="https://celestrak.org">Celestrak</a> archive, featuring all currently active satellites in orbit around Earth. </div>
 
 <div style="text-align: justify"> Some icons by <a href="https://icons8.com/">Icons8</a>. </div>
+
 ## INSTALLATION
 
 1. Cloning the Github Repository.
