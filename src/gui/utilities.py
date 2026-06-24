@@ -26,7 +26,8 @@ def generateDefaultSettingsJson(path):
                 'DATA': {'UPDATE_INTERNAL_DAYS': 2, 'AUTO_DOWNLOAD': True}, 'CURRENT_TAB': '3D_VIEW', 'TIMELINE_MODE': 'UTC',
                 'VIEW_CONFIG': {'DEFAULT_CONFIG': giveDefaultObjectViewConfig(), 'OBJECTS': {'25544': giveDefaultObjectViewConfig()}, 'TEXTURES': giveDefaultTextureConfig(),
                                 '2D_MAP': {'SHOW_SUN': True, 'SHOW_NIGHT': True, 'SHOW_GRID': False, 'SHOW_VERNAL': False, 'SHOW_TERMINATOR': False, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False},
-                                '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'SHOW_EQUATORIAL_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False}},
+                                '3D_VIEW': {'SHOW_EARTH': True, 'SHOW_ECI_AXES': False, 'SHOW_ECEF_AXES': False, 'SHOW_EARTH_GRID': False, 'SHOW_EQUATORIAL_GRID': False, 'ZOOM': 5, 'ROTATION': {'X': 45, 'Y': 225}, 'SHOW_ORBIT_PATHS': True, 'SHOW_GROUND_TRACKS': True, 'SHOW_FOOTPRINTS': False},
+                                'PASSES': {'LAST_LONGITUDE': 40.7128, 'LAST_LATITUDE': 0, 'LAST_TIME_SPAN': 'Tonight', 'MIN_ELEVATION': 20, 'SUN_MAX_ELEVATION': -6.0, 'RESOLUTION': 60, 'OBSERVER_ALTITUDE': 0.0}},
                 'PLOT_VIEW': {'TABS': {}}}
     with open(path, 'w') as f:
         json.dump(settings, f)

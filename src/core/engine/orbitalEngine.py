@@ -578,3 +578,12 @@ class OrbitalMechanicsEngine:
         exposure = self.solarExposure(fullJulianDates, positions)
         magnitude = np.where(exposure == 1, standardMagnitude + 5.0 * np.log10(obsObjectDistance / 1000.0) + phaseMagnitude, np.nan)
         return self._maybeScalar(magnitude, scalar)
+
+    def observerIsDark(self, longitude, latitude, altitude, fullJulianDates, radians=True, maxSunElevationAngle=10):
+        fullJulianDates, scalar = self._ensureArray(fullJulianDates)
+        observerEci = self.observerPositionEci(longitude, latitude, altitude, fullJulianDates, radians=False)
+        sunDirection = self.solarDirectionEci(fullJulianDates)
+        observerZenith = observerEci / np.linalg.norm(observerEci, axis=1)[:, None]
+        sunElevation = np.arcsin(np.sum(observerZenith * sunDirection, axis=1))
+        isDark = np.rad2deg(sunElevation) <= maxSunElevationAngle
+        return self._maybeScalar(isDark.astype(int), scalar)
