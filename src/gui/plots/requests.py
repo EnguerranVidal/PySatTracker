@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import numpy as np
 from PyQt5.QtCore import Qt, QObject, QTimer, pyqtSignal, pyqtSlot, QMetaObject, Q_ARG, QThreadPool, QRunnable
 from PyQt5.QtWidgets import *
 

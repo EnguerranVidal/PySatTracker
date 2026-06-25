@@ -20,12 +20,15 @@ class VisiblePassesWidget(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
         self.viewWidget.showDefault()
 
+    def setTleDatabase(self, tleDatabase=None):
+        self.tleDatabase = tleDatabase if tleDatabase is not None else self.tleDatabase
+
     def _requestPasses(self, passRequest: VisiblePassesRequest):
         total = 0
         if self.tleDatabase is not None and self.tleDatabase.dataFrame is not None:
             total = len(self.tleDatabase.dataFrame)
         self.viewWidget.showProgress(total=max(total, 1))
-        task = VisiblePassesCalculationTask(passRequest)
+        task = VisiblePassesCalculationTask(passRequest, self.tleDatabase)
         task.signals.progress.connect(self.viewWidget.updateProgress)
         task.signals.result.connect(self._onCalculationsDone)
         self.threadPool.start(task)

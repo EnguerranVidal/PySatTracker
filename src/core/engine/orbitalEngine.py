@@ -581,8 +581,8 @@ class OrbitalMechanicsEngine:
 
     def observerIsDark(self, longitude, latitude, altitude, fullJulianDates, radians=True, maxSunElevationAngle=10):
         fullJulianDates, scalar = self._ensureArray(fullJulianDates)
-        observerEci = self.observerPositionEci(longitude, latitude, altitude, fullJulianDates, radians=False)
-        sunDirection = self.solarDirectionEci(fullJulianDates)
+        observerEci = self.observerPositionEci(longitude, latitude, altitude, fullJulianDates, radians=radians)
+        sunDirection = np.asarray(self.solarDirectionEci(fullJulianDates))
         observerZenith = observerEci / np.linalg.norm(observerEci, axis=1)[:, None]
         sunElevation = np.arcsin(np.sum(observerZenith * sunDirection, axis=1))
         isDark = np.rad2deg(sunElevation) <= maxSunElevationAngle

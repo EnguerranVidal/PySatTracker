@@ -18,7 +18,7 @@ from src.gui.plots.polar import PolarPlot
 from src.gui.plots.scatter import ScatterPlot
 from src.gui.common import TimelineWidget, SimulationClock, OrbitWorker, SetTimeDialog, TextureEditorDialog
 from src.gui.view3d.general import View3dWidget
-from src.gui.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
+from src.core.utilities import generateDefaultSettingsJson, loadSettingsJson, saveSettingsJson, getKeyFromValue
 from src.core.quantities import VariableRegistry
 
 

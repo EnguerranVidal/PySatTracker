@@ -9,8 +9,7 @@ from PyQt5.QtWidgets import *
 
 from src.core.objects import ActiveObjectsModel
 from src.core.quantities import AngleQuantity
-from src.gui.utilities import upperBoundary
-
+from src.core.utilities import upperBoundary
 from src.gui.plots.line import LinePlot, LinePlotSettingsWidget, LineSettingsPage
 
 

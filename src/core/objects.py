@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap
 
-from src.gui.utilities import giveDefaultGroupViewConfig
+from src.core.utilities import giveDefaultGroupViewConfig
 
 @dataclass(frozen=True)
 class NoradObject:

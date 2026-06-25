@@ -5,7 +5,7 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 from PIL import Image
 import numpy as np
 
-from src.gui.utilities import getSelectedTextureOption, getSelectedTexturePath
+from src.core.utilities import getSelectedTextureOption, getSelectedTexturePath
 
 
 class RenderContext:

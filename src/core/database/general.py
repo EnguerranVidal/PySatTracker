@@ -1,7 +1,7 @@
 from PyQt5.QtCore import QObject, pyqtSignal
 
-from core.database.starDatabase import StarDatabase
-from core.database.tleDatabase import TLEDatabase
+from src.core.database.starDatabase import StarDatabase
+from src.core.database.tleDatabase import TLEDatabase
 
 
 class DatabaseLoaderWorker(QObject):

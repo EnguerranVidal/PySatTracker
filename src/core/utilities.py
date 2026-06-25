@@ -79,3 +79,11 @@ def configureOpenGLFormat():
     surfaceFormat.setSamples(8)
     surfaceFormat.setProfile(QSurfaceFormat.CompatibilityProfile)
     QSurfaceFormat.setDefaultFormat(surfaceFormat)
+
+def segmentArray(arr: np.ndarray, mask: np.ndarray, dim=0):
+    mask = np.asarray(mask, dtype=bool)
+    padded = np.r_[False, mask, False]
+    changes = np.diff(padded.astype(np.int8))
+    starts = np.flatnonzero(changes == 1)
+    ends = np.flatnonzero(changes == -1) - 1
+    return [ arr[tuple(slice(s, e + 1) if i == dim else slice(None) for i in range(arr.ndim))] for s, e in zip(starts, ends)]

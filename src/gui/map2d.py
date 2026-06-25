@@ -9,7 +9,7 @@ from OpenGL.GLUT import *
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
-from src.gui.utilities import getSelectedTexturePath
+from src.core.utilities import getSelectedTexturePath
 from src.core.objects import ActiveObjectsModel
 
 
