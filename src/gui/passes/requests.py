@@ -16,7 +16,7 @@ class VisiblePassesRequest:
     timeSpan: str = "Tonight"
     timeResolution: int = 60
     minElevationAngle: float = 10
-    maxSunElevationAngle: float = 30
+    maxSunElevationAngle: float = -6
     observerAltitude: float = 0
 
 @dataclass
@@ -58,7 +58,7 @@ class VisiblePassesCalculationTask(QRunnable):
             startTime, endTime = self._timeSpanBounds(datetime.utcnow())
             fullJulianDates = self._buildFullJulianDates(startTime, endTime)
             dateTimes = self.engine.julianDateArrayToDatetimeArray(fullJulianDates)
-            obsLongitude, obsLatitude, obsAltitude = self.request.observerAltitude
+            obsLongitude, obsLatitude, obsAltitude = self.request.longitude, self.request.latitude, self.request.observerAltitude
             noradIndices = self.tleDatabase.dataFrame["NORAD_CAT_ID"].dropna().astype(int).to_list()
             observerIsDark = self.engine.observerIsDark(obsLongitude, obsLatitude, obsAltitude, fullJulianDates, radians=False, maxSunElevationAngle=self.request.maxSunElevationAngle)
             for i, noradIndex in enumerate(noradIndices):
@@ -101,7 +101,7 @@ class VisiblePassesCalculationTask(QRunnable):
         objectName = self.tleDatabase.getObjectName(noradIndex)
         visiblePasses = []
         for indices in indexSegments:
-            if indices.size == 0:
+            if indices.size < 2:
                 continue
             segmentElevations = elevations[indices]
             maxElevationIndex = indices[int(np.argmax(segmentElevations))]
@@ -121,5 +121,4 @@ class VisiblePassesCalculationTask(QRunnable):
                     ranges=ranges[indices]
                 )
             )
-        visiblePasses = []
         return visiblePasses

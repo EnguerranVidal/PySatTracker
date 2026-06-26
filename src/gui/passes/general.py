@@ -1,8 +1,12 @@
+import numpy as np
+import pyqtgraph as pg
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QThreadPool
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
 
+from gui.plots.polar import PolarGraph
 from src.gui.passes.requests import VisiblePassesRequest, VisiblePassesCalculationTask
 
 
@@ -40,6 +44,29 @@ class VisiblePassesWidget(QMainWindow):
         else:
             self.viewWidget.showDefault()
             QMessageBox.information(self, "Result", "No passes found.")
+
+
+class VisiblePassCard(QFrame):
+    clicked = pyqtSignal(object)
+
+    def __init__(self, visiblePass, parent=None):
+        super().__init__(parent)
+        self.visiblePass = visiblePass
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFrameShape(QFrame.StyledPanel)
+        title = QLabel(visiblePass.objectName)
+        title.setStyleSheet("font-weight: bold;")
+        subtitle = QLabel(f"{visiblePass.startTime:%Y-%m-%d %H:%M:%S} UTC - "f"{visiblePass.endTime:%H:%M:%S} UTC")
+        details = QLabel(f"Max elevation: {visiblePass.maxElevation:.1f} deg | "f"Duration: {visiblePass.duration // 60}m {visiblePass.duration % 60:02d}s")
+        mainLayout = QVBoxLayout(self)
+        mainLayout.addWidget(title)
+        mainLayout.addWidget(subtitle)
+        mainLayout.addWidget(details)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.visiblePass)
+        super().mousePressEvent(event)
 
 
 class VisiblePassesSettingsWidget(QDockWidget):
@@ -128,8 +155,12 @@ class VisiblePassesSettingsWidget(QDockWidget):
 class VisiblePassesViewWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.results = []
         self.stackedWidget = QStackedWidget(self)
-        self.defaultPage = QWidget()
+
+        # DEFAULT PAGE
+        self.defaultPage = QLabel("No visible passes computed.")
+        self.defaultPage.setAlignment(Qt.AlignCenter)
         self.stackedWidget.addWidget(self.defaultPage)
 
         # CALCULATION TASK PROGRESS BAR
@@ -147,13 +178,36 @@ class VisiblePassesViewWidget(QWidget):
         progressLayout.addStretch()
         self.stackedWidget.addWidget(self.progressPage)
 
-        # VISIBLE PASSES RESULTS PAGE
+        # RESULTS CARDS PAGE
         self.resultsPage = QWidget()
-        self.resultsLabel = QLabel("Results will appear here...")
-        self.resultsLabel.setAlignment(Qt.AlignCenter)
+        self.cardsContainer = QWidget()
+        self.cardsLayout = QVBoxLayout(self.cardsContainer)
+        self.cardsLayout.setContentsMargins(8, 8, 8, 8)
+        self.cardsLayout.setSpacing(8)
+        self.cardsLayout.addStretch()
+        self.scrollArea = QScrollArea()
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setWidget(self.cardsContainer)
         resultsLayout = QVBoxLayout(self.resultsPage)
-        resultsLayout.addWidget(self.resultsLabel)
+        resultsLayout.setContentsMargins(0, 0, 0, 0)
+        resultsLayout.addWidget(self.scrollArea)
         self.stackedWidget.addWidget(self.resultsPage)
+
+        # GRAPH PAGE
+        self.graphPage = QWidget()
+        self.backButton = QPushButton("Back to passes")
+        self.backButton.clicked.connect(self.showResultsPage)
+        self.passInfoLabel = QLabel()
+        self.passInfoLabel.setAlignment(Qt.AlignCenter)
+        self.polarGraph = PolarGraph(ringCount=3, angularStep=30, maximumRadius=90.0, bgColor=QColor(10, 10, 14), gridColor=QColor(150, 150, 160), labelColor=QColor(230, 230, 230), shaded=False,)
+        self.polarGraph.setRadialRange(90.0)
+        graphHeaderLayout = QHBoxLayout()
+        graphHeaderLayout.addWidget(self.backButton, 0)
+        graphHeaderLayout.addWidget(self.passInfoLabel, 1)
+        graphLayout = QVBoxLayout(self.graphPage)
+        graphLayout.addLayout(graphHeaderLayout)
+        graphLayout.addWidget(self.polarGraph, 1)
+        self.stackedWidget.addWidget(self.graphPage)
 
         mainLayout = QVBoxLayout(self)
         mainLayout.setContentsMargins(0, 0, 0, 0)
@@ -171,7 +225,38 @@ class VisiblePassesViewWidget(QWidget):
         self.progressBar.setValue(value)
 
     def showResults(self, results: list = None):
-        self.stackedWidget.setCurrentIndex(2)
+        self.results = results or []
+        self._clearPassCards()
+        for visiblePass in self.results:
+            card = VisiblePassCard(visiblePass)
+            card.clicked.connect(self.showPassGraph)
+            self.cardsLayout.insertWidget(self.cardsLayout.count() - 1, card)
+        self.showResultsPage()
+
+    def showResultsPage(self):
+        self.stackedWidget.setCurrentWidget(self.resultsPage)
+
+    def showPassGraph(self, visiblePass):
+        self._plotPass(visiblePass)
+        self.stackedWidget.setCurrentWidget(self.graphPage)
+
+    def _clearPassCards(self):
+        while self.cardsLayout.count() > 1:
+            item = self.cardsLayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _plotPass(self, visiblePass):
+        self.polarGraph.clearPolar()
+        radius = 90.0 - np.asarray(visiblePass.elevations, dtype=float)
+        angle = 90.0 - np.asarray(visiblePass.azimuths, dtype=float)
+        self.polarGraph.plotPolar(radius, angle, pen=pg.mkPen(QColor(0, 180, 255), width=3), name=visiblePass.objectName)
+        self.passInfoLabel.setText(
+            f"{visiblePass.objectName} | "
+            f"{visiblePass.startTime:%H:%M:%S} - {visiblePass.endTime:%H:%M:%S} UTC | "
+            f"Max Elevation {visiblePass.maxElevation:.1f} °"
+        )
 
 
 class SetLocationDialog(QDialog):
