@@ -2,16 +2,17 @@ import json
 import numpy as np
 from PyQt5.QtGui import QSurfaceFormat
 
+from src.core.settings import UiSettings
+from src.core.config import ObjectViewConfig, GroupViewConfig
+
 
 def giveDefaultObjectViewConfig():
-    return {'SPOT': {'SIZE': 6, 'COLOR': (255, 60, 0), },
-            'GROUND_TRACK': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
-            'ORBIT_PATH': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (255, 60, 0), },
-            'FOOTPRINT': {'MODE': 'WHEN_SELECTED', 'WIDTH': 2, 'COLOR': (0, 180, 255), },
-            'BEFORE': 0.5, 'BEFORE_UNIT': 'orbital periods', 'AFTER': 0.5, 'AFTER_UNIT': 'orbital periods'}
+    return ObjectViewConfig().toDict()
+
 
 def giveDefaultGroupViewConfig():
-    return {'SHARED': True, 'SOURCE': 'CUSTOM', 'SOURCE_OBJECT': None, 'CONFIG': giveDefaultObjectViewConfig()}
+    return GroupViewConfig().toDict()
+
 
 def giveDefaultTextureConfig():
     return {'EARTH_DAY': {'SELECTED': 'Default', 'OPTIONS': {'Default': {'PATH': 'src/assets/textures/earth_day/Default.jpg', 'SOURCE': 'https://www.solarsystemscope.com/textures/', 'IS_DEFAULT': True}}},
@@ -35,10 +36,12 @@ def generateDefaultSettingsJson(path):
 def loadSettingsJson(path):
     with open(path) as f:
         settings = json.load(f)
-    return settings
+    return UiSettings.fromDict(settings)
 
 def saveSettingsJson(path, settings):
-    with open(path, 'w') as f:
+    if isinstance(settings, UiSettings):
+        settings = settings.toDict()
+    with open(path, "w") as f:
         json.dump(settings, f)
 
 def getSelectedTextureOption(textureConfig, category):

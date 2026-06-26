@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import *
 
 from src.core.utilities import getSelectedTexturePath
 from src.core.objects import ActiveObjectsModel
+from src.core.config import ViewConfig
 
 
 class Map2dWidget(QOpenGLWidget):
@@ -26,7 +27,7 @@ class Map2dWidget(QOpenGLWidget):
         self.zoom, self.offset, self.lastMousePos = 1.0, np.array([0.0, 0.0]), None
         self.activeObjects: ActiveObjectsModel | None = None
         self.hoveredObject, self.hoverRadius = None, 20
-        self.displayConfiguration = {}
+        self.displayConfiguration = ViewConfig()
         self.objectPositions, self.groundTracks, self.footprints = {}, {}, {}
         self.sunLongitude, self.sunLatitude = None, None
         self.earthTexture, self.nightTexture, self.earthShader = None, None, None
@@ -183,22 +184,22 @@ class Map2dWidget(QOpenGLWidget):
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         self._drawEarth()
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_GRID', False):
+        if self.displayConfiguration.map2d.showGrid:
             self._drawGrid()
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_TERMINATOR', False):
+        if self.displayConfiguration.map2d.showTerminator:
             self._drawTerminator()
         self._drawGroundTracks()
         self._drawFootprints()
         self._drawObjects()
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_SUN', False):
+        if self.displayConfiguration.map2d.showSun:
             self._drawSun()
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_VERNAL', False):
+        if self.displayConfiguration.map2d.showVernal:
             self._drawVernal()
         self._drawLabels()
 
-    def setDisplayConfiguration(self, displayConfiguration):
-        self.displayConfiguration = displayConfiguration or {}
-        self.setTextureConfiguration(self.displayConfiguration.get('TEXTURES', {}))
+    def setDisplayConfiguration(self, displayConfiguration: ViewConfig):
+        self.displayConfiguration = displayConfiguration or ViewConfig()
+        self.setTextureConfiguration(self.displayConfiguration.textures)
         self.update()
 
     def setTextureConfiguration(self, textureConfiguration):
@@ -216,7 +217,7 @@ class Map2dWidget(QOpenGLWidget):
 
     def _drawEarth(self):
         correctShaderLoading = self.earthShader and self.nightTexture and self.sunLongitude is not None and self.sunLatitude is not None
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_NIGHT', False) and correctShaderLoading:
+        if self.displayConfiguration.map2d.showNight and correctShaderLoading:
             glUseProgram(self.earthShader)
             glActiveTexture(GL_TEXTURE0)
             glBindTexture(GL_TEXTURE_2D, self.earthTexture)
@@ -241,7 +242,7 @@ class Map2dWidget(QOpenGLWidget):
         glTexCoord2f(0, 1)
         glVertex2f(0, self.mapHeight)
         glEnd()
-        if self.displayConfiguration.get('2D_MAP', {}).get('SHOW_NIGHT', False) and correctShaderLoading:
+        if self.displayConfiguration.map2d.showNight and correctShaderLoading:
             glUseProgram(0)
             glActiveTexture(GL_TEXTURE1)
             glDisable(GL_TEXTURE_2D)
@@ -290,18 +291,18 @@ class Map2dWidget(QOpenGLWidget):
                             return copy.deepcopy(config)
                     elif source == 'OBJECT':
                         sourceNorad = groupConfig.get('SOURCE_OBJECT')
-                        if sourceNorad and str(sourceNorad) in self.displayConfiguration['OBJECTS']:
-                            return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(sourceNorad)])
-        return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(noradIndex)])
+                        if sourceNorad and str(sourceNorad) in self.displayConfiguration.objects:
+                            return copy.deepcopy(self.displayConfiguration.objects[str(sourceNorad)])
+        return copy.deepcopy(self.displayConfiguration.objects[str(noradIndex)])
 
     def _drawGroundTracks(self):
         glColor3f(0.2, 0.8, 1)
         for noradIndex, track in self.groundTracks.items():
             isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
             noradObjectConfiguration = self._getObjectRenderConfiguration(noradIndex)
-            isToggled = self.displayConfiguration.get('2D_MAP', {}).get('SHOW_GROUND_TRACKS', False)
-            if self._shouldRender(noradObjectConfiguration['GROUND_TRACK']['MODE'], isSelected, isToggled):
-                color, width = noradObjectConfiguration['GROUND_TRACK']['COLOR'], noradObjectConfiguration['GROUND_TRACK']['WIDTH']
+            isToggled = self.displayConfiguration.map2d.showGroundTracks
+            if self._shouldRender(noradObjectConfiguration.groundTrack.mode, isSelected, isToggled):
+                color, width = noradObjectConfiguration.groundTrack.color, noradObjectConfiguration.groundTrack.width
                 glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
                 glLineWidth(width)
                 segments = self._splitWrapSegment(track['LONGITUDE'], track['LATITUDE'])
@@ -321,9 +322,9 @@ class Map2dWidget(QOpenGLWidget):
         for noradIndex, footprint in self.footprints.items():
             isSelected = noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]
             noradObjectConfiguration = self._getObjectRenderConfiguration(noradIndex)
-            isToggled = self.displayConfiguration.get('2D_MAP', {}).get('SHOW_FOOTPRINTS', False)
-            if self._shouldRender(noradObjectConfiguration['FOOTPRINT']['MODE'], isSelected, isToggled):
-                color, width = noradObjectConfiguration['FOOTPRINT']['COLOR'], noradObjectConfiguration['FOOTPRINT']['WIDTH']
+            isToggled = self.displayConfiguration.map2d.showFootprints
+            if self._shouldRender(noradObjectConfiguration.footprint.mode, isSelected, isToggled):
+                color, width = noradObjectConfiguration.footprint.color, noradObjectConfiguration.footprint.width
                 glColor3f(color[0] / 255, color[1] / 255, color[2] / 255)
                 glLineWidth(width)
                 segments = self._splitWrapSegment(footprint['LONGITUDE'], footprint['LATITUDE'])
@@ -337,7 +338,7 @@ class Map2dWidget(QOpenGLWidget):
     def _drawObjects(self):
         for noradIndex, position in self.objectPositions.items():
             noradObjectConfiguration = self._getObjectRenderConfiguration(noradIndex)
-            color, size = noradObjectConfiguration['SPOT']['COLOR'], noradObjectConfiguration['SPOT']['SIZE']
+            color, size = noradObjectConfiguration.spot.color, noradObjectConfiguration.spot.size
             x, y = self._lonlatToCartesian(position['POSITION']['LONGITUDE'], position['POSITION']['LATITUDE'])
             glPointSize(size)
             if noradIndex in [obj.noradIndex for obj in self.activeObjects.selectedObjects]:
@@ -450,7 +451,7 @@ class Map2dWidget(QOpenGLWidget):
                 glVertex2f(x, y)
             glEnd()
 
-    def updateMap(self, positions, displayConfiguration):
+    def updateMap(self, positions, displayConfiguration: ViewConfig):
         self.displayConfiguration = displayConfiguration
         mapData = positions['2D_MAP']
         self.sunLongitude, self.sunLatitude = mapData['SUN']['LONGITUDE'], mapData['SUN']['LATITUDE']

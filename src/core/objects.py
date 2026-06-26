@@ -6,7 +6,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap
 
-from src.core.utilities import giveDefaultGroupViewConfig
+from src.core.config import GroupViewConfig, ObjectViewConfig
+
 
 @dataclass(frozen=True)
 class NoradObject:
@@ -115,7 +116,7 @@ class ActiveObjectsModel:
     def addGroup(self, groupName: str, color: Optional[str] = None):
         if groupName in self.objectGroups:
             raise ValueError(f"Group '{groupName}' already exists.")
-        self.objectGroups[groupName] = ObjectGroup(name=groupName, color=color or "#1E90FF", renderRules=giveDefaultGroupViewConfig())
+        self.objectGroups[groupName] = ObjectGroup(name=groupName, color=color or "#1E90FF", renderRules=GroupViewConfig().toDict())
         return self.objectGroups[groupName]
 
     def removeGroup(self, groupName: str):
@@ -216,10 +217,10 @@ class ActiveObjectsEditorWidget(QDockWidget):
         layout.addLayout(topBar)
         layout.addWidget(self.treeWidget)
 
-    def populate(self, tleDatabase, modelFromSettings: dict):
+    def populate(self, tleDatabase, model: ActiveObjectsModel):
         self.treeWidget.blockSignals(True)
         self.tleDatabase = tleDatabase
-        self.activeObjects = ActiveObjectsModel.fromDict(modelFromSettings)
+        self.activeObjects = model
         self.treeWidget.clear()
         # UNGROUPED
         ungroupedRoot = QTreeWidgetItem(["Ungrouped", ""])
@@ -377,7 +378,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
         else:
             event.ignore()
             return
-        self.populate(self.tleDatabase, self.activeObjects.toDict())
+        self.populate(self.tleDatabase, self.activeObjects)
         self.activeObjectsChanged.emit()
         event.acceptProposedAction()
 
@@ -416,7 +417,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
         if ok and name.strip():
             try:
                 self.activeObjects.addGroup(name.strip())
-                self.populate(self.tleDatabase, self.activeObjects.toDict())
+                self.populate(self.tleDatabase, self.activeObjects)
                 self.activeObjectsChanged.emit()
             except ValueError as e:
                 QMessageBox.warning(self, "Error", str(e))
@@ -427,7 +428,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
             group = self.activeObjects.objectGroups.pop(oldName)
             group.name = newName.strip()  # update internal name too
             self.activeObjects.objectGroups[newName.strip()] = group
-            self.populate(self.tleDatabase, self.activeObjects.toDict())
+            self.populate(self.tleDatabase, self.activeObjects)
             self.activeObjectsChanged.emit()
 
     def _changeGroupColor(self, groupName: str):
@@ -437,14 +438,14 @@ class ActiveObjectsEditorWidget(QDockWidget):
         color = QColorDialog.getColor(QColor(group.color), self)
         if color.isValid():
             group.color = color.name()
-            self.populate(self.tleDatabase, self.activeObjects.toDict())
+            self.populate(self.tleDatabase, self.activeObjects)
             self.activeObjectsChanged.emit()
 
     def _deleteGroup(self, groupName: str):
         reply = QMessageBox.question(self, "Delete Group", f"Delete group '{groupName}'? Objects will move to Ungrouped.", QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.activeObjects.removeGroup(groupName)
-            self.populate(self.tleDatabase, self.activeObjects.toDict())
+            self.populate(self.tleDatabase, self.activeObjects)
             self.activeObjectsChanged.emit()
 
     def _addObjectToSpecificGroup(self, groupName: str):
@@ -456,7 +457,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
                 objectName = self._getNameFromDatabase(noradIndex)
                 obj = NoradObject(noradIndex, objectName)
                 self.activeObjects.addToGroup(groupName, obj)
-            self.populate(self.tleDatabase, self.activeObjects.toDict())
+            self.populate(self.tleDatabase, self.activeObjects)
             self.activeObjectsChanged.emit()
 
     def _moveObject(self, obj: NoradObject, targetGroupName: str | None):
@@ -467,7 +468,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
 
     def _removeObject(self, obj: NoradObject):
         self.activeObjects.removeNoradIndexEverywhere(obj.noradIndex)
-        self.populate(self.tleDatabase, self.activeObjects.toDict())
+        self.populate(self.tleDatabase, self.activeObjects)
         self.activeObjectsChanged.emit()
 
     def _onItemChanged(self, item: QTreeWidgetItem, column: int):
@@ -507,7 +508,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
                     name = self._getNameFromDatabase(norad)
                     obj = NoradObject(norad, name)
                     self.activeObjects.addToUngrouped(obj)
-            self.populate(self.tleDatabase, self.activeObjects.toDict())
+            self.populate(self.tleDatabase, self.activeObjects)
             self.activeObjectsChanged.emit()
 
     def addItems(self, database, noradIndices: list):
@@ -517,7 +518,7 @@ class ActiveObjectsEditorWidget(QDockWidget):
                 name = self._getNameFromDatabase(norad)
                 obj = NoradObject(norad, name)
                 self.activeObjects.addToUngrouped(obj)
-        self.populate(self.tleDatabase, self.activeObjects.toDict())
+        self.populate(self.tleDatabase, self.activeObjects)
         self.activeObjectsChanged.emit()
 
     def _getNameFromDatabase(self, norad: int) -> str:
@@ -850,7 +851,6 @@ class ObjectViewConfigDockWidget(QDockWidget):
                 self._clearAllUI()
                 return
             self._currentConfig = copy.deepcopy(config[str(noradIndex)])
-            self._normalizeConfig(self._currentConfig)
             self._updateTitle()
             self._loadConfigIntoUI(self._currentConfig)
             self._updateUIState()
@@ -864,12 +864,11 @@ class ObjectViewConfigDockWidget(QDockWidget):
         group = self.activeObjects.objectGroups.get(groupName)
         if not group:
             return
-        defaultConfig = giveDefaultGroupViewConfig()
+        defaultConfig = GroupViewConfig().toDict()
         groupConfig = group.renderRules
         self._loading = True
         try:
             self._currentConfig = copy.deepcopy(groupConfig.get('CONFIG', defaultConfig))
-            self._normalizeConfig(self._currentConfig)
             self._updateTitle()
             self.shareCheckBox.setChecked(groupConfig.get('SHARED', True))
             source = groupConfig.get('SOURCE', 'CUSTOM')
@@ -966,55 +965,41 @@ class ObjectViewConfigDockWidget(QDockWidget):
             configuration = copy.deepcopy(self._currentConfig)
         self.groupConfigChanged.emit(self.groupName, {"SHARED": shared, "SOURCE": source, "SOURCE_OBJECT": sourceObject, "CONFIG": configuration})
 
-    def _loadConfigIntoUI(self, config):
+    def _loadConfigIntoUI(self, config: ObjectViewConfig):
         if not config:
             return
         self._loading = True
         try:
-            self._normalizeConfig(config)
-            spot, groundTrack, footprint, orbitPath = config['SPOT'], config['GROUND_TRACK'], config['FOOTPRINT'], config['ORBIT_PATH']
-            self.spotSizeSpin.setValue(spot['SIZE'])
-            self._setButtonColor(self.spotColorButton, spot['COLOR'])
-            self.groundTrackModeCombo.setCurrentText(self._modeToLabel(groundTrack['MODE']))
-            self.groundTrackWidthSpin.setValue(groundTrack['WIDTH'])
-            self._setButtonColor(self.groundTrackColorButton, groundTrack['COLOR'])
-            self.footprintModeCombo.setCurrentText(self._modeToLabel(footprint['MODE']))
-            self.footprintWidthSpin.setValue(footprint['WIDTH'])
-            self._setButtonColor(self.footprintColorButton, footprint['COLOR'])
-            self.orbitModeCombo.setCurrentText(self._modeToLabel(orbitPath['MODE']))
-            self.orbitWidthSpin.setValue(orbitPath['WIDTH'])
-            self._setButtonColor(self.orbitColorButton, orbitPath['COLOR'])
+            spot, groundTrack, footprint, orbitPath = config.spot, config.groundTrack, config.footprint, config.orbitPath
+            self.spotSizeSpin.setValue(spot.size)
+            self._setButtonColor(self.spotColorButton, spot.color)
+            self.groundTrackModeCombo.setCurrentText(self._modeToLabel(groundTrack.mode))
+            self.groundTrackWidthSpin.setValue(groundTrack.width)
+            self._setButtonColor(self.groundTrackColorButton, groundTrack.color)
+            self.footprintModeCombo.setCurrentText(self._modeToLabel(footprint.mode))
+            self.footprintWidthSpin.setValue(footprint.width)
+            self._setButtonColor(self.footprintColorButton, footprint.color)
+            self.orbitModeCombo.setCurrentText(self._modeToLabel(orbitPath.mode))
+            self.orbitWidthSpin.setValue(orbitPath.width)
+            self._setButtonColor(self.orbitColorButton, orbitPath.color)
         finally:
             self._loading = False
 
-    def applyGlobalVisibility(self, viewConfig: dict, currentTab: str):
-        if currentTab == 'PLOT_VIEW' or currentTab == 'VISIBLE_PASSES':
+    def applyGlobalVisibility(self, viewConfig, currentTab: str):
+        if currentTab in ("PLOT_VIEW", "VISIBLE_PASSES"):
             return
-        is2D = currentTab == '2D_MAP'
-        showOrbitPaths = True
-        showGroundTracks = viewConfig[currentTab].get('SHOW_GROUND_TRACKS', True)
-        showFootprints = viewConfig[currentTab].get('SHOW_FOOTPRINTS', True)
-        if not is2D:
-            showOrbitPaths = viewConfig[currentTab].get('SHOW_ORBIT_PATHS', True)
+        is2D = currentTab == "2D_MAP"
+        if is2D:
+            tabConfig = viewConfig.map2d
+            showGroundTracks = tabConfig.showGroundTracks
+            showFootprints = tabConfig.showFootprints
+            showOrbitPaths = False
+        else:
+            tabConfig = viewConfig.view3d
+            showGroundTracks = tabConfig.showGroundTracks
+            showFootprints = tabConfig.showFootprints
+            showOrbitPaths = tabConfig.showOrbitPaths
         self.groundTrackGroup.setEnabled(showGroundTracks)
         self.footprintGroup.setEnabled(showFootprints)
         self.orbitPathGroup.setEnabled(showOrbitPaths and not is2D)
         self.configEditorWidget.update()
-
-    @staticmethod
-    def _normalizeConfig(configuration):
-        configuration.setdefault('SPOT', {})
-        configuration['SPOT'].setdefault('SIZE', 10)
-        configuration['SPOT'].setdefault('COLOR', (255, 255, 255))
-        configuration.setdefault('GROUND_TRACK', {})
-        configuration.setdefault('FOOTPRINT', {})
-        configuration['GROUND_TRACK'].setdefault('MODE', "NEVER")
-        configuration['GROUND_TRACK'].setdefault('WIDTH', 1)
-        configuration['GROUND_TRACK'].setdefault('COLOR', (255, 255, 255))
-        configuration['FOOTPRINT'].setdefault('MODE', "NEVER")
-        configuration['FOOTPRINT'].setdefault('WIDTH', 1)
-        configuration['FOOTPRINT'].setdefault('COLOR', (255, 255, 255))
-        configuration.setdefault('ORBIT_PATH', {})
-        configuration['ORBIT_PATH'].setdefault('MODE', "NEVER")
-        configuration['ORBIT_PATH'].setdefault('WIDTH', 1)
-        configuration['ORBIT_PATH'].setdefault('COLOR', (255, 255, 255))

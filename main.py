@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QThread
 
 from src.core.database.general import DatabaseLoaderWorker
+from src.core.utilities import configureOpenGLFormat
 from src.gui.common import LoadingScreen
 from src.gui.mainWindow import MainWindow
-from src.gui.utilities import configureOpenGLFormat
 
 
 def main():

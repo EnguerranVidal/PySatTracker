@@ -5,6 +5,7 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 from PIL import Image
 import numpy as np
 
+from src.core.config import View3DConfig, ObjectViewConfig
 from src.core.utilities import getSelectedTextureOption, getSelectedTexturePath
 
 
@@ -138,7 +139,7 @@ class ObjectRenderer(BaseRenderer):
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         self.counts[noradIndex] = {"point": len(position), "orbit": len(orbit), "ground": len(groundTrack), "footprint": len(footprint), "subPoint": len(subPoint)}
 
-    def renderObject(self, noradIndex, cameraPosition, configuration, isSelected, isHovered, displayConfiguration, objectPosition=None, objectName=""):
+    def renderObject(self, noradIndex, cameraPosition, configuration: ObjectViewConfig, isSelected, isHovered, displayConfiguration: View3DConfig, objectPosition=None, objectName=""):
         if noradIndex not in self.vbos or self.shader is None:
             return
         isActive = isSelected or isHovered
@@ -146,59 +147,59 @@ class ObjectRenderer(BaseRenderer):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         # GROUND TRACK RENDER
-        groundTrackConfig = configuration.get('GROUND_TRACK', {})
-        showGroundTracks = displayConfiguration.get('SHOW_GROUND_TRACKS', True)
-        if self.counts[noradIndex].get("ground", 0) > 0 and self._shouldRender(groundTrackConfig.get('MODE', 'NEVER'), isSelected, showGroundTracks):
-            color = groundTrackConfig.get('COLOR', (255, 255, 255))
+        groundTrackConfig = configuration.groundTrack
+        showGroundTracks = displayConfiguration.showGroundTracks
+        if self.counts[noradIndex].get("ground", 0) > 0 and self._shouldRender(groundTrackConfig.mode, isSelected, showGroundTracks):
+            color = groundTrackConfig.color
             color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.75 if isActive else 0.35)
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
-            glLineWidth(groundTrackConfig.get('WIDTH', 1))
+            glLineWidth(groundTrackConfig.width)
             glEnable(GL_LINE_STIPPLE)
             glLineStipple(2, 0x00FF)
             self._bindObjectBuffer(noradIndex, "ground")
             glDrawArrays(GL_LINE_STRIP, 0, self.counts[noradIndex]["ground"])
             glDisable(GL_LINE_STIPPLE)
         # SUB-POINT CROSS RENDER
-        if self.counts[noradIndex].get("subPoint", 0) > 0 and self._shouldRender(groundTrackConfig.get('MODE', 'NEVER'), isSelected, showGroundTracks):
-            spotConfig = configuration.get('SPOT', {})
-            color = spotConfig.get('COLOR', (255, 255, 255))
+        if self.counts[noradIndex].get("subPoint", 0) > 0 and self._shouldRender(groundTrackConfig.mode, isSelected, showGroundTracks):
+            spotConfig = configuration.spot
+            color = spotConfig.color
             color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.95 if isActive else 0.65)
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
-            glLineWidth(max(2, int(spotConfig.get('SIZE', 6) / 4)))
+            glLineWidth(max(2, int(spotConfig.size / 4)))
             self._bindObjectBuffer(noradIndex, "subPoint")
             glDrawArrays(GL_LINES, 0, self.counts[noradIndex]["subPoint"])
         # VISIBILITY FOOTPRINT RENDER
-        footprintConfig = configuration.get('FOOTPRINT', {})
-        showFootprints = displayConfiguration.get('SHOW_FOOTPRINTS', True)
-        if self.counts[noradIndex].get("footprint", 0) > 0 and self._shouldRender(footprintConfig.get('MODE', 'NEVER'), isSelected, showFootprints):
-            color = footprintConfig.get('COLOR', (255, 255, 255))
+        footprintConfig = configuration.footprint
+        showFootprints = displayConfiguration.showFootprints
+        if self.counts[noradIndex].get("footprint", 0) > 0 and self._shouldRender(footprintConfig.mode, isSelected, showFootprints):
+            color = footprintConfig.color
             color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.95 if isActive else 0.75)
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
-            glLineWidth(max(2, footprintConfig.get('WIDTH', 1)))
+            glLineWidth(max(2, footprintConfig.width))
             glDepthFunc(GL_LEQUAL)
             self._bindObjectBuffer(noradIndex, "footprint")
             glDrawArrays(GL_LINE_LOOP, 0, self.counts[noradIndex]["footprint"])
         # ORBITAL PATH RENDER
-        orbitPathConfig = configuration['ORBIT_PATH']
-        showOrbits = displayConfiguration.get('SHOW_ORBIT_PATHS', False)
-        if self._shouldRender(orbitPathConfig['MODE'], isSelected, showOrbits):
-            color = orbitPathConfig['COLOR']
+        orbitPathConfig = configuration.orbitPath
+        showOrbits = displayConfiguration.showOrbitPaths
+        if self._shouldRender(orbitPathConfig.mode, isSelected, showOrbits):
+            color = orbitPathConfig.color
             color = (color[0] / 255, color[1] / 255, color[2] / 255, 0.8) if isActive else (1, 1, 1, 0.4)
             glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
             glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), 1.0)
-            glLineWidth(orbitPathConfig['WIDTH'])
+            glLineWidth(orbitPathConfig.width)
             self._bindObjectBuffer(noradIndex, "orbit")
             glDrawArrays(GL_LINE_STRIP, 0, self.counts[noradIndex]["orbit"])
             glDepthMask(GL_TRUE)
         # OBJECT SPOT RENDER
-        spotCfg = configuration['SPOT']
-        color = spotCfg['COLOR']
+        spotCfg = configuration.spot
+        color = spotCfg.color
         color = ( color[0] / 255, color[1] / 255, color[2] / 255, 0.8) if isActive else (1, 1, 1, 0.4)
         glUniform4f(glGetUniformLocation(self.shader, "uColor"), *color)
-        glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg['SIZE'] if isActive else 5)
+        glUniform1f(glGetUniformLocation(self.shader, "uPointSize"), spotCfg.size if isActive else 5)
         self._bindObjectBuffer(noradIndex, "point")
         glDrawArrays(GL_POINTS, 0, 1)
         self._unbindObjectBuffer()
@@ -240,7 +241,7 @@ class ObjectRenderer(BaseRenderer):
             return isSelected
         return False  # NEVER
 
-    def _renderObjectLabel(self, position, objectName, cameraPosition, displayConfiguration):
+    def _renderObjectLabel(self, position, objectName, cameraPosition, displayConfiguration: View3DConfig):
         position = np.asarray(position, dtype=float) / self.EARTH_RADIUS
         viewModel = (GLdouble * 16)()
         viewProjection = (GLdouble * 16)()
@@ -251,7 +252,7 @@ class ObjectRenderer(BaseRenderer):
         xWindow, yWindow, zWindow = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewport)
         if zWindow <= 0.0 or zWindow >= 1.0:
             return
-        if displayConfiguration.get('SHOW_EARTH', False):
+        if displayConfiguration.showEarth:
             alpha = self._earthOcclusionAlpha(position, cameraPosition, fadeWidth=0.08)
             if alpha <= 0.01:
                 return
@@ -343,7 +344,7 @@ class EarthRenderer(BaseRenderer):
         self.cloudShader = compileProgram(compileShader(cloudsVert, GL_VERTEX_SHADER), compileShader(cloudsFrag, GL_FRAGMENT_SHADER))
 
     def render(self, context):
-        if not context["config"].get("SHOW_EARTH", False):
+        if not context["config"].showEarth:
             return
         gmstAngle = context["gmst"]
         fullJulianDate = context.get("julianDate", 2451545.0)
@@ -409,7 +410,7 @@ class EarthRenderer(BaseRenderer):
 
     def _drawEarthGridLabels(self, context):
         cameraPosition = context.get("cameraPosition")
-        showEarth = context.get("config", {}).get("SHOW_EARTH", False)
+        showEarth = context["config"].showEarth
         gmstAngle = context["gmst"]
         viewModel = (GLdouble * 16)()
         viewProjection = (GLdouble * 16)()
@@ -705,7 +706,7 @@ class GridRenderer(BaseRenderer):
         pass
 
     def render(self, context):
-        if not context["config"].get("SHOW_EQUATORIAL_GRID", False):
+        if not context["config"].showEquatorialGrid:
             return
         cameraZoom = context.get("cameraZoom", 5.0)
         extent = self._niceGridExtent(cameraZoom * 2.5)
@@ -777,7 +778,7 @@ class GridRenderer(BaseRenderer):
         glGetDoublev(GL_PROJECTION_MATRIX, viewProjection)
         glGetIntegerv(GL_VIEWPORT, viewport)
         cameraPosition = context.get("cameraPosition")
-        earthOcclusionEnabled = context.get("config", {}).get("SHOW_EARTH", False)
+        earthOcclusionEnabled = context["config"].showEarth
         labelStep = step * 5.0
         value = -extent
         while value <= extent + 1e-9:

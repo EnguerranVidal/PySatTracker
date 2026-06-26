@@ -2,6 +2,7 @@ import copy
 import os
 import shutil
 import urllib.request
+
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -10,6 +11,7 @@ from PyQt5.QtGui import QPainter, QPen, QPixmap, QIcon, QPolygonF
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 
+from src.core.config import ViewConfig, ObjectViewConfig
 from src.core.engine.orbitalEngine import OrbitalMechanicsEngine
 from src.core.objects import ActiveObjectsModel
 
@@ -368,15 +370,15 @@ class OrbitWorker(QObject):
         resolution = int(orbitalPeriodSeconds / 60)
         return max(minimum, min(maximum, resolution)) + 1
 
-    def buildTimeArray(self, simulationTime: datetime, orbitalPeriod, configuration, resolution):
+    def buildTimeArray(self, simulationTime: datetime, orbitalPeriod, configuration: ObjectViewConfig, resolution):
         timeScales = {'seconds': 1, 'minutes': 60, 'hours': 3600, 'days': 86400, 'orbital periods': orbitalPeriod}
-        beforeDuration, beforeDurationUnit = configuration['BEFORE'], configuration['BEFORE_UNIT']
-        afterDuration, afterDurationUnit = configuration['AFTER'], configuration['AFTER_UNIT']
+        beforeDuration, beforeDurationUnit = configuration.before, configuration.beforeUnit
+        afterDuration, afterDurationUnit = configuration.after, configuration.afterUnit
         startDateTime = simulationTime - timedelta(seconds=beforeDuration * timeScales[beforeDurationUnit])
         endDateTime = simulationTime + timedelta(seconds=afterDuration * timeScales[afterDurationUnit])
         return self.engine.datetimeToJulianDateArray(startDateTime, endDateTime, resolution)
 
-    def map2dCalculations(self, simulationTime, configuration):
+    def map2dCalculations(self, simulationTime, configuration: ViewConfig):
         if not self.activeObjects:
             return {}
         noradIndices = self.activeObjects.allNoradIndices()
@@ -388,7 +390,7 @@ class OrbitWorker(QObject):
             nowState = self.engine.satelliteState(satObject, simFullJulianDate)
             orbitalPeriod = self.engine.orbitalPeriod(satObject)
             orbitResolution = self.orbitPathResolution(orbitalPeriod)
-            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution=orbitResolution)
+            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration.objects[str(noradIndex)], resolution=orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
             visibilityLongitudes, visibilityLatitudes = self.engine.satellite2dVisibilityFootPrint(nowState['longitude'], nowState['latitude'], nowState['altitude'], nbPoints=501)
@@ -403,7 +405,7 @@ class OrbitWorker(QObject):
         map2dResults['VERNAL'] = {'LONGITUDE': vernalLongitude, 'LATITUDE': vernalLatitude}
         return map2dResults
 
-    def view3dCalculations(self, simulationTime, configuration):
+    def view3dCalculations(self, simulationTime, configuration: ViewConfig):
         if not self.activeObjects:
             return {}
         noradIndices = self.activeObjects.allNoradIndices()
@@ -415,7 +417,7 @@ class OrbitWorker(QObject):
             nowState = self.engine.satelliteState(satObject, simFullJulianDate)
             orbitalPeriod = self.engine.orbitalPeriod(satObject)
             orbitResolution = self.orbitPathResolution(orbitalPeriod)
-            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration['OBJECTS'][str(noradIndex)], resolution= orbitResolution)
+            julianDates, fractions = self.buildTimeArray(simulationTime, orbitalPeriod, configuration.objects[str(noradIndex)], resolution= orbitResolution)
             fullJulianDates = julianDates + fractions
             states = self.engine.satelliteState(satObject, fullJulianDates)
             subPointCrossEci = self.engine.satellite3dSubPointCross(nowState['rECI'], nowState['vECI'], simFullJulianDate, surfaceOffset=10, sizeKilometers=180)
@@ -434,8 +436,8 @@ class OrbitWorker(QObject):
         view3dResults['MOON_ORIENTATION'] = self.engine.moonRotationMatrixEci(simFullJulianDate)
         return view3dResults
 
-    @pyqtSlot(object, dict)
-    def compute(self, simulationTime: datetime, configuration):
+    @pyqtSlot(object, object)
+    def compute(self, simulationTime: datetime, configuration: ViewConfig):
         if not self._running or self.tleDatabase is None or self.activeObjects is None:
             return
         results = {'2D_MAP': self.map2dCalculations(simulationTime=simulationTime, configuration=configuration), '3D_VIEW': self.view3dCalculations(simulationTime=simulationTime, configuration=configuration)}

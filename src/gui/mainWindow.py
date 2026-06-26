@@ -7,6 +7,8 @@ from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QThread, QUrl, Q_ARG, QMetaObject
 from PyQt5.QtWidgets import *
 
+from src.core.config import ViewConfig
+from src.core.settings import WindowGeometry
 from src.gui.passes.general import VisiblePassesWidget
 from src.core.objects import ActiveObjectsEditorWidget, ActiveObjectsModel, ObjectInfoDockWidget, ObjectViewConfigDockWidget
 from src.gui.map2d import Map2dWidget
@@ -25,7 +27,6 @@ from src.core.quantities import VariableRegistry
 class MainWindow(QMainWindow):
     def __init__(self, currentDir: str):
         super().__init__()
-        self.settings = {}
         self.icons = {}
         # FOLDER PATHS & SETTINGS
         self.currentDir = currentDir
@@ -33,14 +34,14 @@ class MainWindow(QMainWindow):
         self.dataPath = os.path.join(self.currentDir, 'data')
         self.noradPath = os.path.join(self.dataPath, 'norad')
         self._checkEnvironment()
-        self.loadSettings()
+        self.settings = loadSettingsJson(self.settingsPath)
 
         # CENTRAL VISUALIZATION WIDGET
-        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings['TIMELINE_MODE'])
+        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings.timelineMode)
         self.setCentralWidget(self.centralViewWidget)
-        self.centralViewWidget.view3dWidget.camera.zoom = self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM']
-        self.centralViewWidget.view3dWidget.camera.rotationX = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X']
-        self.centralViewWidget.view3dWidget.camera.rotationY = self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y']
+        self.centralViewWidget.view3dWidget.camera.zoom = self.settings.viewConfig.view3d.zoom
+        self.centralViewWidget.view3dWidget.camera.rotationX = self.settings.viewConfig.view3d.rotation.x
+        self.centralViewWidget.view3dWidget.camera.rotationY = self.settings.viewConfig.view3d.rotation.y
         self.centralViewWidget.view3dWidget.cameraChanged.connect(self._change3dViewCameraSettings)
         self.centralViewWidget.view3dWidget.requestContextMenu.connect(self._show3dContextMenu)
 
@@ -69,38 +70,38 @@ class MainWindow(QMainWindow):
         self._updateActionStates()
 
     def _updateStackedWidget(self, widgetIndex):
-        self.settings['CURRENT_TAB'] = self.centralViewWidget.TABS[widgetIndex]
-        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings['VIEW_CONFIG']), self.settings['CURRENT_TAB'])
+        self.settings.currentTab = self.centralViewWidget.TABS[widgetIndex]
+        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings.viewConfig), self.settings.currentTab)
         self.setObjectConfigWidgetsVisibility()
         self._manageToolBarVisibility(self.centralViewWidget.TABS[widgetIndex])
 
     def _timelineModeChanged(self, mode):
-        self.settings['TIMELINE_MODE'] = mode
+        self.settings.timelineMode = mode
         self.saveSettings()
 
     def _createActions(self):
         self._selectionDependentActions = []
         # OPEN 2D MAP
         self.open2dMapAction = QAction('&Open 2D Map', self, checkable=True)
-        self.open2dMapAction.setChecked(self.settings['CURRENT_TAB'] == '2D_MAP')
+        self.open2dMapAction.setChecked(self.settings.currentTab == '2D_MAP')
         self.open2dMapAction.setIcon(self.icons['MAP'])
         self.open2dMapAction.setStatusTip('Open 2D Map')
         self.open2dMapAction.triggered.connect(self._open2dMap)
         # OPEN 3D VIEW
         self.open3dViewAction = QAction('&Open 3D View', self, checkable=True)
-        self.open3dViewAction.setChecked(self.settings['CURRENT_TAB'] == '3D_VIEW')
+        self.open3dViewAction.setChecked(self.settings.currentTab == '3D_VIEW')
         self.open3dViewAction.setIcon(self.icons['SATELLITE_GLOBE'])
         self.open3dViewAction.setStatusTip('Open 3D View')
         self.open3dViewAction.triggered.connect(self._open3dView)
         # OPEN PLOT VIEW
         self.openPlotViewAction = QAction('&Open Plot View', self, checkable=True)
-        self.openPlotViewAction.setChecked(self.settings['CURRENT_TAB'] == 'PLOT_VIEW')
+        self.openPlotViewAction.setChecked(self.settings.currentTab == 'PLOT_VIEW')
         self.openPlotViewAction.setIcon(self.icons['PLOT'])
         self.openPlotViewAction.setStatusTip('Open Plot View')
         self.openPlotViewAction.triggered.connect(self._openPlotView)
         # OPEN VISIBLE PASSES
         self.openVisiblePassesAction = QAction('&Open Visible Passes', self, checkable=True)
-        self.openVisiblePassesAction.setChecked(self.settings['CURRENT_TAB'] == 'VISIBLE_PASSES')
+        self.openVisiblePassesAction.setChecked(self.settings.currentTab == 'VISIBLE_PASSES')
         self.openVisiblePassesAction.setIcon(self.icons['BINOCULARS'])
         self.openVisiblePassesAction.setStatusTip('Open Visible Passes')
         self.openVisiblePassesAction.triggered.connect(self._openVisiblePasses)
@@ -121,45 +122,45 @@ class MainWindow(QMainWindow):
 
         # SHOW 2D MAP GROUND TRACKS
         self.showGroundTracks2dAction = QAction('Show Ground Tracks', self, checkable=True)
-        self.showGroundTracks2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GROUND_TRACKS'])
+        self.showGroundTracks2dAction.setChecked(self.settings.viewConfig.map2d.showGroundTracks)
         self.showGroundTracks2dAction.toggled.connect(self._toggleGroundTracks2d)
         self.showGroundTracks2dAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP FOOTPRINTS
         self.showFootprints2dAction = QAction('Show Footprints', self, checkable=True)
-        self.showFootprints2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_FOOTPRINTS'])
+        self.showFootprints2dAction.setChecked(self.settings.viewConfig.map2d.showFootprints)
         self.showFootprints2dAction.toggled.connect(self._toggleFootprints2d)
         self.showFootprints2dAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP NIGHT LAYER ACTION
         self.showNightLayerAction = QAction('&Show Night Layer', self, checkable=True)
         self.showNightLayerAction.setIcon(self.icons['SHADOW'])
-        self.showNightLayerAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_NIGHT'])
+        self.showNightLayerAction.setChecked(self.settings.viewConfig.map2d.showNight)
         self.showNightLayerAction.setStatusTip('Show 2D Map Night Layer')
         self.showNightLayerAction.toggled.connect(self._checkNightLayer)
         self.showNightLayerAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP GRID
         self.showGrid2dAction = QAction('&Show Grid', self, checkable=True)
         self.showGrid2dAction.setIcon(self.icons['MAP_GRID'])
-        self.showGrid2dAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GRID'])
+        self.showGrid2dAction.setChecked(self.settings.viewConfig.map2d.showGrid)
         self.showGrid2dAction.setStatusTip('Show 2D Map Grid')
         self.showGrid2dAction.toggled.connect(self._check2dGrid)
         self.showGrid2dAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP TERMINATOR LINE
         self.showMap2dTerminatorAction = QAction('&Show Terminator Line', self, checkable=True)
         self.showMap2dTerminatorAction.setIcon(self.icons['SUNSET'])
-        self.showMap2dTerminatorAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_TERMINATOR'])
+        self.showMap2dTerminatorAction.setChecked(self.settings.viewConfig.map2d.showTerminator)
         self.showMap2dTerminatorAction.setStatusTip('Show 2D Map Terminator')
         self.showMap2dTerminatorAction.toggled.connect(self._checkMap2dTerminator)
         self.showMap2dTerminatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP SUN INDICATOR
         self.sunIndicatorAction = QAction('&Show Sun Indicator', self, checkable=True)
         self.sunIndicatorAction.setIcon(self.icons['SUN'])
-        self.sunIndicatorAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_SUN'])
+        self.sunIndicatorAction.setChecked(self.settings.viewConfig.map2d.showSun)
         self.sunIndicatorAction.setStatusTip('Show 2D Map Sun Indicator')
         self.sunIndicatorAction.toggled.connect(self._checkSunIndicator)
         self.sunIndicatorAction.setIconVisibleInMenu(False)
         # SHOW 2D MAP VERNAL POINT
         self.vernalPointAction = QAction('&Show Vernal Point', self, checkable=True)
-        self.vernalPointAction.setChecked(self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_VERNAL'])
+        self.vernalPointAction.setChecked(self.settings.viewConfig.map2d.showVernal)
         self.vernalPointAction.setStatusTip('Show 2D Map Vernal Point')
         self.vernalPointAction.toggled.connect(self._checkVernalPoint)
         # RESET 2D CAMERA VIEW
@@ -170,49 +171,49 @@ class MainWindow(QMainWindow):
 
         # SHOW 3D VIEW ORBIT PATHS
         self.showOrbitPaths3dAction = QAction('Show Orbit Paths', self, checkable=True)
-        self.showOrbitPaths3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'])
+        self.showOrbitPaths3dAction.setChecked(self.settings.viewConfig.view3d.showOrbitPaths)
         self.showOrbitPaths3dAction.toggled.connect(self._toggleOrbitPaths3d)
         self.showOrbitPaths3dAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW GROUND TRACKS
         self.showGroundTracks3dAction = QAction('Show Ground Tracks', self, checkable=True)
-        self.showGroundTracks3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_GROUND_TRACKS'])
+        self.showGroundTracks3dAction.setChecked(self.settings.viewConfig.view3d.showGroundTracks)
         self.showGroundTracks3dAction.toggled.connect(self._toggleGroundTracks3d)
         self.showGroundTracks3dAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW FOOTPRINTS
         self.showFootprints3dAction = QAction('Show Footprints', self, checkable=True)
-        self.showFootprints3dAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_FOOTPRINTS'])
+        self.showFootprints3dAction.setChecked(self.settings.viewConfig.view3d.showFootprints)
         self.showFootprints3dAction.toggled.connect(self._toggleFootprints3d)
         self.showFootprints3dAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH MODEL
         self.showEarthAction = QAction('&Show Earth', self, checkable=True)
-        self.showEarthAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH'])
+        self.showEarthAction.setChecked(self.settings.viewConfig.view3d.showEarth)
         self.showEarthAction.setIcon(self.icons['EARTH'])
         self.showEarthAction.setStatusTip('Show 3D View Earth Model')
         self.showEarthAction.toggled.connect(self._checkEarth)
         self.showEarthAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EARTH GRID
         self.showEarthGridAction = QAction('&Show Earth Grid', self, checkable=True)
-        self.showEarthGridAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH_GRID'])
+        self.showEarthGridAction.setChecked(self.settings.viewConfig.view3d.showEarthGrid)
         self.showEarthGridAction.setIcon(self.icons['EARTH_GRID'])
         self.showEarthGridAction.setStatusTip('Show 3D View Earth Longitudes/Latitudes Grid')
         self.showEarthGridAction.toggled.connect(self._checkEarthGrid)
         self.showEarthGridAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW EQUATORIAL GRID
         self.showEquatorialGridAction = QAction('&Show Equatorial Grid', self, checkable=True)
-        self.showEquatorialGridAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EQUATORIAL_GRID'])
+        self.showEquatorialGridAction.setChecked(self.settings.viewConfig.view3d.showEquatorialGrid)
         self.showEquatorialGridAction.setStatusTip('Show 3D View Equatorial Grid')
         self.showEquatorialGridAction.toggled.connect(self._checkEquatorialGrid)
         self.showEquatorialGridAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECI AXIS
         self.showEciAxesAction = QAction('&Show ECI Reference Frame', self, checkable=True)
-        self.showEciAxesAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECI_AXES'])
+        self.showEciAxesAction.setChecked(self.settings.viewConfig.view3d.showEciAxes)
         self.showEciAxesAction.setIcon(self.icons['ECI'])
         self.showEciAxesAction.setStatusTip('Show 3D View ECI Reference Frame Axes')
         self.showEciAxesAction.toggled.connect(self._checkEciAxes)
         self.showEciAxesAction.setIconVisibleInMenu(False)
         # SHOW 3D VIEW ECEF AXIS
         self.showEcefAxesAction = QAction('&Show ECEF Reference Frame', self, checkable=True)
-        self.showEcefAxesAction.setChecked(self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECEF_AXES'])
+        self.showEcefAxesAction.setChecked(self.settings.viewConfig.view3d.showEcefAxes)
         self.showEcefAxesAction.setIcon(self.icons['ECEF'])
         self.showEcefAxesAction.setStatusTip('Show 3D View ECEF Reference Frame Axes')
         self.showEcefAxesAction.toggled.connect(self._checkEcefAxes)
@@ -462,29 +463,29 @@ class MainWindow(QMainWindow):
             self.centralViewWidget.timeline.setTime(newDatetime)
 
     def _checkEarth(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH'] = checked
+        self.settings.viewConfig.view3d.showEarth = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkEarthGrid(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EARTH_GRID'] = checked
+        self.settings.viewConfig.view3d.showEarthGrid = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkEquatorialGrid(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_EQUATORIAL_GRID'] = checked
+        self.settings.viewConfig.view3d.showEquatorialGrid = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkEciAxes(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECI_AXES'] = checked
+        self.settings.viewConfig.view3d.showEciAxes = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkEcefAxes(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ECEF_AXES'] = checked
+        self.settings.viewConfig.view3d.showEcefAxes = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _reset3dCameraView(self):
         self.centralViewWidget.view3dWidget.resetView()
@@ -537,14 +538,14 @@ class MainWindow(QMainWindow):
         if hasSingleObject:
             obj = next(iter(model.selectedObjects))
             self.objectViewConfigDock.setActiveObjects(model)
-            self.objectViewConfigDock.setSelectedObject(obj.noradIndex, self.settings['VIEW_CONFIG']['OBJECTS'])
+            self.objectViewConfigDock.setSelectedObject(obj.noradIndex, self.settings.viewConfig.objects)
         elif hasGroup:
             groupName = model.selectedGroupName
             self.objectViewConfigDock.setActiveObjects(model)
             self.objectViewConfigDock.setSelectedGroup(groupName)
         else:
             self.objectViewConfigDock.setActiveObjects(model)
-            self.objectViewConfigDock.setSelectedObject(None, self.settings['VIEW_CONFIG']['OBJECTS'])
+            self.objectViewConfigDock.setSelectedObject(None, self.settings.viewConfig.objects)
 
     def _updateObjectInfoDock(self, model: ActiveObjectsModel | None = None):
         if model is None:
@@ -561,11 +562,11 @@ class MainWindow(QMainWindow):
 
     def _restoreWindow(self):
         self.setWindowTitle('Satellite Tracker')
-        if self.settings['WINDOW']['MAXIMIZED']:
+        if self.settings.window.maximized:
             self.showMaximized()
         else:
-            windowGeometry = self.settings['WINDOW']['GEOMETRY']
-            self.setGeometry(windowGeometry['X'], windowGeometry['Y'], windowGeometry['WIDTH'], windowGeometry['HEIGHT'])
+            windowGeometry = self.settings.window.geometry
+            self.setGeometry(windowGeometry.x, windowGeometry.y, windowGeometry.width, windowGeometry.height)
 
     def _updateStatus(self):
         self.datetime = QDateTime.currentDateTime()
@@ -587,30 +588,30 @@ class MainWindow(QMainWindow):
     def setDatabases(self, tleDatabase, starDatabase):
         self.tleDatabase, self.starDatabase = tleDatabase, starDatabase
         self.centralViewWidget.setDatabases(self.tleDatabase, starDatabase)
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
-        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings['VIEW_CONFIG']), self.settings['CURRENT_TAB'])
-        self.activeObjectsDock.populate(self.tleDatabase, self.settings.get('ACTIVE_OBJECTS_MODEL', {}))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
+        self.objectViewConfigDock.applyGlobalVisibility(copy.deepcopy(self.settings.viewConfig), self.settings.currentTab)
+        self.activeObjectsDock.populate(self.tleDatabase, self.settings.activeObjectsModel)
         self.centralViewWidget.setActiveObjects(self.activeObjectsDock.getActiveObjectsModel())
         self.centralViewWidget.requestManager.submitAllFixed()
         self.centralViewWidget.start()
         self._updateActionStates()
-        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings['CURRENT_TAB']))
+        self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, self.settings.currentTab))
         self.centralViewWidget.stackedChanged.connect(self._updateStackedWidget)
-        self.centralViewWidget.setPlotViewLayoutConfiguration(self.settings['PLOT_VIEW'])
+        self.centralViewWidget.setPlotViewLayoutConfiguration(self.settings.plotView)
         self.setObjectConfigWidgetsVisibility()
-        self._manageToolBarVisibility(self.settings['CURRENT_TAB'])
+        self._manageToolBarVisibility(self.settings.currentTab)
         self._restoreWindow()
 
     def setObjectConfigWidgetsVisibility(self):
-        if self.settings['CURRENT_TAB'] == '2D_MAP':
+        if self.settings.currentTab == '2D_MAP':
             self.objectViewConfigDock.setVisible(True)
             self.objectViewConfigDock.setViewMode('2D')
-        if self.settings['CURRENT_TAB'] == '3D_VIEW':
+        if self.settings.currentTab == '3D_VIEW':
             self.objectViewConfigDock.setVisible(True)
             self.objectViewConfigDock.setViewMode('3D')
-        if self.settings['CURRENT_TAB'] == 'PLOT_VIEW':
+        if self.settings.currentTab == 'PLOT_VIEW':
             self.objectViewConfigDock.setVisible(False)
-        if self.settings['CURRENT_TAB'] == 'VISIBLE_PASSES':
+        if self.settings.currentTab == 'VISIBLE_PASSES':
             self.objectViewConfigDock.setVisible(False)
 
     def loadSettings(self):
@@ -621,11 +622,11 @@ class MainWindow(QMainWindow):
 
     def _onActiveObjectsChanged(self):
         model = self.activeObjectsDock.getActiveObjectsModel()
-        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
+        self.settings.activeObjectsModel = model
         for noradIndex in model.allNoradIndices():
-            if str(noradIndex) not in self.settings['VIEW_CONFIG']['OBJECTS']:
-                self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'])
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+            if str(noradIndex) not in self.settings.viewConfig.objects:
+                self.settings.viewConfig.objects[str(noradIndex)] = copy.deepcopy(self.settings.viewConfig.defaultConfig)
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
         self.centralViewWidget.setActiveObjects(model)
         self.saveSettings()
         self._updateActionStates()
@@ -633,7 +634,7 @@ class MainWindow(QMainWindow):
 
     def _open2dMap(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '2D_MAP'))
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
         self.open2dMapAction.setChecked(True)
         self.open3dViewAction.setChecked(False)
         self.openPlotViewAction.setChecked(False)
@@ -641,7 +642,7 @@ class MainWindow(QMainWindow):
 
     def _open3dView(self):
         self.centralViewWidget.stackedWidget.setCurrentIndex(getKeyFromValue(self.centralViewWidget.TABS, '3D_VIEW'))
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
         self.open2dMapAction.setChecked(False)
         self.open3dViewAction.setChecked(True)
         self.openPlotViewAction.setChecked(False)
@@ -683,14 +684,14 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.addScatterPlot()
 
     def _onObjectViewConfigChanged(self, noradIndex, newConfiguration):
-        self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = newConfiguration
+        self.settings.viewConfig.objects[str(noradIndex)] = newConfiguration
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _onGroupViewConfigChanged(self, groupName, config):
         model = self.activeObjectsDock.getActiveObjectsModel()
         model.setGroupConfig(groupName, config)
-        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
+        self.settings.activeObjectsModel = model.toDict()
         self.saveSettings()
         self.centralViewWidget.setActiveObjects(model)
 
@@ -699,86 +700,86 @@ class MainWindow(QMainWindow):
         if len(model.selectedObjects) != 1 or model.isGroupSelected:
             return
         noradIndex = next(iter(model.selectedObjects))
-        self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)] = copy.deepcopy(self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'])
+        self.settings.viewConfig.objects[str(noradIndex)] = copy.deepcopy(self.settings.viewConfig.defaultConfig)
         self.saveSettings()
-        self.objectViewConfigDock.setSelectedObject(noradIndex, self.settings['VIEW_CONFIG']['OBJECTS'])
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.objectViewConfigDock.setSelectedObject(noradIndex, self.settings.viewConfig.objects)
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _setObjectViewConfigAsDefault(self):
         model = self.activeObjectsDock.getActiveObjectsModel()
         if len(model.selectedObjects) != 1 or model.isGroupSelected:
             return
         noradIndex = next(iter(model.selectedObjects))
-        self.settings['VIEW_CONFIG']['DEFAULT_CONFIG'] = copy.deepcopy(self.settings['VIEW_CONFIG']['OBJECTS'][str(noradIndex)])
+        self.settings.viewConfig.defaultConfig = copy.deepcopy(self.settings.viewConfig.objects[str(noradIndex)])
         self.saveSettings()
 
     def _openTexturesEditor(self):
-        dialog = TextureEditorDialog(self.settings['VIEW_CONFIG']['TEXTURES'], parent=self)
+        dialog = TextureEditorDialog(self.settings.viewConfig.textures, parent=self)
         dialog.textureConfigApplied.connect(self._onTexturesEditorChanged)
         if dialog.exec_() != QDialog.Accepted:
             return
-        self.settings['VIEW_CONFIG']['TEXTURES'] = dialog.getTextureConfig()
+        self.settings.viewConfig.textures = dialog.getTextureConfig()
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _onTexturesEditorChanged(self, textureConfig):
-        self.settings['VIEW_CONFIG']['TEXTURES'] = copy.deepcopy(textureConfig)
+        self.settings.viewConfig.textures = copy.deepcopy(textureConfig)
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _check2dGrid(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GRID'] = checked
+        self.settings.viewConfig.map2d.showGrid = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkNightLayer(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_NIGHT'] = checked
+        self.settings.viewConfig.map2d.showNight = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkSunIndicator(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_SUN'] = checked
+        self.settings.viewConfig.map2d.showSun = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkVernalPoint(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_VERNAL'] = checked
+        self.settings.viewConfig.map2d.showVernal = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _checkMap2dTerminator(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_TERMINATOR'] = checked
+        self.settings.viewConfig.map2d.showTerminator = checked
         self.saveSettings()
-        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings['VIEW_CONFIG']))
+        self.centralViewWidget.setDisplayConfiguration(copy.deepcopy(self.settings.viewConfig))
 
     def _change3dViewCameraSettings(self):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ZOOM'] = self.centralViewWidget.view3dWidget.camera.zoom
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['X'] = self.centralViewWidget.view3dWidget.camera.rotationX
-        self.settings['VIEW_CONFIG']['3D_VIEW']['ROTATION']['Y'] = self.centralViewWidget.view3dWidget.camera.rotationY
+        self.settings.viewConfig.view3d.zoom = self.centralViewWidget.view3dWidget.camera.zoom
+        self.settings.viewConfig.view3d.rotation.x = self.centralViewWidget.view3dWidget.camera.rotationX
+        self.settings.viewConfig.view3d.rotation.y = self.centralViewWidget.view3dWidget.camera.rotationY
         self.saveSettings()
 
     def _toggleGroundTracks2d(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_GROUND_TRACKS'] = checked
+        self.settings.viewConfig.map2d.showGroundTracks = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 
     def _toggleGroundTracks3d(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_GROUND_TRACKS'] = checked
+        self.settings.viewConfig.view3d.showGroundTracks = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 
     def _toggleFootprints2d(self, checked):
-        self.settings['VIEW_CONFIG']['2D_MAP']['SHOW_FOOTPRINTS'] = checked
+        self.settings.viewConfig.map2d.showFootprints = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 
     def _toggleFootprints3d(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_FOOTPRINTS'] = checked
+        self.settings.viewConfig.view3d.showFootprints = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 
     def _toggleOrbitPaths3d(self, checked):
-        self.settings['VIEW_CONFIG']['3D_VIEW']['SHOW_ORBIT_PATHS'] = checked
+        self.settings.viewConfig.view3d.showOrbitPaths = checked
         self.saveSettings()
         self._updateGlobalVisibility()
 
@@ -824,9 +825,9 @@ class MainWindow(QMainWindow):
         menu.exec_(globalPosition)
 
     def _updateGlobalVisibility(self):
-        viewConfiguration = copy.deepcopy(self.settings['VIEW_CONFIG'])
+        viewConfiguration = copy.deepcopy(self.settings.viewConfig)
         self.centralViewWidget.setDisplayConfiguration(viewConfiguration)
-        self.objectViewConfigDock.applyGlobalVisibility(viewConfiguration, self.settings['CURRENT_TAB'])
+        self.objectViewConfigDock.applyGlobalVisibility(viewConfiguration, self.settings.currentTab)
 
     def _openRegistryInspector(self):
         self.registryWindow = PlotRequestRegistryWindow(self.centralViewWidget.requestManager)
@@ -836,13 +837,13 @@ class MainWindow(QMainWindow):
         self.centralViewWidget.close()
         if self.registryWindow is not None:
             self.registryWindow.close()
-        self.settings['PLOT_VIEW']  = self.centralViewWidget.plotViewWidget.getLayoutConfiguration()
-        self.settings['WINDOW']['MAXIMIZED'] = self.isMaximized()
+        self.settings.plotView  = self.centralViewWidget.plotViewWidget.getLayoutConfiguration()
+        self.settings.window.maximized = self.isMaximized()
         if not self.isMaximized():
             g = self.geometry()
-            self.settings['WINDOW']['GEOMETRY'] = {'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()}
+            self.settings.window.geometry = WindowGeometry.fromDict({'X': g.x(), 'Y': g.y(), 'WIDTH': g.width(), 'HEIGHT': g.height()})
         model = self.activeObjectsDock.getActiveObjectsModel()
-        self.settings['ACTIVE_OBJECTS_MODEL'] = model.toDict()
+        self.settings.activeObjectsModel = model
         self.saveSettings()
         event.accept()
 
@@ -887,7 +888,7 @@ class CentralViewWidget(QWidget):
         # VISUALIZATION CONFIGURATION
         self.activeObjects: ActiveObjectsModel | None = None
         self.selectedObject = None
-        self.displayConfiguration = {}
+        self.displayConfiguration = ViewConfig()
         self.lastPositions = {'3D_VIEW': {}, '2D_MAP': {}, 'PLOT_VIEW': {}}
 
         # MAIN TABS
@@ -922,7 +923,7 @@ class CentralViewWidget(QWidget):
         currentTime = self.clock.currentDateTime
         if not self.clock.isRunning:
             if self.map2dVisible or self.view3dVisible:
-                QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, currentTime), Q_ARG(dict, copy.deepcopy(self.displayConfiguration)))
+                QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, currentTime), Q_ARG(object, copy.deepcopy(self.displayConfiguration)))
             if self.plotViewVisible:
                 self.requestManager.tick(currentTime)
         if self.map2dVisible and self.lastPositions['2D_MAP']:
@@ -994,7 +995,7 @@ class CentralViewWidget(QWidget):
     def _onClockTimeChanged(self, simTime: datetime):
         self.timeline.setTime(simTime)
         if self.map2dVisible or self.view3dVisible:
-            QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, simTime), Q_ARG(dict, copy.deepcopy(self.displayConfiguration)))
+            QMetaObject.invokeMethod(self.orbitWorker, "compute", Qt.QueuedConnection, Q_ARG(object, simTime), Q_ARG(object, copy.deepcopy(self.displayConfiguration)))
         if self.plotViewVisible:
             self.requestManager.tick(simTime)
 

@@ -8,6 +8,7 @@ import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import *
 
+from src.core.config import ViewConfig
 from src.gui.view3d.renderers import SunRenderer, EarthRenderer, MoonRenderer, ObjectRenderer, SkyBoxRenderer, GridRenderer
 from src.core.objects import ActiveObjectsModel
 
@@ -54,7 +55,6 @@ class View3dWidget(QOpenGLWidget):
 
     EARTH_RADIUS = 6371
     EARTH_MOON_DISTANCE = 384400
-    """Textures are from https://www.solarsystemscope.com/textures/"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -66,7 +66,7 @@ class View3dWidget(QOpenGLWidget):
         self.objectNameData = {}
         self.pendingObjectBufferUpdates = {}
         self.hoveredObject = None
-        self.displayConfiguration = {}
+        self.displayConfiguration = ViewConfig()
         self.simFullJulianDate = 2451545.0
         self.gmstAngle = 0
         self.activeObjects: ActiveObjectsModel | None = None
@@ -118,25 +118,25 @@ class View3dWidget(QOpenGLWidget):
         modelView = (GLdouble * 16)()
         glGetDoublev(GL_MODELVIEW_MATRIX, modelView)
         context = {"modelView": modelView, "sunEci": self.sunDirectionEci, "sunEcef": self.sunDirectionEcef, "moonRot": self.moonRotationMatrix, "julianDate": self.simFullJulianDate,
-                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "cameraZoom": self.camera.zoom, "cameraPosition": self.camera.getPosition(), "config": self.displayConfiguration.get('3D_VIEW', {})}
+                   "moonPos": self.moonPositionEci, "gmst": self.gmstAngle, "cameraZoom": self.camera.zoom, "cameraPosition": self.camera.getPosition(), "config": self.displayConfiguration.view3d}
         self.sunRenderer.update(self.sunDirectionEci)
         self.sunRenderer.render(context)
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
+        if self.displayConfiguration.view3d.showEarth:
             self.earthRenderer.render(context)
             self.earthRenderer.drawAxis()
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH_GRID', False):
+        if self.displayConfiguration.view3d.showEarthGrid:
             self.earthRenderer.drawGrid(context)
         self.moonRenderer.render(context)
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EQUATORIAL_GRID', False):
+        if self.displayConfiguration.view3d.showEquatorialGrid:
             self.gridRenderer.render(context)
         glDisable(GL_LIGHTING)
-        if self.displayConfiguration.get('OBJECTS'):
+        if self.displayConfiguration.objects:
             for noradIndex in self.activeObjects.allNoradIndices():
-                if self.displayConfiguration['OBJECTS'].get(str(noradIndex), False):
+                if self.displayConfiguration.objects.get(str(noradIndex), False):
                     self._drawObject(noradIndex)
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECI_AXES', False):
+        if self.displayConfiguration.view3d.showEciAxes:
             self._drawAxes((1, 0, 0), (0, 1, 0), (0, 0, 1))
-        if self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_ECEF_AXES', False):
+        if self.displayConfiguration.view3d.showEcefAxes:
             glPushMatrix()
             glRotatef(self.gmstAngle, 0, 0, 1)
             self._drawAxes((1, 0, 1), (1, 1, 0), (0, 1, 1))
@@ -149,7 +149,7 @@ class View3dWidget(QOpenGLWidget):
         gluPerspective(45, w / max(h, 1), 0.1, 2000 * np.sqrt(2))
         glMatrixMode(GL_MODELVIEW)
 
-    def updateData(self, positions: dict, displayConfiguration: dict):
+    def updateData(self, positions: dict, displayConfiguration: ViewConfig):
         if not self.activeObjects:
             return
         self.displayConfiguration = displayConfiguration
@@ -181,8 +181,8 @@ class View3dWidget(QOpenGLWidget):
         self.update()
 
     def setDisplayConfiguration(self, displayConfiguration):
-        self.displayConfiguration = displayConfiguration or {}
-        textureConfiguration = self.displayConfiguration.get('TEXTURES', {})
+        self.displayConfiguration = displayConfiguration or ViewConfig()
+        textureConfiguration = self.displayConfiguration.textures
         if self.context() is not None and self.context().isValid():
             self.makeCurrent()
             self.earthRenderer.setTextureConfiguration(textureConfiguration)
@@ -218,9 +218,9 @@ class View3dWidget(QOpenGLWidget):
                             return copy.deepcopy(config)
                     elif source == 'OBJECT':
                         sourceNorad = groupConfig.get('SOURCE_OBJECT')
-                        if sourceNorad and str(sourceNorad) in self.displayConfiguration['OBJECTS']:
-                            return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(sourceNorad)])
-        return copy.deepcopy(self.displayConfiguration['OBJECTS'][str(noradIndex)])
+                        if sourceNorad and str(sourceNorad) in self.displayConfiguration.objects:
+                            return copy.deepcopy(self.displayConfiguration.objects[str(sourceNorad)])
+        return copy.deepcopy(self.displayConfiguration.objects[str(noradIndex)])
 
     def _drawObject(self, noradIndex):
         key = str(noradIndex)
@@ -230,7 +230,7 @@ class View3dWidget(QOpenGLWidget):
         isHovered = (noradIndex == self.hoveredObject)
         cameraPosition = self.camera.getPosition()
         objectConfiguration = self._getObjectRenderConfiguration(noradIndex)
-        self.objectRenderer.renderObject(key, cameraPosition, objectConfiguration, isSelected, isHovered, self.displayConfiguration.get('3D_VIEW', {}), self.objectSpotData[key], self.objectNameData.get(key, ""))
+        self.objectRenderer.renderObject(key, cameraPosition, objectConfiguration, isSelected, isHovered, self.displayConfiguration.view3d, self.objectSpotData[key], self.objectNameData.get(key, ""))
 
     @staticmethod
     def _shouldRender(mode: str, isSelected: bool, isToggled: bool):
@@ -287,7 +287,7 @@ class View3dWidget(QOpenGLWidget):
                 if key not in self.objectSpotData:
                     continue
                 position = self.objectSpotData[key] / self.EARTH_RADIUS
-                if self._isBehindEarth(position) and self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
+                if self._isBehindEarth(position) and self.displayConfiguration.view3d.showEarth:
                     continue
                 xW, yW, _ = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
                 distance = np.sqrt((xW - xMouse) ** 2 + (yW - yMouse) ** 2)
@@ -335,7 +335,7 @@ class View3dWidget(QOpenGLWidget):
             if key not in self.objectSpotData:
                 continue
             position = self.objectSpotData[key] / self.EARTH_RADIUS
-            if self._isBehindEarth(position) and self.displayConfiguration.get('3D_VIEW', {}).get('SHOW_EARTH', False):
+            if self._isBehindEarth(position) and self.displayConfiguration.view3d.showEarth:
                 continue
             xW, yW, _ = gluProject(position[0], position[1], position[2], viewModel, viewProjection, viewPort)
             distance = np.sqrt((xW - xMouse) ** 2 + (yW - yMouse) ** 2)
