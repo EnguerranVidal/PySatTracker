@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
         self.settings = loadSettingsJson(self.settingsPath)
 
         # CENTRAL VISUALIZATION WIDGET
-        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings.timelineMode)
+        self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings.timelineMode, passesConfig=self.settings.viewConfig.passes)
         self.setCentralWidget(self.centralViewWidget)
         self.centralViewWidget.view3dWidget.camera.zoom = self.settings.viewConfig.view3d.zoom
         self.centralViewWidget.view3dWidget.camera.rotationX = self.settings.viewConfig.view3d.rotation.x
@@ -855,7 +855,7 @@ class CentralViewWidget(QWidget):
     TABS = {0: '3D_VIEW', 1: '2D_MAP', 2: 'PLOT_VIEW', 3: 'VISIBLE_PASSES'}
     TIMELINE_MODES = {0: 'UTC', 1: 'LOCAL', 2: 'DELTA'}
 
-    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None, timeLineMode='UTC'):
+    def __init__(self, parent=None, icons=None, currentTab='3D_VIEW', currentDir=None, timeLineMode='UTC', passesConfig=None):
         super().__init__(parent)
         self.currentDir = currentDir
         self.icons = icons if icons is not None else {}
@@ -895,7 +895,9 @@ class CentralViewWidget(QWidget):
         self.view3dWidget = View3dWidget()
         self.map2dWidget = Map2dWidget()
         self.plotViewWidget = PlotViewTabWidget(currentDir=self.currentDir, variableRegistry=self.variableRegistry)
-        self.visiblePassesWidget = VisiblePassesWidget(currentDir=self.currentDir)
+        self.visiblePassesWidget = VisiblePassesWidget(currentDir=self.currentDir, passesConfig=passesConfig)
+        self.visiblePassesWidget.passesConfigChanged.connect(lambda: self.parent().saveSettings() if self.parent() is not None else None)
+
         self.stackedWidget = QStackedWidget()
         self.stackedWidget.addWidget(self.view3dWidget)
         self.stackedWidget.addWidget(self.map2dWidget)

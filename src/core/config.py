@@ -195,6 +195,9 @@ class VisiblePassesConfig:
     maxSunElevationAngle: float = -6.0
     timeResolution: int = 60
     observerAltitude: float = 0.0
+    locationType: str = "City"
+    minMagnitude: float = 3.0
+    maxPasses: int = 100
 
     @classmethod
     def fromDict(cls, data: dict | None):
@@ -207,6 +210,9 @@ class VisiblePassesConfig:
             maxSunElevationAngle=float(data.get("SUN_MAX_ELEVATION", -6.0)),
             timeResolution=int(data.get("RESOLUTION", 60)),
             observerAltitude=float(data.get("OBSERVER_ALTITUDE", 0.0)),
+            locationType=data.get("LOCATION_TYPE", "City"),
+            minMagnitude=float(data.get("MIN_MAGNITUDE", 3.0)),
+            maxPasses=int(data.get("MAX_PASSES", 100)),
         )
 
     def toDict(self):
@@ -218,6 +224,9 @@ class VisiblePassesConfig:
             "SUN_MAX_ELEVATION": self.maxSunElevationAngle,
             "RESOLUTION": self.timeResolution,
             "OBSERVER_ALTITUDE": self.observerAltitude,
+            "LOCATION_TYPE": self.locationType,
+            "MIN_MAGNITUDE": self.minMagnitude,
+            "MAX_PASSES": self.maxPasses,
         }
 
 

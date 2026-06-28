@@ -1,4 +1,4 @@
-from core.objects import ActiveObjectsModel
+from src.core.objects import ActiveObjectsModel
 from src.core.config import *
 
 

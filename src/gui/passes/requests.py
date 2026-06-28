@@ -18,6 +18,8 @@ class VisiblePassesRequest:
     minElevationAngle: float = 10
     maxSunElevationAngle: float = -6
     observerAltitude: float = 0
+    minMagnitude: float = 6
+    maxPasses: int = 100
 
 @dataclass
 class VisiblePassResult:
@@ -69,7 +71,8 @@ class VisiblePassesCalculationTask(QRunnable):
                     print(f"Skipping NORAD {noradIndex}: {e}")
                 self.signals.progress.emit(i + 1)
             results.sort(key=lambda visiblePass: visiblePass.startTime)
-            self.signals.result.emit(results)
+            results = [r for r in results if np.isfinite(r.magnitude) and r.magnitude <= self.request.minMagnitude]
+            self.signals.result.emit(results[:self.request.maxPasses])
         except Exception as e:
             print(f"Calculation error: {e}")
             self.signals.result.emit([])
@@ -97,12 +100,18 @@ class VisiblePassesCalculationTask(QRunnable):
         azimuths, elevations = np.rad2deg(azimuths), np.rad2deg(elevations)
         satelliteIsSunlit = self.engine.solarExposure(fullJulianDates, state["rECI"]) == 1
         visibleMask = ((elevations >= self.request.minElevationAngle) & satelliteIsSunlit & observerIsDark)
+        magnitudes = self.engine.apparentMagnitude(fullJulianDates, state["rECI"], self.request.longitude, self.request.latitude, self.request.observerAltitude, self._standardMagnitude(noradIndex), radians=False)
         indexSegments = segmentArray(np.arange(fullJulianDates.size), visibleMask)
         objectName = self.tleDatabase.getObjectName(noradIndex)
         visiblePasses = []
         for indices in indexSegments:
             if indices.size < 2:
                 continue
+            passMagnitudes = magnitudes[indices]
+            finiteMagnitudes = passMagnitudes[np.isfinite(passMagnitudes)]
+            if finiteMagnitudes.size == 0:
+                continue
+            averageMagnitude = float(np.mean(finiteMagnitudes))
             segmentElevations = elevations[indices]
             maxElevationIndex = indices[int(np.argmax(segmentElevations))]
             visiblePasses.append(
@@ -113,7 +122,7 @@ class VisiblePassesCalculationTask(QRunnable):
                     endTime=dateTimes[indices[-1]],
                     duration=int((dateTimes[indices[-1]] - dateTimes[indices[0]]).total_seconds()),
                     maxElevation=float(elevations[maxElevationIndex]),
-                    magnitude=np.nan,
+                    magnitude=averageMagnitude,
                     julianDates=fullJulianDates[indices],
                     positions=state["rECI"][indices],
                     azimuths=azimuths[indices],
@@ -122,3 +131,18 @@ class VisiblePassesCalculationTask(QRunnable):
                 )
             )
         return visiblePasses
+
+    def _standardMagnitude(self, noradIndex):
+        row = self.tleDatabase.dataFrame[self.tleDatabase.dataFrame["NORAD_CAT_ID"] == noradIndex]
+        if row.empty:
+            return 4.5
+        if "RCS_SIZE" not in row.columns:
+            return 4.5
+        rcsSize = str(row.iloc[0].get("RCS_SIZE", "")).upper()
+        if rcsSize == "LARGE":
+            return 2.0
+        if rcsSize == "MEDIUM":
+            return 4.0
+        if rcsSize == "SMALL":
+            return 6.0
+        return 4.5

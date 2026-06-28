@@ -6,26 +6,34 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
 
-from gui.plots.polar import PolarGraph
+from src.gui.passes.plot import VisiblePassSkyPlot
 from src.gui.passes.requests import VisiblePassesRequest, VisiblePassesCalculationTask
 
 
 class VisiblePassesWidget(QMainWindow):
-    def __init__(self, parent=None, currentDir:str = None, tleDatabase=None):
+    passesConfigChanged = pyqtSignal()
+
+    def __init__(self, parent=None, currentDir:str = None, tleDatabase=None, passesConfig=None):
         super().__init__(parent)
         self.currentDir = currentDir
         self.tleDatabase = tleDatabase
+        self.passesConfig = passesConfig
         self.threadPool = QThreadPool.globalInstance()
         self.threadPool.setMaxThreadCount(4)
         self.viewWidget = VisiblePassesViewWidget(self)
         self.setCentralWidget(self.viewWidget)
-        self.settingsDockWidget = VisiblePassesSettingsWidget(self)
+        self.settingsDockWidget = VisiblePassesSettingsWidget(self, passesConfig=self.passesConfig)
         self.settingsDockWidget.passesRequest.connect(self._requestPasses)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.settingsDockWidget)
         self.viewWidget.showDefault()
 
     def setTleDatabase(self, tleDatabase=None):
         self.tleDatabase = tleDatabase if tleDatabase is not None else self.tleDatabase
+
+    def setPassesConfig(self, passesConfig):
+        self.passesConfig = passesConfig
+        self.settingsDockWidget.passesConfig = passesConfig
+        self.settingsDockWidget.applyConfig(passesConfig)
 
     def _requestPasses(self, passRequest: VisiblePassesRequest):
         total = 0
@@ -36,6 +44,7 @@ class VisiblePassesWidget(QMainWindow):
         task.signals.progress.connect(self.viewWidget.updateProgress)
         task.signals.result.connect(self._onCalculationsDone)
         self.threadPool.start(task)
+        self.passesConfigChanged.emit()
 
     def _onCalculationsDone(self, results: list):
         self.settingsDockWidget.resetFindButton()
@@ -57,7 +66,11 @@ class VisiblePassCard(QFrame):
         title = QLabel(visiblePass.objectName)
         title.setStyleSheet("font-weight: bold;")
         subtitle = QLabel(f"{visiblePass.startTime:%Y-%m-%d %H:%M:%S} UTC - "f"{visiblePass.endTime:%H:%M:%S} UTC")
-        details = QLabel(f"Max elevation: {visiblePass.maxElevation:.1f} deg | "f"Duration: {visiblePass.duration // 60}m {visiblePass.duration % 60:02d}s")
+        details = QLabel(
+            f"Max elevation: {visiblePass.maxElevation:.1f} deg | "
+            f"Avg mag: {visiblePass.magnitude:.1f} | "
+            f"Duration: {visiblePass.duration // 60}m {visiblePass.duration % 60:02d}s"
+        )
         mainLayout = QVBoxLayout(self)
         mainLayout.addWidget(title)
         mainLayout.addWidget(subtitle)
@@ -72,8 +85,9 @@ class VisiblePassCard(QFrame):
 class VisiblePassesSettingsWidget(QDockWidget):
     passesRequest = pyqtSignal(VisiblePassesRequest)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, passesConfig=None):
         super().__init__("Pass Request Settings", parent)
+        self.passesConfig = passesConfig
         self.setFeatures(QDockWidget.DockWidgetMovable)  # No floating, no closing
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.findVisiblePassesButton = QPushButton("Find Visible Passes")
@@ -91,6 +105,21 @@ class VisiblePassesSettingsWidget(QDockWidget):
         locationLayout.addWidget(self.locationLongitudeLineEdit)
         locationLayout.addWidget(self.locationLatitudeLineEdit)
         self.locationGroupBox.setLayout(locationLayout)
+        # LOCATION TYPE GROUP BOX
+        self.locationTypeGroupBox = QGroupBox("Location Type")
+        self.locationTypeButtonGroup = QButtonGroup()
+        self.locationTypeButtonGroup.setExclusive(True)
+        self.cityButton = QPushButton("City")
+        self.countrysideButton = QPushButton("Countryside")
+        self.cityButton.setCheckable(True)
+        self.countrysideButton.setCheckable(True)
+        self.cityButton.setChecked(True)
+        self.locationTypeButtonGroup.addButton(self.cityButton)
+        self.locationTypeButtonGroup.addButton(self.countrysideButton)
+        locationTypeLayout = QHBoxLayout()
+        locationTypeLayout.addWidget(self.cityButton)
+        locationTypeLayout.addWidget(self.countrysideButton)
+        self.locationTypeGroupBox.setLayout(locationTypeLayout)
         # TIME SPAN GROUP BOX
         self.timeSpanGroupBox = QGroupBox("Time Span")
         self.timeSpanButtonGroup = QButtonGroup()
@@ -114,10 +143,35 @@ class VisiblePassesSettingsWidget(QDockWidget):
         content = QWidget()
         mainLayout = QVBoxLayout(content)
         mainLayout.addWidget(self.locationGroupBox)
+        mainLayout.addWidget(self.locationTypeGroupBox)
         mainLayout.addWidget(self.timeSpanGroupBox)
         mainLayout.addWidget(self.findVisiblePassesButton)
         mainLayout.addStretch()
         self.setWidget(content)
+        self.applyConfig(self.passesConfig)
+
+    def applyConfig(self, config):
+        if config is None:
+            return
+        self.locationLongitudeLineEdit.setText(f"{config.lastLongitude:.6f}")
+        self.locationLatitudeLineEdit.setText(f"{config.lastLatitude:.6f}")
+        if config.locationType == "Countryside":
+            self.countrysideButton.setChecked(True)
+        else:
+            self.cityButton.setChecked(True)
+        for button in self.timeSpanButtonGroup.buttons():
+            if button.text() == config.lastTimeSpan:
+                button.setChecked(True)
+                break
+
+    def updateConfigFromUi(self):
+        if self.passesConfig is None:
+            return
+        self.passesConfig.lastLongitude = float(self.locationLongitudeLineEdit.text() or -74.0060)
+        self.passesConfig.lastLatitude = float(self.locationLatitudeLineEdit.text() or 40.7128)
+        self.passesConfig.lastTimeSpan = self.timeSpanButtonGroup.checkedButton().text() if self.timeSpanButtonGroup.checkedButton() else "Tonight"
+        self.passesConfig.locationType = "City" if self.cityButton.isChecked() else "Countryside"
+        self.passesConfig.minMagnitude = 3.0 if self.cityButton.isChecked() else 6.0
 
     def _onFindClicked(self):
         try:
@@ -142,12 +196,19 @@ class VisiblePassesSettingsWidget(QDockWidget):
         if dialog.exec_() == QDialog.Accepted:
             self.locationLatitudeLineEdit.setText(f"{dialog.selectedLatitude:.6f}")
             self.locationLongitudeLineEdit.setText(f"{dialog.selectedLongitude:.6f}")
+            self.updateConfigFromUi()
 
     def _getRequest(self):
+        self.updateConfigFromUi()
+        if self.passesConfig is not None:
+            return self.passesConfig.toRequest()
+        minMagnitude = 3 if self.cityButton.isChecked() else 6
         request = VisiblePassesRequest(
             longitude=float(self.locationLongitudeLineEdit.text() or -74.0060),
             latitude=float(self.locationLatitudeLineEdit.text() or 40.7128),
-            timeSpan=self.timeSpanButtonGroup.checkedButton().text() if self.timeSpanButtonGroup.checkedButton() else "Tonight"
+            timeSpan=self.timeSpanButtonGroup.checkedButton().text() if self.timeSpanButtonGroup.checkedButton() else "Tonight",
+            minMagnitude=minMagnitude,
+            maxPasses=100,
         )
         return request
 
@@ -199,14 +260,13 @@ class VisiblePassesViewWidget(QWidget):
         self.backButton.clicked.connect(self.showResultsPage)
         self.passInfoLabel = QLabel()
         self.passInfoLabel.setAlignment(Qt.AlignCenter)
-        self.polarGraph = PolarGraph(ringCount=3, angularStep=30, maximumRadius=90.0, bgColor=QColor(10, 10, 14), gridColor=QColor(150, 150, 160), labelColor=QColor(230, 230, 230), shaded=False,)
-        self.polarGraph.setRadialRange(90.0)
+        self.skyPlot = VisiblePassSkyPlot()
         graphHeaderLayout = QHBoxLayout()
         graphHeaderLayout.addWidget(self.backButton, 0)
         graphHeaderLayout.addWidget(self.passInfoLabel, 1)
         graphLayout = QVBoxLayout(self.graphPage)
         graphLayout.addLayout(graphHeaderLayout)
-        graphLayout.addWidget(self.polarGraph, 1)
+        graphLayout.addWidget(self.skyPlot, 1)
         self.stackedWidget.addWidget(self.graphPage)
 
         mainLayout = QVBoxLayout(self)
@@ -248,14 +308,12 @@ class VisiblePassesViewWidget(QWidget):
                 widget.deleteLater()
 
     def _plotPass(self, visiblePass):
-        self.polarGraph.clearPolar()
-        radius = 90.0 - np.asarray(visiblePass.elevations, dtype=float)
-        angle = 90.0 - np.asarray(visiblePass.azimuths, dtype=float)
-        self.polarGraph.plotPolar(radius, angle, pen=pg.mkPen(QColor(0, 180, 255), width=3), name=visiblePass.objectName)
+        self.skyPlot.setPass(visiblePass.azimuths, visiblePass.elevations)
         self.passInfoLabel.setText(
             f"{visiblePass.objectName} | "
             f"{visiblePass.startTime:%H:%M:%S} - {visiblePass.endTime:%H:%M:%S} UTC | "
-            f"Max Elevation {visiblePass.maxElevation:.1f} °"
+            f"Max Elevation {visiblePass.maxElevation:.1f} deg | "
+            f"Avg Magnitude {visiblePass.magnitude:.1f}"
         )
 
 
