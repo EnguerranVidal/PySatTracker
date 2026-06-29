@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
         self.dataPath = os.path.join(self.currentDir, 'data')
         self.noradPath = os.path.join(self.dataPath, 'norad')
         self._checkEnvironment()
-        self.settings = loadSettingsJson(self.settingsPath)
+        self.loadSettings()
 
         # CENTRAL VISUALIZATION WIDGET
         self.centralViewWidget = CentralViewWidget(parent=self, currentDir=self.currentDir, timeLineMode=self.settings.timelineMode, passesConfig=self.settings.viewConfig.passes)
@@ -119,7 +119,6 @@ class MainWindow(QMainWindow):
         self.openTextureEditorAction = QAction('&Textures', self)
         self.openTextureEditorAction.setStatusTip('Open Textures Editor')
         self.openTextureEditorAction.triggered.connect(self._openTexturesEditor)
-
         # SHOW 2D MAP GROUND TRACKS
         self.showGroundTracks2dAction = QAction('Show Ground Tracks', self, checkable=True)
         self.showGroundTracks2dAction.setChecked(self.settings.viewConfig.map2d.showGroundTracks)
@@ -168,7 +167,6 @@ class MainWindow(QMainWindow):
         self.reset2dCameraViewAction.setIcon(self.icons['RESET_VIEW'])
         self.reset2dCameraViewAction.setStatusTip('Reset 2D View to Default Zoom and Center')
         self.reset2dCameraViewAction.triggered.connect(self._reset2dCameraView)
-
         # SHOW 3D VIEW ORBIT PATHS
         self.showOrbitPaths3dAction = QAction('Show Orbit Paths', self, checkable=True)
         self.showOrbitPaths3dAction.setChecked(self.settings.viewConfig.view3d.showOrbitPaths)
@@ -223,7 +221,6 @@ class MainWindow(QMainWindow):
         self.reset3dCameraViewAction.setIcon(self.icons['RESET_VIEW'])
         self.reset3dCameraViewAction.setStatusTip('Reset 3D View Camera to Default Zoom and Rotation')
         self.reset3dCameraViewAction.triggered.connect(self._reset3dCameraView)
-
         # TOGGLE PLAY/PAUSE
         self.playPauseAction = QAction('&Pause Simulation', self)
         self.playPauseAction.setIcon(self.icons['PAUSE'])
@@ -234,7 +231,6 @@ class MainWindow(QMainWindow):
         self.setSimulationTimeAction.setIcon(self.icons['TIME'])
         self.setSimulationTimeAction.setStatusTip('Set Simulation DateTime')
         self.setSimulationTimeAction.triggered.connect(self._setSimulationTime)
-
         # ADD PLOT TAB
         self.addPlotTabAction = QAction('&Add Plot Tab', self)
         self.addPlotTabAction.setIcon(self.icons['ADD_TAB'])

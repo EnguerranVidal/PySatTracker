@@ -6,6 +6,7 @@ from sgp4.api import Satrec, jday
 class OrbitalMechanicsEngine:
     def __init__(self):
         self.equatorialRadius = 6378.137
+        self.solarRadius = 696000.0
         self.flatteningRatio = 1.0 / 298.257223563
         self.polarRadius = self.equatorialRadius * (1 - self.flatteningRatio)
         self.e2Ellipsoid = 1 - (self.polarRadius**2) / (self.equatorialRadius**2)
@@ -412,6 +413,37 @@ class OrbitalMechanicsEngine:
         exposure = (~inShadow).astype(int)
         return self._maybeScalar(exposure, scalar)
 
+    def satelliteSolarFlux(self, positions, fullJulianDates, solarConstant=1367.0, includeAtmosphere=False):
+        fullJulianDates, scalar = self._ensureArray(fullJulianDates)
+        positions, _ = self._ensureArray(positions, vector=True)
+        if positions.ndim == 1:
+            positions = positions.reshape(1, 3)
+        N = len(fullJulianDates)
+        sunEci = self.solarDirectionEci(fullJulianDates, normed=False)
+        sunDistance = np.linalg.norm(sunEci, axis=1)[:, None]
+        distance = np.linalg.norm(positions, axis=1, keepdims=True)
+        s0 = -np.sum(positions * sunEci, axis=1, keepdims=True) / sunDistance
+        # SHADOW CONE ANGLES
+        f1Sinus = (self.solarRadius + self.equatorialRadius) / sunDistance
+        f2Sinus = np.maximum(0.0, (self.solarRadius - self.equatorialRadius) / sunDistance)
+        f1 = np.arcsin(np.clip(f1Sinus, -1.0, 1.0))
+        f2 = np.arcsin(np.clip(f2Sinus, -1.0, 1.0))
+        c1 = s0 + self.equatorialRadius / np.sin(f1 + 1e-12)
+        c2 = s0 - self.equatorialRadius / np.sin(f2 + 1e-12)
+        l1 = np.abs(c1 * np.tan(f1))
+        l2 = np.abs(c2 * np.tan(f2))
+        # ILLUMINATION FACTOR
+        l = np.sqrt(np.maximum(0.0, distance ** 2 - s0 ** 2))
+        illuminationFactor = np.ones(N)
+        umbra = l <= l2
+        penumbra = (l > l2) & (l < l1)
+        illuminationFactor[umbra] = 0.0
+        illuminationFactor[penumbra] = (l[penumbra] - l2[penumbra]) / np.maximum(l1[penumbra] - l2[penumbra], 1e-8)
+        if includeAtmosphere:
+            illuminationFactor[penumbra] = illuminationFactor[penumbra] * np.maximum(0.25, illuminationFactor[penumbra])
+        flux = illuminationFactor * solarConstant / (sunDistance.flatten() ** 2)
+        return self._maybeScalar(flux, scalar)
+
     def getVernalSubPoint(self, fullJulianDate, radians=True):
         vernalUnitVectorEci = np.array([1, 0, 0])
         vernalLongitude = (np.arctan2(vernalUnitVectorEci[1], vernalUnitVectorEci[0]) - self.greenwichMeridianSiderealTime(fullJulianDate)) % (2 * np.pi)
@@ -565,7 +597,7 @@ class OrbitalMechanicsEngine:
         obsEci = np.asarray(self.observerPositionEci(obsLongitude, obsLatitude, obsAltitude, fullJulianDates, radians=radians))
         if obsEci.ndim == 1:
             obsEci = obsEci.reshape(1, 3)
-        sunDir = np.asarray(self.solarDirectionEci(fullJulianDates))
+        sunDir = np.asarray(self.solarDirectionEci(fullJulianDates, normed=True))
         if sunDir.ndim == 1:
             sunDir = sunDir.reshape(1, 3)
         obsObjectVector = positions - obsEci
