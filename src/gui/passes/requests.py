@@ -100,7 +100,7 @@ class VisiblePassesCalculationTask(QRunnable):
         azimuths, elevations = np.rad2deg(azimuths), np.rad2deg(elevations)
         satelliteIsSunlit = self.engine.solarExposure(fullJulianDates, state["rECI"]) == 1
         visibleMask = ((elevations >= self.request.minElevationAngle) & satelliteIsSunlit & observerIsDark)
-        magnitudes = self.engine.apparentMagnitude(fullJulianDates, state["rECI"], self.request.longitude, self.request.latitude, self.request.observerAltitude, self._standardMagnitude(noradIndex), radians=False)
+        magnitudes = self.engine.satelliteApparentMagnitude(fullJulianDates, state["rECI"], self.request.longitude, self.request.latitude, self.request.observerAltitude, self._standardMagnitude(noradIndex), radians=False)
         indexSegments = segmentArray(np.arange(fullJulianDates.size), visibleMask)
         objectName = self.tleDatabase.getObjectName(noradIndex)
         visiblePasses = []

@@ -11,6 +11,7 @@ class OrbitalMechanicsEngine:
         self.polarRadius = self.equatorialRadius * (1 - self.flatteningRatio)
         self.e2Ellipsoid = 1 - (self.polarRadius**2) / (self.equatorialRadius**2)
         self.earthGravParameter = 398600.4418
+        self.j2Coefficient = 1.08262668e-3
 
     @staticmethod
     def arcsecToDegrees(arcsec):
@@ -572,10 +573,9 @@ class OrbitalMechanicsEngine:
 
     def j2Acceleration(self, positions):
         positions, scalar = self._ensureArray(positions, vector=True)
-        J2 = 1.08262668e-3
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
         radius = np.linalg.norm(positions, axis=1)
-        factor = (3 / 2) * J2 * self.earthGravParameter * self.equatorialRadius ** 2 / radius ** 5
+        factor = (3 / 2) * self.j2Coefficient * self.earthGravParameter * self.equatorialRadius ** 2 / radius ** 5
         xAcceleration = factor * x * (5 * (z ** 2) / (radius ** 2) - 1)
         yAcceleration = factor * y * (5 * (z ** 2) / (radius ** 2) - 1)
         zAcceleration = factor * z * (5 * (z ** 2) / (radius ** 2) - 3)
@@ -591,25 +591,35 @@ class OrbitalMechanicsEngine:
         acceleration = np.stack([ax, ay, az], axis=1)
         return self._maybeScalar(acceleration, scalar)
 
-    def apparentMagnitude(self, fullJulianDates, positions, obsLongitude, obsLatitude, obsAltitude, standardMagnitude, radians=True):
+    def satelliteApparentMagnitude(self, fullJulianDates, positions, obsLongitude, obsLatitude, obsAltitude, standardMagnitude, area=None, albedo=0.2, radians=True):
         fullJulianDates, scalar = self._ensureArray(fullJulianDates)
         positions, _ = self._ensureArray(positions, vector=True)
-        obsEci = np.asarray(self.observerPositionEci(obsLongitude, obsLatitude, obsAltitude, fullJulianDates, radians=radians))
-        if obsEci.ndim == 1:
-            obsEci = obsEci.reshape(1, 3)
+        observerEci = np.asarray(self.observerPositionEci(obsLongitude, obsLatitude, obsAltitude, fullJulianDates, radians=radians))
+        if observerEci.ndim == 1:
+            observerEci = observerEci.reshape(1, 3)
         sunDir = np.asarray(self.solarDirectionEci(fullJulianDates, normed=True))
         if sunDir.ndim == 1:
             sunDir = sunDir.reshape(1, 3)
-        obsObjectVector = positions - obsEci
+        obsObjectVector = positions - observerEci
         obsObjectDistance = np.linalg.norm(obsObjectVector, axis=1)
-        cosPhaseAngle = np.clip(np.sum(-sunDir * (obsObjectVector / obsObjectDistance[:, None]), axis=1), -1.0, 1.0)
-        phaseAngle = np.arccos(cosPhaseAngle)
-        sinPhaseAngle = np.clip(np.sum(np.sin(phaseAngle)), -1.0, 1.0)
-        functionPhase = np.clip((sinPhaseAngle + (np.pi - phaseAngle) * np.cos(phaseAngle)) / np.pi, 1e-10, None)
-        phaseMagnitude = -2.5 * np.log10(functionPhase)
-        exposure = self.solarExposure(fullJulianDates, positions)
-        magnitude = np.where(exposure == 1, standardMagnitude + 5.0 * np.log10(obsObjectDistance / 1000.0) + phaseMagnitude, np.nan)
-        return self._maybeScalar(magnitude, scalar)
+        cosPhaseAngle = np.clip(np.sum(sunDir * (obsObjectVector / obsObjectDistance[:, None]), axis=1), -1.0, 1.0)
+        illuminationFactor = self.satelliteSolarFlux(positions, fullJulianDates, solarConstant=1.0)
+        magnitudes = np.full_like(fullJulianDates, 20.0, dtype=float)
+        valid = (obsObjectDistance > 10.0) & (illuminationFactor > 1e-6)
+        if np.any(valid):
+            validObsObjectDistance = obsObjectDistance[valid]
+            validCosPhaseAngle = cosPhaseAngle[valid]
+            validIllumination = illuminationFactor[valid]
+            if standardMagnitude is not None:
+                phaseTerm = (1.0 + validCosPhaseAngle) / 2.0
+                magnitudes[valid] = (standardMagnitude + 5.0 * np.log10(validObsObjectDistance / 1000.0) - 2.5 * np.log10(validIllumination) + 2.5 * np.log10(phaseTerm))
+            else:
+                crossArea = 10.0 if area is None else area
+                flux = self.satelliteSolarFlux(positions[valid], fullJulianDates[valid])
+                reflected = (flux * crossArea * albedo * validIllumination * (1.0 + validCosPhaseAngle) / (2.0 * np.pi))
+                fluxAtObserver = reflected / (validObsObjectDistance * 1000.0) ** 2
+                magnitudes[valid] = -2.5 * np.log10(np.maximum(fluxAtObserver, 1e-30) / 2.52e-8)
+        return self._maybeScalar(magnitudes, scalar)
 
     def observerIsDark(self, longitude, latitude, altitude, fullJulianDates, radians=True, maxSunElevationAngle=10):
         fullJulianDates, scalar = self._ensureArray(fullJulianDates)
